@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -14,13 +15,26 @@ func (s *Server) createReplay(w http.ResponseWriter, r *http.Request) {
 		ModifiedHeaders map[string]string `json:"modified_headers"`
 		ModifiedBody    []byte            `json:"modified_body"`
 		ModifiedURL     string            `json:"modified_url"`
+		Raw             string            `json:"raw"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	replay, err := s.proxy.ReplayRequest(body.RequestID, body.ModifiedHeaders, body.ModifiedBody, body.ModifiedURL)
+	var (
+		rawBytes []byte
+		err      error
+	)
+	if body.Raw != "" {
+		rawBytes, err = base64.StdEncoding.DecodeString(body.Raw)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid base64")
+			return
+		}
+	}
+
+	replay, err := s.proxy.ReplayRequest(body.RequestID, body.ModifiedHeaders, body.ModifiedBody, body.ModifiedURL, rawBytes)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

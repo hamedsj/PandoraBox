@@ -16,7 +16,7 @@ type SortDirection = 'asc' | 'desc' | null
 export function RequestTable() {
   useRequests()
 
-  const { requests, selectedRequestId, setSelectedRequestId, filters, setFilters, addToReplay, removeFromReplay, replayQueue } = useProxyStore()
+  const { requests, selectedRequestId, setSelectedRequestId, filters, setFilters, addToReplay, removeRequestFromReplay, replayQueue } = useProxyStore()
 
   const [sortColumn, setSortColumn] = useState<SortColumn>('id')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
@@ -223,10 +223,10 @@ export function RequestTable() {
                 key={req.id}
                 req={req}
                 selected={req.id === selectedRequestId}
-                inReplay={replayQueue.some((r: Request) => r.id === req.id)}
+                inReplay={replayQueue.some((entry) => entry.request.id === req.id)}
                 onClick={() => setSelectedRequestId(req.id === selectedRequestId ? null : req.id)}
                 onAddToReplay={() => addToReplay(req)}
-                onRemoveFromReplay={() => removeFromReplay(req.id)}
+                onRemoveFromReplay={() => removeRequestFromReplay(req.id)}
                 truncateQuery={truncateQuery}
                 truncatePath={truncatePath}
               />

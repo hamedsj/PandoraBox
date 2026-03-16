@@ -1,6 +1,7 @@
 import { api } from '@/api/client'
 import { useThemeStore, fontFamilyMap, accentColorMap, getAvailableVariants, darkThemeColors, lightThemeColors, type ThemeMode, type FontFamily, type AccentColor, type ThemeVariant, DarkTheme, LightTheme } from '@/store/theme'
 import { useShortcutStore } from '@/store/shortcuts'
+import { useReplayStore } from '@/store/replay'
 import { shortcutDefinitions, type ShortcutActionId } from '@/shortcuts/actions'
 import { eventToShortcut, formatShortcut } from '@/lib/shortcuts'
 import { Download, Sun, Moon, Palette, Type, Check, Shield, Server, Globe, LayoutDashboard, Keyboard, RotateCcw } from 'lucide-react'
@@ -67,6 +68,8 @@ export function SettingsPage() {
   const setShortcutEnabled = useShortcutStore((state) => state.setEnabled)
   const setShortcutBinding = useShortcutStore((state) => state.setBinding)
   const resetShortcutBindings = useShortcutStore((state) => state.resetBindings)
+  const autoContentLength = useReplayStore((state) => state.autoContentLength)
+  const setAutoContentLength = useReplayStore((state) => state.setAutoContentLength)
 
   const [activeTab, setActiveTab] = useState<SettingsTab>('appearance')
   const availableVariants = getAvailableVariants(mode)
@@ -525,6 +528,28 @@ export function SettingsPage() {
                   title="Copy to clipboard"
                 >
                   Copy
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-muted/50 rounded-lg p-4 border border-border">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <div className="text-sm font-medium">Replay Editor</div>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Automatically update the `Content-Length` header when sending a modified raw replay packet.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setAutoContentLength(!autoContentLength)}
+                  className={cn(
+                    'inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium transition-all',
+                    autoContentLength
+                      ? 'border-primary/40 bg-primary/12 text-primary'
+                      : 'border-border bg-background text-muted-foreground hover:text-foreground'
+                  )}
+                >
+                  {autoContentLength ? 'Auto Content-Length On' : 'Auto Content-Length Off'}
                 </button>
               </div>
             </div>

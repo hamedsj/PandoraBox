@@ -188,7 +188,7 @@ func (s *Server) toolReplayRequest(ctx context.Context, req mcp.CallToolRequest)
 		modURL = v
 	}
 
-	replay, err := s.proxy.ReplayRequest(int64(id), nil, modBody, modURL)
+	replay, err := s.proxy.ReplayRequest(int64(id), nil, modBody, modURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -276,4 +276,3 @@ func jsonResult(v interface{}) (*mcp.CallToolResult, error) {
 	}
 	return mcp.NewToolResultText(string(b)), nil
 }
-

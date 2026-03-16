@@ -5,6 +5,11 @@ export type { FilterConfig }
 
 export type RequestFilters = FilterConfig
 
+export interface ReplayQueueItem {
+  queueId: number
+  request: Request
+}
+
 const defaultHiddenExtensions = [
   'js',
   'gif',
@@ -72,9 +77,12 @@ interface ProxyStore {
   setSelectedRequestId: (id: number | null) => void
 
   // Replay queue (requests explicitly sent to replay)
-  replayQueue: Request[]
+  replayQueue: ReplayQueueItem[]
+  replayAttentionTick: number
   addToReplay: (req: Request) => void
-  removeFromReplay: (id: number) => void
+  duplicateReplayItem: (queueId: number) => void
+  removeFromReplay: (queueId: number) => void
+  removeRequestFromReplay: (requestId: number) => void
   clearReplay: () => void
 
   // Intercept
@@ -117,15 +125,32 @@ export const useProxyStore = create<ProxyStore>((set) => ({
   setSelectedRequestId: (id) => set({ selectedRequestId: id }),
 
   replayQueue: [],
+  replayAttentionTick: 0,
   addToReplay: (req) =>
     set((state) => {
-      if (state.replayQueue.find((r) => r.id === req.id)) {
-        return state
+      if (state.replayQueue.find((entry) => entry.request.id === req.id)) {
+        return { replayAttentionTick: state.replayAttentionTick + 1 }
       }
-      return { replayQueue: [req, ...state.replayQueue].slice(0, 100) }
+      const nextQueueId = state.replayQueue.reduce((max, entry) => Math.max(max, entry.queueId), 0) + 1
+      return {
+        replayQueue: [{ queueId: nextQueueId, request: req }, ...state.replayQueue].slice(0, 100),
+        replayAttentionTick: state.replayAttentionTick + 1,
+      }
     }),
-  removeFromReplay: (id) =>
-    set((state) => ({ replayQueue: state.replayQueue.filter((r) => r.id !== id) })),
+  duplicateReplayItem: (queueId) =>
+    set((state) => {
+      const source = state.replayQueue.find((entry) => entry.queueId === queueId)
+      if (!source) return state
+      const nextQueueId = state.replayQueue.reduce((max, entry) => Math.max(max, entry.queueId), 0) + 1
+      return {
+        replayQueue: [{ queueId: nextQueueId, request: source.request }, ...state.replayQueue].slice(0, 100),
+        replayAttentionTick: state.replayAttentionTick + 1,
+      }
+    }),
+  removeFromReplay: (queueId) =>
+    set((state) => ({ replayQueue: state.replayQueue.filter((entry) => entry.queueId !== queueId) })),
+  removeRequestFromReplay: (requestId) =>
+    set((state) => ({ replayQueue: state.replayQueue.filter((entry) => entry.request.id !== requestId) })),
   clearReplay: () => set({ replayQueue: [] }),
 
   interceptQueue: [],

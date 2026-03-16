@@ -6,9 +6,21 @@ interface CodeViewerProps {
   value: string
   language: string
   maxHeight?: number
+  readOnly?: boolean
+  onChange?: (value: string) => void
+  minHeight?: number
+  autoHeight?: boolean
 }
 
-export function CodeViewer({ value, language, maxHeight = 420 }: CodeViewerProps) {
+export function CodeViewer({
+  value,
+  language,
+  maxHeight = 420,
+  readOnly = true,
+  onChange,
+  minHeight = 140,
+  autoHeight = true,
+}: CodeViewerProps) {
   const mode = useThemeStore((state) => state.mode)
   const variant = useThemeStore((state) => state.variant)
   const accentColor = useThemeStore((state) => state.accentColor)
@@ -17,7 +29,7 @@ export function CodeViewer({ value, language, maxHeight = 420 }: CodeViewerProps
   const monaco = useMonaco()
   const themeName = mode === 'dark' ? 'pitok-dark' : 'pitok-light'
   const resolvedTypography = getResolvedTypography(fontSize)
-  const [editorHeight, setEditorHeight] = useState<number>(140)
+  const [editorHeight, setEditorHeight] = useState<number>(minHeight)
   const applyThemeDefinition = (targetMonaco: Parameters<NonNullable<BeforeMount>>[0]) => {
     targetMonaco.editor.defineTheme(themeName, buildMonacoTheme(mode))
   }
@@ -30,12 +42,16 @@ export function CodeViewer({ value, language, maxHeight = 420 }: CodeViewerProps
   const lineHeight = Math.round(resolvedTypography.fontSize * 1.65)
 
   useEffect(() => {
-    setEditorHeight(140)
-  }, [value, language, resolvedTypography.fontSize])
+    setEditorHeight(minHeight)
+  }, [value, language, resolvedTypography.fontSize, minHeight])
 
   const onMount: OnMount = (editor) => {
     const syncHeight = () => {
-      const nextHeight = Math.max(140, Math.min(editor.getContentHeight() + 2, maxHeight))
+      if (!autoHeight) {
+        editor.layout({ width: editor.getLayoutInfo().width, height: maxHeight })
+        return
+      }
+      const nextHeight = Math.max(minHeight, Math.min(editor.getContentHeight() + 2, maxHeight))
       setEditorHeight(nextHeight)
       editor.layout({ width: editor.getLayoutInfo().width, height: nextHeight })
     }
@@ -51,18 +67,19 @@ export function CodeViewer({ value, language, maxHeight = 420 }: CodeViewerProps
         key={`${themeName}-${resolvedTypography.fontFamily}-${resolvedTypography.fontSize}`}
         beforeMount={applyThemeDefinition}
         onMount={onMount}
-        height={`${editorHeight}px`}
+        height={`${autoHeight ? editorHeight : maxHeight}px`}
         language={language}
         value={value}
+        onChange={(next) => onChange?.(next ?? '')}
         theme={themeName}
         options={{
-          readOnly: true,
-          domReadOnly: true,
+          readOnly,
+          domReadOnly: readOnly,
           minimap: { enabled: false },
           lineNumbers: 'on',
           glyphMargin: false,
           folding: true,
-          scrollBeyondLastLine: false,
+          scrollBeyondLastLine: !readOnly,
           wordWrap: 'on',
           wrappingIndent: 'indent',
           automaticLayout: true,
@@ -70,7 +87,7 @@ export function CodeViewer({ value, language, maxHeight = 420 }: CodeViewerProps
           lineHeight,
           fontFamily: resolvedTypography.fontFamily,
           padding: { top: 14, bottom: 14 },
-          renderLineHighlight: 'none',
+          renderLineHighlight: readOnly ? 'none' : 'line',
           overviewRulerLanes: 0,
           lineDecorationsWidth: 8,
           scrollbar: {
@@ -78,6 +95,7 @@ export function CodeViewer({ value, language, maxHeight = 420 }: CodeViewerProps
             horizontalScrollbarSize: 10,
             alwaysConsumeMouseWheel: false,
           },
+          contextmenu: !readOnly,
         }}
       />
     </div>
