@@ -5,14 +5,14 @@ import { useProxyStore } from '@/store/proxy'
 import { cn } from '@/lib/utils'
 
 const PATTERN_TYPES = [
-  { value: 'wildcard', label: 'Wildcard' },
-  { value: 'exact', label: 'Exact' },
   { value: 'contains', label: 'Contains' },
+  { value: 'wildcard', label: 'Wildcard' },
   { value: 'regex', label: 'Regex' },
+  { value: 'exact', label: 'Exact' },
 ] as const
 
 function emptyRule(): ScopeRule {
-  return { enabled: true, pattern_type: 'wildcard', host: '', path: '' }
+  return { enabled: true, pattern_type: 'contains', host: '', path: '' }
 }
 
 function emptyScope(): ScopeConfig {

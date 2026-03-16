@@ -4,11 +4,38 @@ import { useRequests } from '@/hooks/useRequests'
 import { MethodBadge } from '@/components/common/MethodBadge'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import { cn } from '@/lib/utils'
-import type { Request } from '@/api/client'
-import { Globe, Filter, RotateCcw, Trash2, ChevronUp, ChevronDown } from 'lucide-react'
+import { api, type Request, type ScopeRule } from '@/api/client'
+import { Globe, Filter, RotateCcw, Trash2, ChevronUp, ChevronDown, Target } from 'lucide-react'
 import { FilterModal } from './FilterModal'
 import { countActiveFilters, filterRequests } from '@/lib/requestFilters'
 import { subscribeShortcutAction } from '@/lib/shortcuts'
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function buildExcludeRule(
+  kind: 'entirely' | 'host' | 'path' | 'subpath',
+  req: Request,
+): ScopeRule {
+  switch (kind) {
+    case 'entirely':
+      return { enabled: true, pattern_type: 'exact', host: req.host, path: req.path }
+    case 'host':
+      return { enabled: true, pattern_type: 'exact', host: req.host, path: '' }
+    case 'path':
+      // any host, exact path → regex: host .* / path anchored
+      return { enabled: true, pattern_type: 'regex', host: '.*', path: `^${escapeRegex(req.path)}$` }
+    case 'subpath':
+      // exact host, path starts-with current path → regex anchored prefix
+      return {
+        enabled: true,
+        pattern_type: 'regex',
+        host: `^${escapeRegex(req.host)}$`,
+        path: `^${escapeRegex(req.path)}`,
+      }
+  }
+}
 
 type SortColumn = 'id' | 'method' | 'status' | 'host' | 'path' | 'query' | 'size' | 'time'
 type SortDirection = 'asc' | 'desc' | null
@@ -267,8 +294,19 @@ function RequestRow({
   truncateQuery: (query: string, max: number) => string
   truncatePath: (path: string, max: number) => string
 }) {
+  const project = useProxyStore((s) => s.project)
+  const setProject = useProxyStore((s) => s.setProject)
   const [contextMenuOpen, setContextMenuOpen] = useState(false)
   const [contextMenuPosition, setContextMenuPosition] = useState({ x: 0, y: 0 })
+
+  async function addExcludeRule(kind: 'entirely' | 'host' | 'path' | 'subpath') {
+    const scope = project?.scope ?? { enabled: false, include_rules: [], exclude_rules: [] }
+    const rule = buildExcludeRule(kind, req)
+    const updated = await api.project.update({
+      scope: { ...scope, exclude_rules: [...scope.exclude_rules, rule] },
+    })
+    setProject(updated)
+  }
 
   const resp = req.response
 
@@ -348,7 +386,7 @@ function RequestRow({
       {/* Context Menu */}
       {contextMenuOpen && (
         <div
-          className="fixed bg-card border border-border rounded-lg shadow-lg py-1 z-50 min-w-[180px]"
+          className="fixed bg-card border border-border rounded-lg shadow-lg py-1 z-50 min-w-[220px]"
           style={{
             left: `${contextMenuPosition.x}px`,
             top: `${contextMenuPosition.y}px`,
@@ -356,11 +394,7 @@ function RequestRow({
         >
           {inReplay ? (
             <button
-              onClick={(e) => {
-                e.stopPropagation()
-                onRemoveFromReplay()
-                closeContextMenu()
-              }}
+              onClick={(e) => { e.stopPropagation(); onRemoveFromReplay(); closeContextMenu() }}
               className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted transition-colors text-left"
             >
               <Trash2 size={14} />
@@ -368,17 +402,46 @@ function RequestRow({
             </button>
           ) : (
             <button
-              onClick={(e) => {
-                e.stopPropagation()
-                onAddToReplay()
-                closeContextMenu()
-              }}
+              onClick={(e) => { e.stopPropagation(); onAddToReplay(); closeContextMenu() }}
               className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted transition-colors text-left"
             >
               <RotateCcw size={14} />
               Send to Replay
             </button>
           )}
+
+          <div className="my-1 border-t border-border" />
+
+          <div className="px-3 py-1">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Remove from Scope
+            </span>
+          </div>
+
+          {(
+            [
+              { kind: 'entirely', label: 'Remove entirely', desc: 'exact host + exact path' },
+              { kind: 'host',     label: 'Remove host',     desc: 'exact host, any path' },
+              { kind: 'path',     label: 'Remove path',     desc: 'exact path, any host' },
+              { kind: 'subpath',  label: 'Remove sub-path', desc: 'exact host, path + all sub-paths' },
+            ] as const
+          ).map(({ kind, label, desc }) => (
+            <button
+              key={kind}
+              onClick={(e) => {
+                e.stopPropagation()
+                addExcludeRule(kind).catch(console.error)
+                closeContextMenu()
+              }}
+              className="w-full flex items-start gap-2 px-3 py-2 hover:bg-muted transition-colors text-left"
+            >
+              <Target size={14} className="text-muted-foreground mt-0.5 flex-shrink-0" />
+              <div>
+                <div className="text-sm">{label}</div>
+                <div className="text-[11px] text-muted-foreground">{desc}</div>
+              </div>
+            </button>
+          ))}
         </div>
       )}
     </>
