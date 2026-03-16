@@ -4,8 +4,11 @@ import type { Replay } from '@/api/client'
 import { useProxyStore } from '@/store/proxy'
 import { MethodBadge } from '@/components/common/MethodBadge'
 import { StatusBadge } from '@/components/common/StatusBadge'
+import { CodeViewer } from '@/components/common/CodeViewer'
 import { Send, RotateCcw, Trash2, Plus } from 'lucide-react'
 import { subscribeShortcutAction } from '@/lib/shortcuts'
+import { decodeBodyForDisplay, type DecodedBody } from '@/lib/httpBodies'
+import { presentBody } from '@/lib/bodyPresentation'
 
 export function ReplayPanel() {
   const { replayQueue, removeFromReplay, clearReplay } = useProxyStore()
@@ -14,8 +17,11 @@ export function ReplayPanel() {
   const [modifiedBody, setModifiedBody] = useState('')
   const [replay, setReplay] = useState<Replay | null>(null)
   const [loading, setLoading] = useState(false)
+  const [decodedReplayBody, setDecodedReplayBody] = useState<DecodedBody | null>(null)
 
   const selectedReq = replayQueue.find((r) => r.id === selectedReqId)
+  const replayPresentation = decodedReplayBody ? presentBody(decodedReplayBody) : null
+  const replayBodyEmpty = !replayPresentation || replayPresentation.text.trim().length === 0
 
   async function sendReplay() {
     if (!selectedReqId) return
@@ -56,6 +62,21 @@ export function ReplayPanel() {
       }
     })
   }, [selectedReqId, modifiedUrl, modifiedBody])
+
+  useEffect(() => {
+    if (!replay?.response) {
+      setDecodedReplayBody(null)
+      return
+    }
+
+    let cancelled = false
+    decodeBodyForDisplay(replay.response.body, replay.response.headers).then((body) => {
+      if (!cancelled) setDecodedReplayBody(body)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [replay])
 
   return (
     <div className="flex h-full">
@@ -168,12 +189,29 @@ export function ReplayPanel() {
                     <div className="flex items-center gap-2 mb-2">
                       <StatusBadge code={replay.response.status_code} />
                       <span className="text-xs font-mono text-muted-foreground">{replay.response.duration_ms}ms</span>
+                      {decodedReplayBody && (
+                        <span className="text-xs font-mono text-muted-foreground">{decodedReplayBody.contentType}</span>
+                      )}
+                      {replayPresentation && (
+                        <span className="text-xs font-mono text-muted-foreground">{replayPresentation.label}</span>
+                      )}
                     </div>
-                    <pre className="font-mono text-xs bg-background rounded p-3 text-foreground overflow-auto whitespace-pre-wrap break-all">
-                      {replay.response.body
-                        ? new TextDecoder().decode(new Uint8Array(replay.response.body))
-                        : '(empty body)'}
-                    </pre>
+                    {decodedReplayBody?.error && (
+                      <div className="mb-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
+                        {decodedReplayBody.error}
+                      </div>
+                    )}
+                    {replayBodyEmpty ? (
+                      <div className="rounded-xl border border-dashed border-border bg-muted/30 px-4 py-6 text-sm text-muted-foreground">
+                        Empty body
+                      </div>
+                    ) : (
+                      <CodeViewer
+                        value={replayPresentation.text}
+                        language={replayPresentation.language}
+                        maxHeight={360}
+                      />
+                    )}
                   </>
                 ) : (
                   <div className="text-sm text-red-400">{replay.error || 'Error'}</div>

@@ -1,13 +1,9 @@
 import type { Request } from '@/api/client'
 import type { RequestFilters } from '@/store/proxy'
+import { decodeBodyBytes, type RawBody } from '@/lib/httpBodies'
 
-function bytesToText(body: number[] | null | undefined): string {
-  if (!body) return ''
-  try {
-    return new TextDecoder().decode(new Uint8Array(body))
-  } catch {
-    return ''
-  }
+function bytesToText(body: RawBody): string {
+  return decodeBodyBytes(body)
 }
 
 function parseHeaderText(headers: string | undefined): string {

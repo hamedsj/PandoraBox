@@ -3,6 +3,7 @@ const { spawn } = require('child_process')
 const path = require('path')
 const http = require('http')
 const fs = require('fs')
+const zlib = require('zlib')
 
 let mainWindow = null
 let tray = null
@@ -162,6 +163,56 @@ ipcMain.handle('dialog:newFolder', async () => {
     buttonLabel: 'Create Project Here',
   })
   return result.filePath ?? null
+})
+
+ipcMain.handle('body:decode', async (_event, payload) => {
+  const source = Buffer.from(payload.base64, 'base64')
+  const encodings = String(payload.encoding || '')
+    .toLowerCase()
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean)
+
+  try {
+    let decoded = source
+
+    for (const encoding of encodings.reverse()) {
+      if (encoding === 'identity') {
+        continue
+      }
+
+      if (encoding === 'br') {
+        decoded = zlib.brotliDecompressSync(decoded)
+        continue
+      }
+
+      if (encoding === 'gzip' || encoding === 'x-gzip') {
+        decoded = zlib.gunzipSync(decoded)
+        continue
+      }
+
+      if (encoding === 'deflate') {
+        decoded = zlib.inflateSync(decoded)
+        continue
+      }
+
+      if (encoding === 'zstd') {
+        if (typeof zlib.zstdDecompressSync !== 'function') {
+          throw new Error('Zstandard decoding is unavailable in this Electron runtime')
+        }
+        decoded = zlib.zstdDecompressSync(decoded)
+        continue
+      }
+
+      throw new Error(`Unsupported content-encoding: ${encoding}`)
+    }
+
+    return { base64: decoded.toString('base64') }
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : 'Failed to decode body',
+    }
+  }
 })
 
 app.whenReady().then(async () => {

@@ -4,8 +4,11 @@ import { api } from '@/api/client'
 import type { Request } from '@/api/client'
 import { MethodBadge } from '@/components/common/MethodBadge'
 import { StatusBadge } from '@/components/common/StatusBadge'
+import { CodeViewer } from '@/components/common/CodeViewer'
 import { X, Copy } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { decodeBodyBytes, decodeBodyForDisplay, type DecodedBody, type RawBody } from '@/lib/httpBodies'
+import { presentBody } from '@/lib/bodyPresentation'
 
 type Tab = 'request' | 'response'
 
@@ -14,14 +17,38 @@ export function RequestInspector() {
   const [req, setReq] = useState<Request | null>(null)
   const [activeTab, setActiveTab] = useState<Tab>('request')
   const [copiedMsg, setCopiedMsg] = useState('')
+  const [requestBody, setRequestBody] = useState<DecodedBody | null>(null)
+  const [responseBody, setResponseBody] = useState<DecodedBody | null>(null)
 
   useEffect(() => {
     if (!selectedRequestId) {
       setReq(null)
+      setRequestBody(null)
+      setResponseBody(null)
       return
     }
     api.requests.get(selectedRequestId).then(setReq).catch(console.error)
   }, [selectedRequestId])
+
+  useEffect(() => {
+    if (!req) {
+      setRequestBody(null)
+      setResponseBody(null)
+      return
+    }
+
+    let cancelled = false
+    decodeBodyForDisplay(req.body, req.headers).then((body) => {
+      if (!cancelled) setRequestBody(body)
+    })
+    decodeBodyForDisplay(req.response?.body, req.response?.headers).then((body) => {
+      if (!cancelled) setResponseBody(body)
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [req])
 
   if (!req) {
     return (
@@ -33,8 +60,6 @@ export function RequestInspector() {
 
   const headers = tryParseHeaders(req.headers)
   const respHeaders = req.response ? tryParseHeaders(req.response.headers) : {}
-  const bodyText = req.body ? bytesToText(req.body) : ''
-  const respBodyText = req.response?.body ? bytesToText(req.response.body) : ''
 
   function copyRaw() {
     const raw = buildRawRequest(req!)
@@ -94,7 +119,7 @@ export function RequestInspector() {
         {activeTab === 'request' ? (
           <>
             <HeadersPanel headers={headers} />
-            {bodyText && <BodySection title="Body" content={bodyText} />}
+            {requestBody && <BodySection title="Body" body={requestBody} />}
           </>
         ) : req.response ? (
           <>
@@ -104,7 +129,7 @@ export function RequestInspector() {
               <span className="ml-auto text-muted-foreground text-xs">{req.response.duration_ms}ms · {formatBytes(req.response.size_bytes)}</span>
             </div>
             <HeadersPanel headers={respHeaders} />
-            {respBodyText && <BodySection title="Body" content={respBodyText} />}
+            {responseBody && <BodySection title="Body" body={responseBody} />}
           </>
         ) : (
           <div className="text-muted-foreground text-sm">No response</div>
@@ -131,23 +156,57 @@ function HeadersPanel({ headers }: { headers: Record<string, string[]> }) {
   )
 }
 
-function BodySection({ title, content }: { title: string; content: string }) {
+function BodySection({ title, body }: { title: string; body: DecodedBody }) {
+  const presentation = presentBody(body)
+  const isEmpty = presentation.text.trim().length === 0
+
   return (
     <div>
-      <div className="text-xs text-muted-foreground font-medium mb-2 uppercase tracking-wide">{title}</div>
-      <pre className="font-mono text-xs bg-background rounded-md p-3 overflow-auto max-h-80 text-foreground whitespace-pre-wrap break-all">
-        {content}
-      </pre>
+      <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
+        <span className="font-medium uppercase tracking-wide">{title}</span>
+        <span className="rounded-full border border-border px-2 py-0.5 font-mono">
+          {body.contentType}
+        </span>
+        <span className="rounded-full border border-border px-2 py-0.5 font-mono">
+          {presentation.label}
+        </span>
+        {body.wasCompressed && (
+          <span className="rounded-full border border-border px-2 py-0.5 font-mono">
+            decoded {body.encoding || 'compressed'}
+          </span>
+        )}
+        {body.isBinary && (
+          <span className="rounded-full border border-border px-2 py-0.5 font-mono">
+            binary preview
+          </span>
+        )}
+      </div>
+      {body.error && (
+        <div className="mb-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
+          {body.error}
+        </div>
+      )}
+      {presentation.formatted && (
+        <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-primary/80">
+          prettified view
+        </div>
+      )}
+      {isEmpty ? (
+        <div className="rounded-xl border border-dashed border-border bg-muted/30 px-4 py-6 text-sm text-muted-foreground">
+          Empty body
+        </div>
+      ) : (
+        <CodeViewer
+          value={presentation.text}
+          language={presentation.language}
+        />
+      )}
     </div>
   )
 }
 
 function tryParseHeaders(h: string): Record<string, string[]> {
   try { return JSON.parse(h) as Record<string, string[]> } catch { return {} }
-}
-
-function bytesToText(b: number[]): string {
-  try { return new TextDecoder().decode(new Uint8Array(b)) } catch { return '' }
 }
 
 function formatBytes(n: number): string {
@@ -165,6 +224,6 @@ function buildRawRequest(req: Request): string {
     for (const v of vs) raw += `${k}: ${v}\r\n`
   }
   raw += '\r\n'
-  if (req.body) raw += bytesToText(req.body)
+  if (req.body) raw += decodeBodyBytes(req.body as RawBody)
   return raw
 }
