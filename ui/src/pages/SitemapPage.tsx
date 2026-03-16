@@ -4,11 +4,13 @@ import { useRequests } from '@/hooks/useRequests'
 import { useProxyStore } from '@/store/proxy'
 import { FilterModal } from '@/components/history/FilterModal'
 import { RequestInspector } from '@/components/inspector/RequestInspector'
+import { RequestWorkspaceLayout } from '@/components/layout/RequestWorkspaceLayout'
 import { SitemapTree } from '@/components/sitemap/SitemapTree'
 import { buildSitemapTree, collectBranchIds, countUniqueRoutes, getDefaultExpanded } from '@/lib/sitemap'
 import { countActiveFilters, filterRequests } from '@/lib/requestFilters'
 import { cn } from '@/lib/utils'
 import { subscribeShortcutAction } from '@/lib/shortcuts'
+import { useWorkspaceStore } from '@/store/workspace'
 
 function StatCard({
   label,
@@ -33,18 +35,6 @@ function StatCard({
   )
 }
 
-function EmptyInspector() {
-  return (
-    <div className="flex h-full flex-col items-center justify-center rounded-[28px] border border-dashed border-border bg-card/70 px-8 text-center">
-      <Network size={34} className="mb-4 text-primary/70" />
-      <p className="text-base font-medium text-foreground">Select a request from the sitemap</p>
-      <p className="mt-2 max-w-sm text-sm text-muted-foreground">
-        Inspect the captured exchange on the right, then replay or intercept it using the existing workflows.
-      </p>
-    </div>
-  )
-}
-
 export function SitemapPage() {
   useRequests()
 
@@ -53,6 +43,11 @@ export function SitemapPage() {
   const project = useProxyStore((state) => state.project)
   const selectedRequestId = useProxyStore((state) => state.selectedRequestId)
   const setSelectedRequestId = useProxyStore((state) => state.setSelectedRequestId)
+  const inspectorPosition = useWorkspaceStore((state) => state.inspectorPosition)
+  const sitemapRightSplit = useWorkspaceStore((state) => state.sitemapRightSplit)
+  const sitemapBottomSplit = useWorkspaceStore((state) => state.sitemapBottomSplit)
+  const setSitemapRightSplit = useWorkspaceStore((state) => state.setSitemapRightSplit)
+  const setSitemapBottomSplit = useWorkspaceStore((state) => state.setSitemapBottomSplit)
 
   const [filterModalOpen, setFilterModalOpen] = useState(false)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
@@ -64,6 +59,7 @@ export function SitemapPage() {
   const hostCount = tree.length
   const routeCount = useMemo(() => countUniqueRoutes(filteredRequests), [filteredRequests])
   const responseCount = filteredRequests.filter((request) => request.response).length
+  const splitPct = inspectorPosition === 'bottom' ? sitemapBottomSplit : sitemapRightSplit
 
   useEffect(() => {
     const validIds = collectBranchIds(tree)
@@ -177,30 +173,45 @@ export function SitemapPage() {
             <StatCard label="Responses" value={responseCount.toString()} hint="Requests that already have a recorded response" icon={Activity} />
           </section>
 
-          <section className="grid min-h-[720px] gap-5 xl:grid-cols-[minmax(420px,0.95fr)_minmax(480px,1.05fr)]">
-            <div className="overflow-hidden rounded-[30px] border border-border/80 bg-card/80 shadow-[0_20px_60px_rgba(0,0,0,0.12)] backdrop-blur-sm">
-              <div className="flex items-center justify-between border-b border-border/80 px-5 py-4">
-                <div>
-                  <div className="text-sm font-semibold text-foreground">Tree View</div>
+          <section className={cn('min-h-[720px]', inspectorPosition === 'bottom' && 'min-h-[920px]')}>
+            <RequestWorkspaceLayout
+              position={inspectorPosition}
+              splitPct={splitPct}
+              onSplitChange={inspectorPosition === 'bottom' ? setSitemapBottomSplit : setSitemapRightSplit}
+              inspectorVisible={Boolean(selectedRequestId)}
+              className="gap-0"
+              primaryClassName={cn(
+                selectedRequestId && inspectorPosition === 'right' && 'pr-5',
+                selectedRequestId && inspectorPosition === 'bottom' && 'pb-5'
+              )}
+              inspectorClassName={cn(inspectorPosition === 'right' && 'pl-5', inspectorPosition === 'bottom' && 'pt-5')}
+              primary={(
+                <div className="h-full overflow-hidden rounded-[30px] border border-border/80 bg-card/80 shadow-[0_20px_60px_rgba(0,0,0,0.12)] backdrop-blur-sm">
+                  <div className="flex items-center justify-between border-b border-border/80 px-5 py-4">
+                    <div>
+                      <div className="text-sm font-semibold text-foreground">Tree View</div>
+                    </div>
+                    <div className="whitespace-nowrap rounded-full border border-border bg-background px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                      In Scope
+                    </div>
+                  </div>
+                  <div className="h-[calc(100%-77px)] overflow-auto p-4">
+                    <SitemapTree
+                      tree={tree}
+                      expanded={expanded}
+                      selectedRequestId={selectedRequestId}
+                      onToggle={toggleExpanded}
+                      onSelectRequest={setSelectedRequestId}
+                    />
+                  </div>
                 </div>
-                <div className="whitespace-nowrap rounded-full border border-border bg-background px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                  In Scope
+              )}
+              inspector={(
+                <div className="h-full overflow-hidden rounded-[30px] border border-border/80 bg-card/80 shadow-[0_20px_60px_rgba(0,0,0,0.12)] backdrop-blur-sm">
+                  <RequestInspector edge="none" />
                 </div>
-              </div>
-              <div className="h-[calc(100%-77px)] overflow-auto p-4">
-                <SitemapTree
-                  tree={tree}
-                  expanded={expanded}
-                  selectedRequestId={selectedRequestId}
-                  onToggle={toggleExpanded}
-                  onSelectRequest={setSelectedRequestId}
-                />
-              </div>
-            </div>
-
-            <div className="overflow-hidden rounded-[30px] border border-border/80 bg-card/80 shadow-[0_20px_60px_rgba(0,0,0,0.12)] backdrop-blur-sm">
-              {selectedRequestId ? <RequestInspector /> : <EmptyInspector />}
-            </div>
+              )}
+            />
           </section>
         </div>
       </div>

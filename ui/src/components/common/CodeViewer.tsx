@@ -1,5 +1,5 @@
-import Editor, { useMonaco, type BeforeMount } from '@monaco-editor/react'
-import { useEffect } from 'react'
+import Editor, { useMonaco, type BeforeMount, type OnMount } from '@monaco-editor/react'
+import { useEffect, useState } from 'react'
 import { useThemeStore } from '@/store/theme'
 
 interface CodeViewerProps {
@@ -17,6 +17,7 @@ export function CodeViewer({ value, language, maxHeight = 420 }: CodeViewerProps
   const monaco = useMonaco()
   const themeName = mode === 'dark' ? 'pitok-dark' : 'pitok-light'
   const resolvedTypography = getResolvedTypography(fontSize)
+  const [editorHeight, setEditorHeight] = useState<number>(140)
   const applyThemeDefinition = (targetMonaco: Parameters<NonNullable<BeforeMount>>[0]) => {
     targetMonaco.editor.defineTheme(themeName, buildMonacoTheme(mode))
   }
@@ -26,16 +27,31 @@ export function CodeViewer({ value, language, maxHeight = 420 }: CodeViewerProps
     applyThemeDefinition(monaco)
   }, [monaco, themeName, mode, variant, accentColor, fontFamily])
 
-  const lineCount = Math.max(value.split('\n').length, 1)
   const lineHeight = Math.round(resolvedTypography.fontSize * 1.65)
-  const height = Math.min(Math.max(lineCount * lineHeight + 34, 140), maxHeight)
+
+  useEffect(() => {
+    setEditorHeight(140)
+  }, [value, language, resolvedTypography.fontSize])
+
+  const onMount: OnMount = (editor) => {
+    const syncHeight = () => {
+      const nextHeight = Math.max(140, Math.min(editor.getContentHeight() + 2, maxHeight))
+      setEditorHeight(nextHeight)
+      editor.layout({ width: editor.getLayoutInfo().width, height: nextHeight })
+    }
+
+    syncHeight()
+    const disposable = editor.onDidContentSizeChange(syncHeight)
+    return () => disposable.dispose()
+  }
 
   return (
     <div className="overflow-hidden rounded-xl border border-border bg-card/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
       <Editor
         key={`${themeName}-${resolvedTypography.fontFamily}-${resolvedTypography.fontSize}`}
         beforeMount={applyThemeDefinition}
-        height={`${height}px`}
+        onMount={onMount}
+        height={`${editorHeight}px`}
         language={language}
         value={value}
         theme={themeName}
@@ -60,6 +76,7 @@ export function CodeViewer({ value, language, maxHeight = 420 }: CodeViewerProps
           scrollbar: {
             verticalScrollbarSize: 10,
             horizontalScrollbarSize: 10,
+            alwaysConsumeMouseWheel: false,
           },
         }}
       />
