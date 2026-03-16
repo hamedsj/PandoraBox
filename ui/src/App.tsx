@@ -5,6 +5,7 @@ import { InterceptPage } from '@/pages/InterceptPage'
 import { ReplayPage } from '@/pages/ReplayPage'
 import { SettingsPage } from '@/pages/SettingsPage'
 import { ScopePage } from '@/pages/ScopePage'
+import { SitemapPage } from '@/pages/SitemapPage'
 import { ThemeProvider } from '@/components/ThemeProvider'
 
 export default function App() {
@@ -17,6 +18,7 @@ export default function App() {
             <Route path="/history" element={<HistoryPage />} />
             <Route path="/intercept" element={<InterceptPage />} />
             <Route path="/replay" element={<ReplayPage />} />
+            <Route path="/sitemap" element={<SitemapPage />} />
             <Route path="/scope" element={<ScopePage />} />
             <Route path="/settings" element={<SettingsPage />} />
           </Route>

@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 import type { Request } from '@/api/client'
 import { Globe, Filter, RotateCcw, Trash2, ChevronUp, ChevronDown } from 'lucide-react'
 import { FilterModal } from './FilterModal'
+import { countActiveFilters, filterRequests } from '@/lib/requestFilters'
 
 type SortColumn = 'id' | 'method' | 'status' | 'host' | 'path' | 'query' | 'size' | 'time'
 type SortDirection = 'asc' | 'desc' | null
@@ -67,94 +68,10 @@ export function RequestTable() {
     })
   }, [requests, sortColumn, sortDirection])
 
-  // Filter requests
-  const filteredRequests = useMemo(() => {
-    return sortedRequests.filter((req: Request) => {
-      // Method filter
-      if (filters.method && req.method !== filters.method) return false
-
-      // Host filter
-      if (filters.host && !req.host.toLowerCase().includes(filters.host.toLowerCase())) return false
-
-      // File extension filters
-      if (filters.extensionShow || filters.extensionHide) {
-        const pathLower = req.path.toLowerCase().split('?')[0]
-        if (filters.extensionShow) {
-          const ext = '.' + filters.extensionShow.toLowerCase().replace(/^\./, '')
-          if (!pathLower.endsWith(ext)) return false
-        }
-        if (filters.extensionHide) {
-          const ext = '.' + filters.extensionHide.toLowerCase().replace(/^\./, '')
-          if (pathLower.endsWith(ext)) return false
-        }
-      }
-
-      // Status code filter
-      if (filters.statusCodes.length > 0) {
-        const status = req.response?.status_code
-        if (!status) return false
-        const matches = filters.statusCodes.some(code => Math.floor(status / 100) === parseInt(code[0]))
-        if (!matches) return false
-      }
-
-      // Content-Type filters (response headers)
-      if (filters.contentTypeShow || filters.contentTypeHide) {
-        let ct = ''
-        try {
-          const h = req.response ? JSON.parse(req.response.headers ?? '{}') : {}
-          ct = (h['content-type'] || h['Content-Type'] || '').toLowerCase()
-        } catch { /* no response yet */ }
-
-        if (filters.contentTypeShow && !ct.includes(filters.contentTypeShow.toLowerCase())) return false
-        if (filters.contentTypeHide && ct.includes(filters.contentTypeHide.toLowerCase())) return false
-      }
-
-      // Search filter
-      if (filters.search) {
-        const inScope = (field: string) =>
-          filters.searchScope.length === 0 || filters.searchScope.includes(field)
-
-        const checkSearch = (value: string): boolean => {
-          if (filters.useRegex) {
-            try {
-              return new RegExp(filters.search, filters.caseInsensitive ? 'i' : '').test(value)
-            } catch {
-              return false
-            }
-          }
-          const haystack = filters.caseInsensitive ? value.toLowerCase() : value
-          const needle = filters.caseInsensitive ? filters.search.toLowerCase() : filters.search
-          return haystack.includes(needle)
-        }
-
-        const decodeBody = (body: number[] | null): string => {
-          if (!body) return ''
-          try { return new TextDecoder().decode(new Uint8Array(body)) } catch { return '' }
-        }
-
-        let matches = false
-        if (!matches && inScope('host') && checkSearch(req.host)) matches = true
-        if (!matches && inScope('path') && checkSearch(req.path)) matches = true
-        if (!matches && inScope('query') && req.query && checkSearch(req.query)) matches = true
-        if (!matches && inScope('req.headers') && checkSearch(req.headers)) matches = true
-        if (!matches && inScope('req.body')) {
-          const text = decodeBody(req.body)
-          if (text) matches = checkSearch(text)
-        }
-        if (!matches && inScope('res.headers') && req.response?.headers) {
-          matches = checkSearch(req.response.headers)
-        }
-        if (!matches && inScope('res.body')) {
-          const text = decodeBody(req.response?.body ?? null)
-          if (text) matches = checkSearch(text)
-        }
-
-        if (filters.negativeSearch ? matches : !matches) return false
-      }
-
-      return true
-    })
-  }, [sortedRequests, filters])
+  const filteredRequests = useMemo(
+    () => filterRequests(sortedRequests, filters),
+    [sortedRequests, filters]
+  )
 
   function handleSort(column: SortColumn) {
     if (sortColumn === column) {
@@ -181,19 +98,7 @@ export function RequestTable() {
     return sortDirection === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} />
   }
 
-  const activeFilterCount = [
-    filters.search,
-    filters.host,
-    filters.extensionShow,
-    filters.extensionHide,
-    filters.contentTypeShow,
-    filters.contentTypeHide,
-    filters.statusCodes.length > 0,
-    filters.negativeSearch,
-    !filters.caseInsensitive,
-    filters.useRegex,
-    filters.searchScope.length > 0,
-  ].filter(Boolean).length
+  const activeFilterCount = countActiveFilters(filters)
 
   return (
     <div className="flex flex-col h-full">

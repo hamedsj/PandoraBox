@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { Globe, Shield, RotateCcw, Settings, Sun, Moon, Target } from 'lucide-react'
+import { Globe, Shield, RotateCcw, Settings, Sun, Moon, Target, Network } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useProxyStore } from '@/store/proxy'
 import { useThemeStore } from '@/store/theme'
@@ -7,6 +7,7 @@ import { ProjectSwitcher } from './ProjectSwitcher'
 
 const navItems = [
   { to: '/history', label: 'History', icon: Globe },
+  { to: '/sitemap', label: 'SiteMap', icon: Network },
   { to: '/intercept', label: 'Intercept', icon: Shield },
   { to: '/replay', label: 'Replay', icon: RotateCcw },
   { to: '/scope', label: 'Scope', icon: Target },

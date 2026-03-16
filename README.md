@@ -4,7 +4,7 @@ A programmable MITM proxy (inspired by Burp Suite / Caido) with a built-in MCP s
 
 ## Overview
 
-PitokMonitor intercepts, inspects, replays, and modifies HTTP/HTTPS traffic. It ships as a single Go binary (with React UI embedded) wrapped in an Electron desktop application.
+PitokMonitor intercepts, inspects, replays, and modifies HTTP/HTTPS traffic. It also supports named projects, persisted history filters, regex-based search in the History view, and scope rules for include/exclude capture logic. It ships as a single Go binary (with React UI embedded) wrapped in an Electron desktop application.
 
 ### Architecture
 
@@ -133,16 +133,21 @@ PitokMonitor/
 │   │   ├── handler.go   # Routes CONNECT vs plain HTTP
 │   │   ├── mitm.go      # TLS interception, forged certs, HTTP/1.1 tunnel
 │   │   ├── transport.go # HTTP roundtrip: captures req/resp, strips hop-by-hop headers
-│   │   └── intercept.go # Hold/forward/drop queue with decision channels
+│   │   ├── intercept.go # Hold/forward/drop queue with decision channels
+│   │   └── scope.go     # Include/exclude scope matcher for traffic capture
 │   ├── api/             # chi HTTP router
 │   │   ├── server.go    # Router setup, CORS, SPA fallback
 │   │   ├── proxy_ctrl.go # /api/proxy/start|stop|status|config
 │   │   ├── traffic.go   # /api/requests/* (list, get, delete)
 │   │   ├── intercept.go # /api/intercept/* (list, forward, drop, modify)
 │   │   ├── replay.go    # /api/replay/*
+│   │   ├── project.go   # /api/project/* (open, create, update, save-as, recent)
 │   │   ├── ws.go        # WebSocket hub (broadcasts event bus to all clients)
 │   │   ├── static.go    # Serves embedded React UI
 │   │   └── helpers.go   # JSON response helpers
+│   ├── project/         # Project workspaces, persisted app config, scope/filter settings
+│   │   ├── project.go   # project.json loading/saving, temp project, save-as
+│   │   └── appconfig.go # recent projects + last opened project
 │   ├── storage/         # SQLite persistence (modernc.org/sqlite, WAL mode)
 │   │   ├── db.go        # Schema migrations, PRAGMA setup
 │   │   ├── models.go    # Request, Response, Replay, InterceptEntry structs
@@ -156,25 +161,27 @@ PitokMonitor/
 │
 ├── ui/
 │   ├── electron/
-│   │   └── main.cjs     # Electron main process (spawns Go binary, system tray)
+│   │   ├── main.cjs     # Electron main process (spawns Go binary, system tray)
+│   │   └── preload.cjs  # Safe IPC bridge for native folder dialogs
 │   ├── src/
-│   │   ├── App.tsx       # React Router: /history, /intercept, /replay, /settings
+│   │   ├── App.tsx       # React Router: /history, /intercept, /replay, /scope, /settings
 │   │   ├── api/client.ts # Typed fetch wrapper for all /api endpoints
 │   │   ├── hooks/
 │   │   │   ├── useWebSocket.ts  # Auto-reconnecting WebSocket to /ws
 │   │   │   └── useRequests.ts
 │   │   ├── store/
-│   │   │   ├── proxy.ts  # Zustand: requests (max 5000), filters, replay/intercept queues
+│   │   │   ├── proxy.ts  # Zustand: requests, current project, persisted filters, replay/intercept queues
 │   │   │   └── theme.ts  # Zustand+persist: dark/light modes, fonts, accent colors
 │   │   ├── pages/
 │   │   │   ├── HistoryPage.tsx    # Split-pane: RequestTable + RequestInspector
 │   │   │   ├── InterceptPage.tsx  # InterceptPanel (forward/drop/modify)
 │   │   │   ├── ReplayPage.tsx     # ReplayPanel (queue + results)
+│   │   │   ├── ScopePage.tsx      # Scope editor for include/exclude rules
 │   │   │   └── SettingsPage.tsx   # Appearance + CA cert instructions
 │   │   └── components/
-│   │       ├── layout/    # MainLayout, Sidebar
-│   │       ├── history/   # RequestTable (TanStack Table + Virtual), FilterModal
-│   │       ├── inspector/ # RequestInspector (Monaco editor)
+│   │       ├── layout/    # MainLayout, Sidebar, ProjectSwitcher
+│   │       ├── history/   # RequestTable, regex-capable FilterModal
+│   │       ├── inspector/ # RequestInspector
 │   │       ├── intercept/ # InterceptPanel
 │   │       ├── replay/    # ReplayPanel
 │   │       ├── common/    # MethodBadge, StatusBadge
@@ -232,6 +239,12 @@ Base URL: `http://localhost:7777`
 | POST | /api/replay | Queue a replay |
 | GET | /api/replay/{id} | Get replay result |
 | GET | /api/ca/cert | Download CA certificate (PEM) |
+| GET | /api/project | Get current project config |
+| PUT | /api/project | Update project name, proxy, filters, or scope |
+| POST | /api/project/save-as | Save current project into a new folder |
+| GET | /api/project/recent | List recent projects |
+| POST | /api/project/open | Open an existing project folder |
+| POST | /api/project/new | Create and open a new project |
 | GET | /ws | WebSocket connection for real-time events |
 
 ### WebSocket Events
@@ -245,6 +258,7 @@ Events pushed as JSON to all connected clients:
 | `intercept.held` | Held request |
 | `intercept.resolved` | Resolution (forward/drop) |
 | `proxy.status` | Running state change |
+| `project.switched` | Active project changed |
 
 ---
 
@@ -294,9 +308,6 @@ CA files stored at: `~/.pitokmonitor/ca.crt` and `~/.pitokmonitor/ca.key`
 - [ ] HAR export
 - [ ] Keyboard shortcuts
 - [ ] Upstream proxy chaining
-- [ ] Regex search in filter
-- [ ] Projects (named traffic workspaces)
-- [ ] Scope/filter rules (include/exclude hosts)
 - [ ] Request diffing in Replay view
 - [ ] WebSocket traffic support
 - [ ] Body decoding (gzip/br decompression in UI)
