@@ -19,7 +19,7 @@ export default {
         'accent-foreground': 'hsl(var(--accent-foreground))',
       },
       fontFamily: {
-        mono: ['JetBrains Mono', 'Fira Code', 'Cascadia Code', 'monospace'],
+        mono: 'var(--font-mono)',
       },
     },
   },

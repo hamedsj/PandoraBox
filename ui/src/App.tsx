@@ -10,17 +10,15 @@ export default function App() {
   return (
     <ThemeProvider>
       <BrowserRouter>
-        <div className="dark">
-          <Routes>
-            <Route element={<MainLayout />}>
-              <Route index element={<Navigate to="/history" replace />} />
-              <Route path="/history" element={<HistoryPage />} />
-              <Route path="/intercept" element={<InterceptPage />} />
-              <Route path="/replay" element={<ReplayPage />} />
-              <Route path="/settings" element={<SettingsPage />} />
-            </Route>
-          </Routes>
-        </div>
+        <Routes>
+          <Route element={<MainLayout />}>
+            <Route index element={<Navigate to="/history" replace />} />
+            <Route path="/history" element={<HistoryPage />} />
+            <Route path="/intercept" element={<InterceptPage />} />
+            <Route path="/replay" element={<ReplayPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+          </Route>
+        </Routes>
       </BrowserRouter>
     </ThemeProvider>
   )

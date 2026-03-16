@@ -1,191 +1,463 @@
 import { api } from '@/api/client'
-import { useThemeStore } from '@/store/theme'
-import type { FontFamily, FontSize, AccentColor } from '@/store/theme'
-import { Download } from 'lucide-react'
+import { useThemeStore, fontFamilyMap, accentColorMap, getAvailableVariants, darkThemeColors, lightThemeColors, type ThemeMode, type FontFamily, type AccentColor, type ThemeVariant, DarkTheme, LightTheme } from '@/store/theme'
+import { Download, Sun, Moon, Palette, Type, Sliders, Check, Shield, Server, Globe, LayoutDashboard } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useState } from 'react'
 
-const fontFamilyOptions: { value: FontFamily; label: string }[] = [
-  { value: 'system', label: 'System UI' },
-  { value: 'jetbrains', label: 'JetBrains Mono' },
-  { value: 'fira-code', label: 'Fira Code' },
-  { value: 'cascadia', label: 'Cascadia Code' },
-  { value: 'monospace', label: 'Monospace (browser default)' },
+const accentColors: { value: AccentColor; label: string }[] = [
+  { value: 'teal', label: 'Teal' },
+  { value: 'blue', label: 'Blue' },
+  { value: 'purple', label: 'Purple' },
+  { value: 'indigo', label: 'Indigo' },
+  { value: 'pink', label: 'Pink' },
+  { value: 'red', label: 'Red' },
+  { value: 'orange', label: 'Orange' },
+  { value: 'yellow', label: 'Yellow' },
+  { value: 'green', label: 'Green' },
+  { value: 'cyan', label: 'Cyan' },
 ]
 
-const fontSizeOptions: { value: FontSize; label: string }[] = [
-  { value: 'xs', label: '11px (Compact)' },
-  { value: 'sm', label: '12px (Default)' },
-  { value: 'md', label: '13px (Comfortable)' },
-  { value: 'lg', label: '14px (Large)' },
+const fontOptions: { value: FontFamily; label: string; description: string }[] = [
+  { value: 'system', label: 'System UI', description: 'Operating system default font' },
+  { value: 'inter', label: 'Inter', description: 'Clean sans-serif font' },
+  { value: 'source-code', label: 'Source Code Pro', description: 'Optimized for code' },
+  { value: 'jetbrains', label: 'JetBrains Mono', description: 'Popular developer font' },
+  { value: 'fira-code', label: 'Fira Code', description: 'With ligatures support' },
+  { value: 'cascadia', label: 'Cascadia Code', description: 'Microsoft designed' },
+  { value: 'ibm-plex', label: 'IBM Plex Mono', description: 'IBM\'s open source font' },
+  { value: 'roboto-mono', label: 'Roboto Mono', description: 'Google\'s monospace font' },
+  { value: 'monospace', label: 'Monospace', description: 'Browser default monospace' },
 ]
 
-const accentColors: { value: AccentColor; hsl: string; label: string }[] = [
-  { value: 'teal', hsl: '174 72% 46%', label: 'Teal' },
-  { value: 'blue', hsl: '214 84% 56%', label: 'Blue' },
-  { value: 'purple', hsl: '262 83% 64%', label: 'Purple' },
-  { value: 'orange', hsl: '25 95% 53%', label: 'Orange' },
-  { value: 'red', hsl: '0 72% 51%', label: 'Red' },
-  { value: 'green', hsl: '142 71% 45%', label: 'Green' },
-]
+const sampleText = `The quick brown fox jumps over the lazy dog.
+1234567890
+!@#$%^&*()_+-=[]{}|;:,.<>?
+
+// Sample code
+function greet(name) {
+  console.log(\`Hello, \${name}!\`);
+  return true;
+}
+
+const status = {
+  code: 200,
+  message: "OK"
+};`
+
+type SettingsTab = 'appearance' | 'certificate' | 'proxy'
 
 export function SettingsPage() {
-  const { fontFamily, fontSize, accentColor, setFontFamily, setFontSize, setAccentColor } = useThemeStore()
+  const {
+    mode,
+    variant,
+    fontFamily,
+    fontSize,
+    accentColor,
+    setMode,
+    setVariant,
+    setFontFamily,
+    setFontSize,
+    setAccentColor,
+  } = useThemeStore()
+
+  const [activeTab, setActiveTab] = useState<SettingsTab>('appearance')
+  const availableVariants = getAvailableVariants(mode)
+  const [fontSizeValue, setFontSizeValue] = useState(fontSize.toString())
+
+  // Get current theme colors for preview
+  const currentThemeColors = mode === 'dark'
+    ? darkThemeColors[variant as DarkTheme]
+    : lightThemeColors[variant as LightTheme]
+
+  // Update font size on slider change
+  const handleFontSizeChange = (value: string) => {
+    setFontSizeValue(value)
+    setFontSize(parseInt(value, 10))
+  }
 
   return (
-    <div className="p-6 max-w-2xl mx-auto space-y-6 overflow-auto h-full">
+    <div className="p-6 max-w-4xl mx-auto space-y-6 overflow-auto h-full">
       <h1 className="text-lg font-semibold">Settings</h1>
 
-      {/* Appearance */}
-      <section className="bg-card rounded-lg border border-border p-4 space-y-5">
-        <h2 className="text-sm font-medium">Appearance</h2>
+      {/* Tabs */}
+      <div className="flex gap-2 p-1 bg-muted rounded-lg mb-6">
+        <TabButton
+          icon={Palette}
+          label="Appearance"
+          active={activeTab === 'appearance'}
+          onClick={() => setActiveTab('appearance')}
+        />
+        <TabButton
+          icon={Shield}
+          label="Certificate"
+          active={activeTab === 'certificate'}
+          onClick={() => setActiveTab('certificate')}
+        />
+        <TabButton
+          icon={Server}
+          label="Proxy"
+          active={activeTab === 'proxy'}
+          onClick={() => setActiveTab('proxy')}
+        />
+      </div>
 
-        {/* Accent color */}
-        <div>
-          <label className="text-xs text-muted-foreground block mb-2">Accent Color</label>
-          <div className="flex gap-2">
-            {accentColors.map((c) => (
-              <button
-                key={c.value}
-                onClick={() => setAccentColor(c.value)}
-                title={c.label}
-                className={cn(
-                  'w-7 h-7 rounded-full border-2 transition-all',
-                  accentColor === c.value ? 'border-foreground scale-110' : 'border-transparent'
-                )}
-                style={{ backgroundColor: `hsl(${c.hsl})` }}
-              />
-            ))}
+      {/* Appearance Tab */}
+      {activeTab === 'appearance' && (
+        <>
+          {/* Theme Mode & Colors */}
+          <section className="bg-card rounded-lg border border-border p-5 space-y-6">
+            <div className="flex items-center gap-2">
+              <Palette className="w-4 h-4" />
+              <h2 className="text-sm font-medium">Theme</h2>
+            </div>
+
+            {/* Dark/Light Mode Toggle */}
+            <div>
+              <label className="text-xs text-muted-foreground block mb-3">Theme Mode</label>
+              <div className="flex gap-2 p-1 bg-muted rounded-lg">
+                <button
+                  onClick={() => setMode('dark')}
+                  className={cn(
+                    'flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-md text-sm font-medium transition-all',
+                    mode === 'dark'
+                      ? 'bg-background shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  )}
+                >
+                  <Moon className="w-4 h-4" />
+                  Dark
+                </button>
+                <button
+                  onClick={() => setMode('light')}
+                  className={cn(
+                    'flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-md text-sm font-medium transition-all',
+                    mode === 'light'
+                      ? 'bg-background shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  )}
+                >
+                  <Sun className="w-4 h-4" />
+                  Light
+                </button>
+              </div>
+            </div>
+
+            {/* Theme Variants */}
+            <div>
+              <label className="text-xs text-muted-foreground block mb-3">Theme Style</label>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
+                {availableVariants.map((v) => {
+                  const isSelected = variant === v.value
+                  const bgColor = mode === 'dark'
+                    ? darkThemeColors[v.value as DarkTheme]?.background
+                    : lightThemeColors[v.value as LightTheme]?.background
+                  return (
+                    <button
+                      key={v.value}
+                      onClick={() => setVariant(v.value)}
+                      className={cn(
+                        'flex flex-col items-center gap-1.5 p-3 rounded-lg border-2 transition-all group',
+                        isSelected
+                          ? 'border-primary bg-primary/5'
+                          : 'border-border hover:border-muted-foreground/30'
+                      )}
+                    >
+                      <div
+                        className="w-8 h-8 rounded-full ring-2 ring-border"
+                        style={{ backgroundColor: bgColor ? `hsl(${bgColor})` : undefined }}
+                      />
+                      <div className="text-xs font-medium">{v.label}</div>
+                      <div className="text-[10px] text-muted-foreground text-center leading-tight">{v.description}</div>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Accent Colors */}
+            <div>
+              <label className="text-xs text-muted-foreground block mb-3">Accent Color</label>
+              <div className="flex flex-wrap gap-3">
+                {accentColors.map((c) => (
+                  <button
+                    key={c.value}
+                    onClick={() => setAccentColor(c.value)}
+                    title={c.label}
+                    className={cn(
+                      'w-9 h-9 rounded-full border-2 transition-all hover:scale-110 relative',
+                      accentColor === c.value ? 'border-foreground ring-2 ring-offset-2 ring-offset-background ring-foreground/20' : 'border-transparent'
+                    )}
+                    style={{ backgroundColor: `hsl(${accentColorMap[c.value]})` }}
+                  >
+                    {accentColor === c.value && (
+                      <Check className="absolute inset-0 m-auto w-4 h-4 text-white drop-shadow-md" />
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </section>
+
+          {/* Typography */}
+          <section className="bg-card rounded-lg border border-border p-5 space-y-6">
+            <div className="flex items-center gap-2">
+              <Type className="w-4 h-4" />
+              <h2 className="text-sm font-medium">Typography</h2>
+            </div>
+
+            {/* Font Size Slider */}
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <label className="text-xs text-muted-foreground">Font Size</label>
+                <span className="text-xs text-primary font-medium">{fontSize}px</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-muted-foreground">10px</span>
+                <input
+                  type="range"
+                  min="10"
+                  max="20"
+                  step="1"
+                  value={fontSizeValue}
+                  onChange={(e) => handleFontSizeChange(e.target.value)}
+                  className="flex-1 h-2 bg-muted rounded-full appearance-none cursor-pointer outline-none"
+                  style={{
+                    background: `linear-gradient(to right, hsl(${accentColorMap[accentColor]}) 0%, hsl(${accentColorMap[accentColor]}) ${((fontSize - 10) / 10) * 100}%, hsl(var(--border)) ${((fontSize - 10) / 10) * 100}%, hsl(var(--border)) 100%)`,
+                  }}
+                />
+                <span className="text-xs text-muted-foreground">20px</span>
+              </div>
+              <div className="flex justify-between mt-1">
+                {['10', '12', '14', '16', '18', '20'].map((size) => (
+                  <button
+                    key={size}
+                    onClick={() => handleFontSizeChange(size)}
+                    className={cn(
+                      'text-[10px] px-1.5 py-0.5 rounded transition-colors',
+                      fontSize === parseInt(size, 10)
+                        ? 'text-primary font-medium'
+                        : 'text-muted-foreground hover:text-foreground'
+                    )}
+                  >
+                    {size}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Font Family */}
+            <div>
+              <label className="text-xs text-muted-foreground block mb-3">Font Family</label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {fontOptions.map((font) => (
+                  <button
+                    key={font.value}
+                    onClick={() => setFontFamily(font.value)}
+                    className={cn(
+                      'flex flex-col items-start p-3 rounded-lg border-2 text-left transition-all',
+                      fontFamily === font.value
+                        ? 'border-primary bg-primary/5'
+                        : 'border-border hover:border-muted-foreground/30'
+                    )}
+                  >
+                    <div className="font-medium text-sm" style={{ fontFamily: fontFamilyMap[font.value].stack }}>
+                      {font.label}
+                    </div>
+                    <div className="text-[10px] text-muted-foreground mt-0.5">{font.description}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Text Preview */}
+            <div>
+              <label className="text-xs text-muted-foreground block mb-2">Preview</label>
+              <div className="bg-muted/50 rounded-lg p-4 border border-border overflow-hidden">
+                <pre className="whitespace-pre-wrap break-words leading-relaxed" style={{ fontFamily: fontFamilyMap[fontFamily].stack, fontSize: `${fontSize}px` }}>
+                  {sampleText}
+                </pre>
+              </div>
+            </div>
+          </section>
+        </>
+      )}
+
+      {/* Certificate Tab */}
+      {activeTab === 'certificate' && (
+        <section className="bg-card rounded-lg border border-border p-5 space-y-4">
+          <div className="flex items-center gap-2">
+            <Shield className="w-4 h-4" />
+            <h2 className="text-sm font-medium">CA Certificate</h2>
           </div>
-        </div>
-
-        {/* Font family */}
-        <div>
-          <label className="text-xs text-muted-foreground block mb-2">Font Family</label>
-          <select
-            value={fontFamily}
-            onChange={(e) => setFontFamily(e.target.value as FontFamily)}
-            className="w-full text-sm bg-input border border-border rounded-md px-3 py-2 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-          >
-            {fontFamilyOptions.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
-          <p className="text-xs text-muted-foreground mt-1" style={{ fontFamily: fontFamily === 'system' ? 'system-ui' : `var(--font-mono)` }}>
-            Preview: The quick brown fox jumps over the lazy dog
+          <p className="text-sm text-muted-foreground">
+            Install PitokMonitor CA certificate in your browser to intercept HTTPS traffic.
           </p>
-        </div>
 
-        {/* Font size */}
-        <div>
-          <label className="text-xs text-muted-foreground block mb-2">Font Size</label>
-          <div className="flex gap-2 flex-wrap">
-            {fontSizeOptions.map((o) => (
-              <button
-                key={o.value}
-                onClick={() => setFontSize(o.value)}
-                className={cn(
-                  'px-3 py-1.5 rounded-md text-xs border transition-colors',
-                  fontSize === o.value
-                    ? 'bg-primary/20 text-primary border-primary/40'
-                    : 'bg-muted text-muted-foreground border-border hover:text-foreground'
-                )}
-              >
-                {o.label}
-              </button>
-            ))}
+          <div className="flex gap-2">
+            <a
+              href={api.ca.certUrl()}
+              download="pitokmonitor-ca.crt"
+              className="inline-flex items-center gap-2 text-sm px-4 py-2 rounded-md bg-primary/20 text-primary hover:bg-primary/30 transition-colors"
+            >
+              <Download size={14} />
+              Download CA Certificate
+            </a>
           </div>
-        </div>
-      </section>
 
-      {/* CA Certificate */}
-      <section className="bg-card rounded-lg border border-border p-4 space-y-4">
-        <h2 className="text-sm font-medium">CA Certificate</h2>
-        <p className="text-sm text-muted-foreground">
-          Install the PitokMonitor CA certificate in your browser to intercept HTTPS traffic.
-        </p>
+          <div className="bg-amber-500/10 border border-amber-500/30 rounded-md p-3 text-xs text-amber-300 space-y-1">
+            <div className="font-medium">If Chrome still shows "Not Secure" after installing:</div>
+            <ol className="ml-3 space-y-1 list-decimal list-inside">
+              <li>Open Keychain Access → System keychain (not Login)</li>
+              <li>Find "PitokMonitor CA" → double-click</li>
+              <li>Expand "Trust" → set "When using this certificate" to <strong>Always Trust</strong></li>
+              <li>Close &amp; enter your password when prompted</li>
+              <li>Restart Chrome completely (Cmd+Q, not just close window)</li>
+            </ol>
+            <div className="mt-2 font-medium">If cert was generated before today, regenerate it:</div>
+            <code className="block bg-black/30 rounded px-2 py-1 font-mono text-xs mt-1">
+              ./pitokmonitor ca regenerate
+            </code>
+            <div className="text-xs text-muted-foreground mt-1">Then re-download and re-install new cert.</div>
+          </div>
 
-        <div className="flex gap-2">
-          <a
-            href={api.ca.certUrl()}
-            download="pitokmonitor-ca.crt"
-            className="inline-flex items-center gap-2 text-sm px-4 py-2 rounded-md bg-primary/20 text-primary hover:bg-primary/30 transition-colors"
-          >
-            <Download size={14} />
-            Download CA Certificate
-          </a>
-        </div>
+          <div className="space-y-2 text-sm">
+            <div className="font-medium text-muted-foreground text-xs uppercase tracking-wide">Browser Installation</div>
+            <InstallStep
+              title="macOS (Chrome / Edge / Safari)"
+              steps={[
+                'Download the .crt file above',
+                'Double-click it → it opens Keychain Access',
+                'IMPORTANT: Change destination to "System" keychain (not "login")',
+                'Enter your password',
+                'Find "PitokMonitor CA" in System keychain → double-click',
+                'Expand "Trust" → "When using this certificate: Always Trust"',
+                'Restart browser completely',
+              ]}
+            />
+            <InstallStep
+              title="Firefox (all platforms)"
+              steps={[
+                'Settings → Privacy & Security → Certificates → View Certificates',
+                'Authorities tab → Import → select pitokmonitor-ca.crt',
+                'Check "Trust this CA to identify websites"',
+              ]}
+            />
+            <InstallStep
+              title="Windows (Chrome / Edge)"
+              steps={[
+                'Double-click pitokmonitor-ca.crt → Install Certificate',
+                'Select "Local Machine" → Next',
+                'Place in "Trusted Root Certification Authorities"',
+                'Restart browser',
+              ]}
+            />
+            <InstallStep
+              title="Linux (Chrome)"
+              steps={[
+                'chrome://settings/certificates → Authorities → Import',
+                'Select pitokmonitor-ca.crt',
+                'Check "Trust this certificate for identifying websites"',
+              ]}
+            />
+          </div>
+        </section>
+      )}
 
-        <div className="bg-amber-500/10 border border-amber-500/30 rounded-md p-3 text-xs text-amber-300 space-y-1">
-          <div className="font-medium">If Chrome still shows "Not Secure" after installing:</div>
-          <ol className="ml-3 space-y-1 list-decimal list-inside">
-            <li>Open Keychain Access → System keychain (not Login)</li>
-            <li>Find "PitokMonitor CA" → double-click</li>
-            <li>Expand "Trust" → set "When using this certificate" to <strong>Always Trust</strong></li>
-            <li>Close &amp; enter your password when prompted</li>
-            <li>Restart Chrome completely (Cmd+Q, not just close window)</li>
-          </ol>
-          <div className="mt-2 font-medium">If the cert was generated before today, regenerate it:</div>
-          <code className="block bg-black/30 rounded px-2 py-1 font-mono text-xs mt-1">
-            ./pitokmonitor ca regenerate
-          </code>
-          <div className="text-xs text-muted-foreground mt-1">Then re-download and re-install the new cert.</div>
-        </div>
+      {/* Proxy Tab */}
+      {activeTab === 'proxy' && (
+        <section className="bg-card rounded-lg border border-border p-5 space-y-4">
+          <div className="flex items-center gap-2">
+            <Server className="w-4 h-4" />
+            <h2 className="text-sm font-medium">Proxy Configuration</h2>
+          </div>
 
-        <div className="space-y-2 text-sm">
-          <div className="font-medium text-muted-foreground text-xs uppercase tracking-wide">Browser Installation</div>
-          <InstallStep
-            title="macOS (Chrome / Edge / Safari)"
-            steps={[
-              'Download the .crt file above',
-              'Double-click it → it opens Keychain Access',
-              'IMPORTANT: Change destination to "System" keychain (not "login")',
-              'Enter your password',
-              'Find "PitokMonitor CA" in System keychain → double-click',
-              'Expand "Trust" → "When using this certificate: Always Trust"',
-              'Restart the browser completely',
-            ]}
-          />
-          <InstallStep
-            title="Firefox (all platforms)"
-            steps={[
-              'Settings → Privacy & Security → Certificates → View Certificates',
-              'Authorities tab → Import → select pitokmonitor-ca.crt',
-              'Check "Trust this CA to identify websites"',
-            ]}
-          />
-          <InstallStep
-            title="Windows (Chrome / Edge)"
-            steps={[
-              'Double-click pitokmonitor-ca.crt → Install Certificate',
-              'Select "Local Machine" → Next',
-              'Place in "Trusted Root Certification Authorities"',
-              'Restart browser',
-            ]}
-          />
-          <InstallStep
-            title="Linux (Chrome)"
-            steps={[
-              'chrome://settings/certificates → Authorities → Import',
-              'Select pitokmonitor-ca.crt',
-              'Check "Trust this certificate for identifying websites"',
-            ]}
-          />
-        </div>
-      </section>
+          <div className="space-y-4">
+            <div className="bg-muted/50 rounded-lg p-4 border border-border">
+              <div className="flex items-center gap-2 mb-2">
+                <Globe className="w-4 h-4 text-primary" />
+                <div className="text-sm font-medium">HTTP/HTTPS Proxy</div>
+              </div>
+              <p className="text-sm text-muted-foreground mb-3">
+                Configure your browser or system to use this proxy.
+              </p>
+              <div className="flex items-center gap-2">
+                <code className="font-mono text-primary bg-background px-3 py-1.5 rounded-md text-sm">
+                  127.0.0.1:8080
+                </code>
+                <button
+                  onClick={() => navigator.clipboard.writeText('127.0.0.1:8080')}
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                  title="Copy to clipboard"
+                >
+                  Copy
+                </button>
+              </div>
+            </div>
 
-      {/* Proxy config */}
-      <section className="bg-card rounded-lg border border-border p-4 space-y-2">
-        <h2 className="text-sm font-medium">Proxy Configuration</h2>
-        <p className="text-sm text-muted-foreground">
-          Configure your browser or system to use{' '}
-          <code className="font-mono text-primary bg-muted px-1 rounded">127.0.0.1:8080</code> as the HTTP/HTTPS proxy.
-        </p>
-        <p className="text-sm text-muted-foreground">
-          MCP server (SSE) at{' '}
-          <code className="font-mono text-primary bg-muted px-1 rounded">http://localhost:9090/sse</code>
-        </p>
-      </section>
+            <div className="bg-muted/50 rounded-lg p-4 border border-border">
+              <div className="flex items-center gap-2 mb-2">
+                <LayoutDashboard className="w-4 h-4 text-primary" />
+                <div className="text-sm font-medium">MCP Server (AI Integration)</div>
+              </div>
+              <p className="text-sm text-muted-foreground mb-3">
+                Model Context Protocol server for AI/LLM integration.
+              </p>
+              <div className="flex items-center gap-2">
+                <code className="font-mono text-primary bg-background px-3 py-1.5 rounded-md text-sm">
+                  http://localhost:9090/sse
+                </code>
+                <button
+                  onClick={() => navigator.clipboard.writeText('http://localhost:9090/sse')}
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                  title="Copy to clipboard"
+                >
+                  Copy
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-muted/50 rounded-lg p-4 border border-border">
+              <div className="flex items-center gap-2 mb-2">
+                <Server className="w-4 h-4 text-primary" />
+                <div className="text-sm font-medium">Web UI</div>
+              </div>
+              <p className="text-sm text-muted-foreground mb-3">
+                Access the web interface in your browser.
+              </p>
+              <div className="flex items-center gap-2">
+                <code className="font-mono text-primary bg-background px-3 py-1.5 rounded-md text-sm">
+                  http://localhost:7777
+                </code>
+                <button
+                  onClick={() => navigator.clipboard.writeText('http://localhost:7777')}
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                  title="Copy to clipboard"
+                >
+                  Copy
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
     </div>
+  )
+}
+
+function TabButton({ icon: Icon, label, active, onClick }: { icon: any; label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        'flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all',
+        active
+          ? 'bg-background shadow-sm text-foreground'
+          : 'text-muted-foreground hover:text-foreground'
+      )}
+    >
+      <Icon size={16} />
+      {label}
+    </button>
   )
 }
 

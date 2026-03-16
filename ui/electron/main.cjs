@@ -79,7 +79,9 @@ function createWindow() {
 
   mainWindow.loadURL('http://localhost:7777')
 
+  // Maximize on ready to fill screen
   mainWindow.once('ready-to-show', () => {
+    mainWindow.maximize()
     mainWindow.show()
   })
 
