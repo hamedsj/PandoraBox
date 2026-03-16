@@ -8,8 +8,10 @@ interface RequestFilters {
 
   // Modal (staged, applied on confirm)
   host: string
-  pathExtension: string
-  contentType: string
+  extensionShow: string   // only show paths with this extension
+  extensionHide: string   // hide paths with this extension
+  contentTypeShow: string // only show responses with this content-type
+  contentTypeHide: string // hide responses with this content-type
   statusCodes: string[]   // e.g. ['2xx', '4xx'] — empty means all
 
   // Search options
@@ -51,8 +53,10 @@ const defaultFilters: RequestFilters = {
   search: '',
   method: '',
   host: '',
-  pathExtension: '',
-  contentType: '',
+  extensionShow: '',
+  extensionHide: '',
+  contentTypeShow: '',
+  contentTypeHide: '',
   statusCodes: [],
   negativeSearch: false,
   caseInsensitive: true,

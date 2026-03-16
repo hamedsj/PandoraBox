@@ -76,11 +76,17 @@ export function RequestTable() {
       // Host filter
       if (filters.host && !req.host.toLowerCase().includes(filters.host.toLowerCase())) return false
 
-      // Path extension filter
-      if (filters.pathExtension) {
-        const pathLower = req.path.toLowerCase()
-        const extension = '.' + filters.pathExtension.toLowerCase().replace(/^\./, '')
-        if (!pathLower.endsWith(extension)) return false
+      // File extension filters
+      if (filters.extensionShow || filters.extensionHide) {
+        const pathLower = req.path.toLowerCase().split('?')[0]
+        if (filters.extensionShow) {
+          const ext = '.' + filters.extensionShow.toLowerCase().replace(/^\./, '')
+          if (!pathLower.endsWith(ext)) return false
+        }
+        if (filters.extensionHide) {
+          const ext = '.' + filters.extensionHide.toLowerCase().replace(/^\./, '')
+          if (pathLower.endsWith(ext)) return false
+        }
       }
 
       // Status code filter
@@ -91,15 +97,16 @@ export function RequestTable() {
         if (!matches) return false
       }
 
-      // Content-Type filter (checks response headers)
-      if (filters.contentType) {
+      // Content-Type filters (response headers)
+      if (filters.contentTypeShow || filters.contentTypeHide) {
+        let ct = ''
         try {
-          const respHeaders = req.response ? JSON.parse(req.response.headers ?? '{}') : {}
-          const ct: string = respHeaders['content-type'] || respHeaders['Content-Type'] || ''
-          if (!ct.toLowerCase().includes(filters.contentType.toLowerCase())) return false
-        } catch {
-          return false
-        }
+          const h = req.response ? JSON.parse(req.response.headers ?? '{}') : {}
+          ct = (h['content-type'] || h['Content-Type'] || '').toLowerCase()
+        } catch { /* no response yet */ }
+
+        if (filters.contentTypeShow && !ct.includes(filters.contentTypeShow.toLowerCase())) return false
+        if (filters.contentTypeHide && ct.includes(filters.contentTypeHide.toLowerCase())) return false
       }
 
       // Search filter
@@ -176,8 +183,10 @@ export function RequestTable() {
 
   const activeFilterCount = [
     filters.host,
-    filters.pathExtension,
-    filters.contentType,
+    filters.extensionShow,
+    filters.extensionHide,
+    filters.contentTypeShow,
+    filters.contentTypeHide,
     filters.statusCodes.length > 0,
     filters.negativeSearch,
     !filters.caseInsensitive,

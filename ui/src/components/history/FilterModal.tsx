@@ -36,8 +36,10 @@ const CONTENT_TYPE_CHIPS = [
 
 interface LocalFilters {
   host: string
-  pathExtension: string
-  contentType: string
+  extensionShow: string
+  extensionHide: string
+  contentTypeShow: string
+  contentTypeHide: string
   statusCodes: string[]
   negativeSearch: boolean
   caseInsensitive: boolean
@@ -48,8 +50,10 @@ interface LocalFilters {
 function defaultLocal(filters: ReturnType<typeof useProxyStore.getState>['filters']): LocalFilters {
   return {
     host: filters.host,
-    pathExtension: filters.pathExtension,
-    contentType: filters.contentType,
+    extensionShow: filters.extensionShow,
+    extensionHide: filters.extensionHide,
+    contentTypeShow: filters.contentTypeShow,
+    contentTypeHide: filters.contentTypeHide,
     statusCodes: filters.statusCodes,
     negativeSearch: filters.negativeSearch,
     caseInsensitive: filters.caseInsensitive,
@@ -61,8 +65,10 @@ function defaultLocal(filters: ReturnType<typeof useProxyStore.getState>['filter
 function emptyLocal(): LocalFilters {
   return {
     host: '',
-    pathExtension: '',
-    contentType: '',
+    extensionShow: '',
+    extensionHide: '',
+    contentTypeShow: '',
+    contentTypeHide: '',
     statusCodes: [],
     negativeSearch: false,
     caseInsensitive: true,
@@ -133,8 +139,10 @@ export function FilterModal({ isOpen, onClose }: { isOpen: boolean; onClose: () 
 
   const activeCount = [
     local.host,
-    local.pathExtension,
-    local.contentType,
+    local.extensionShow,
+    local.extensionHide,
+    local.contentTypeShow,
+    local.contentTypeHide,
     local.statusCodes.length > 0,
     local.negativeSearch,
     !local.caseInsensitive,
@@ -245,32 +253,56 @@ export function FilterModal({ isOpen, onClose }: { isOpen: boolean; onClose: () 
 
           {/* Content Type */}
           <Section title="Response Content-Type">
-            <div className="flex flex-wrap gap-1.5 mb-2">
+            <div className="flex flex-wrap gap-1.5 mb-3">
               {CONTENT_TYPE_CHIPS.map(({ label, value }) => (
                 <Chip
                   key={label}
                   label={label}
-                  active={local.contentType === value}
-                  onClick={() => patch('contentType', local.contentType === value ? '' : value)}
+                  active={local.contentTypeShow === value}
+                  onClick={() => patch('contentTypeShow', local.contentTypeShow === value ? '' : value)}
                 />
               ))}
             </div>
-            <TextInput
-              placeholder="Custom content-type..."
-              value={local.contentType}
-              onChange={v => patch('contentType', v)}
-              mono
-            />
+            <div className="space-y-2">
+              <LabeledInput
+                label="Only Show"
+                placeholder="e.g. application/json"
+                value={local.contentTypeShow}
+                onChange={v => patch('contentTypeShow', v)}
+                mono
+                intent="show"
+              />
+              <LabeledInput
+                label="Hide"
+                placeholder="e.g. text/css"
+                value={local.contentTypeHide}
+                onChange={v => patch('contentTypeHide', v)}
+                mono
+                intent="hide"
+              />
+            </div>
           </Section>
 
           {/* File Extension */}
           <Section title="File Extension" hint="Matches the path suffix">
-            <TextInput
-              placeholder="e.g. js, php, json (no dot needed)"
-              value={local.pathExtension}
-              onChange={v => patch('pathExtension', v)}
-              mono
-            />
+            <div className="space-y-2">
+              <LabeledInput
+                label="Only Show"
+                placeholder="e.g. php, json"
+                value={local.extensionShow}
+                onChange={v => patch('extensionShow', v)}
+                mono
+                intent="show"
+              />
+              <LabeledInput
+                label="Hide"
+                placeholder="e.g. js, css, png"
+                value={local.extensionHide}
+                onChange={v => patch('extensionHide', v)}
+                mono
+                intent="hide"
+              />
+            </div>
           </Section>
 
         </div>
@@ -420,6 +452,59 @@ function TextInput({
           <X size={13} />
         </button>
       )}
+    </div>
+  )
+}
+
+function LabeledInput({
+  label,
+  placeholder,
+  value,
+  onChange,
+  mono,
+  intent,
+}: {
+  label: string
+  placeholder: string
+  value: string
+  onChange: (v: string) => void
+  mono?: boolean
+  intent: 'show' | 'hide'
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <span
+        className={cn(
+          'text-xs font-medium w-16 flex-shrink-0 text-right',
+          intent === 'show' ? 'text-green-400' : 'text-red-400',
+        )}
+      >
+        {label}
+      </span>
+      <div className="relative flex-1">
+        <input
+          type="text"
+          placeholder={placeholder}
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          className={cn(
+            'w-full px-3 py-1.5 text-sm bg-background border rounded-md',
+            'focus:outline-none focus:ring-1 placeholder:text-muted-foreground',
+            mono && 'font-mono',
+            intent === 'show'
+              ? 'border-green-500/30 focus:ring-green-500/50 focus:border-green-500/50'
+              : 'border-red-500/30 focus:ring-red-500/50 focus:border-red-500/50',
+          )}
+        />
+        {value && (
+          <button
+            onClick={() => onChange('')}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+          >
+            <X size={13} />
+          </button>
+        )}
+      </div>
     </div>
   )
 }
