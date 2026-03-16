@@ -198,7 +198,7 @@ export function FilterModal({ isOpen, onClose }: { isOpen: boolean; onClose: () 
         </div>
 
         {/* Tab content — fixed height, no scroll */}
-        <div className="h-80 p-5">
+        <div className="h-72 p-5">
           {activeTab === 'search' && <SearchTab local={local} patch={patch} toggleBool={toggleBool} toggleArray={toggleArray} />}
           {activeTab === 'request' && <RequestTab local={local} patch={patch} />}
           {activeTab === 'response' && <ResponseTab local={local} patch={patch} toggleArray={toggleArray} />}
@@ -238,8 +238,8 @@ function SearchTab({
   toggleArray: (key: 'statusCodes' | 'searchScope', value: string) => void
 }) {
   return (
-    <div className="flex flex-col gap-5">
-      {/* Search term */}
+    <div className="flex flex-col gap-4">
+      {/* Search term — full width */}
       <div>
         <FieldLabel>Search Term</FieldLabel>
         <TextInput
@@ -249,35 +249,41 @@ function SearchTab({
         />
       </div>
 
-      {/* Scope */}
-      <div>
-        <FieldLabel>Search Scope <span className="font-normal normal-case tracking-normal text-muted-foreground ml-1">— none = all fields</span></FieldLabel>
-        <div className="space-y-2">
-          {SCOPE_GROUPS.map(group => (
-            <div key={group.label} className="flex items-center gap-3">
-              <span className="text-xs text-muted-foreground w-16 text-right flex-shrink-0">{group.label}</span>
-              <div className="flex flex-wrap gap-1.5">
-                {group.options.map(({ value, label }) => (
-                  <Chip
-                    key={value}
-                    label={label}
-                    active={local.searchScope.includes(value)}
-                    onClick={() => toggleArray('searchScope', value)}
-                  />
-                ))}
+      {/* Scope + Options — side by side */}
+      <div className="flex gap-6">
+        {/* Scope */}
+        <div className="flex-1 min-w-0">
+          <FieldLabel>Scope <span className="font-normal normal-case tracking-normal text-muted-foreground">— none = all</span></FieldLabel>
+          <div className="space-y-2">
+            {SCOPE_GROUPS.map(group => (
+              <div key={group.label} className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground w-14 text-right flex-shrink-0">{group.label}</span>
+                <div className="flex flex-wrap gap-1">
+                  {group.options.map(({ value, label }) => (
+                    <Chip
+                      key={value}
+                      label={label}
+                      active={local.searchScope.includes(value)}
+                      onClick={() => toggleArray('searchScope', value)}
+                    />
+                  ))}
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
-      </div>
 
-      {/* Options */}
-      <div>
-        <FieldLabel>Options</FieldLabel>
-        <div className="divide-y divide-border/40">
-          <Toggle label="Case Sensitive"    checked={!local.caseInsensitive} onChange={v => patch('caseInsensitive', !v)} />
-          <Toggle label="Regular Expression" checked={local.useRegex}         onChange={v => patch('useRegex', v)} />
-          <Toggle label="Invert Results"    checked={local.negativeSearch}    onChange={() => toggleBool('negativeSearch')} />
+        {/* Divider */}
+        <div className="w-px bg-border flex-shrink-0" />
+
+        {/* Options */}
+        <div className="w-44 flex-shrink-0">
+          <FieldLabel>Options</FieldLabel>
+          <div className="divide-y divide-border/40">
+            <Toggle label="Case Sensitive"     checked={!local.caseInsensitive} onChange={v => patch('caseInsensitive', !v)} />
+            <Toggle label="Regular Expression"  checked={local.useRegex}         onChange={v => patch('useRegex', v)} />
+            <Toggle label="Invert Results"     checked={local.negativeSearch}    onChange={() => toggleBool('negativeSearch')} />
+          </div>
         </div>
       </div>
     </div>
