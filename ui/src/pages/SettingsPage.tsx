@@ -1,6 +1,9 @@
 import { api } from '@/api/client'
 import { useThemeStore, fontFamilyMap, accentColorMap, getAvailableVariants, darkThemeColors, lightThemeColors, type ThemeMode, type FontFamily, type AccentColor, type ThemeVariant, DarkTheme, LightTheme } from '@/store/theme'
-import { Download, Sun, Moon, Palette, Type, Sliders, Check, Shield, Server, Globe, LayoutDashboard } from 'lucide-react'
+import { useShortcutStore } from '@/store/shortcuts'
+import { shortcutDefinitions, type ShortcutActionId } from '@/shortcuts/actions'
+import { eventToShortcut, formatShortcut } from '@/lib/shortcuts'
+import { Download, Sun, Moon, Palette, Type, Check, Shield, Server, Globe, LayoutDashboard, Keyboard, RotateCcw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useState } from 'react'
 
@@ -44,7 +47,7 @@ const status = {
   message: "OK"
 };`
 
-type SettingsTab = 'appearance' | 'certificate' | 'proxy'
+type SettingsTab = 'appearance' | 'shortcuts' | 'certificate' | 'proxy'
 
 export function SettingsPage() {
   const {
@@ -59,6 +62,11 @@ export function SettingsPage() {
     setFontSize,
     setAccentColor,
   } = useThemeStore()
+  const shortcutEnabled = useShortcutStore((state) => state.enabled)
+  const shortcutBindings = useShortcutStore((state) => state.bindings)
+  const setShortcutEnabled = useShortcutStore((state) => state.setEnabled)
+  const setShortcutBinding = useShortcutStore((state) => state.setBinding)
+  const resetShortcutBindings = useShortcutStore((state) => state.resetBindings)
 
   const [activeTab, setActiveTab] = useState<SettingsTab>('appearance')
   const availableVariants = getAvailableVariants(mode)
@@ -86,6 +94,12 @@ export function SettingsPage() {
           label="Appearance"
           active={activeTab === 'appearance'}
           onClick={() => setActiveTab('appearance')}
+        />
+        <TabButton
+          icon={Keyboard}
+          label="Shortcuts"
+          active={activeTab === 'shortcuts'}
+          onClick={() => setActiveTab('shortcuts')}
         />
         <TabButton
           icon={Shield}
@@ -282,6 +296,82 @@ export function SettingsPage() {
         </>
       )}
 
+      {activeTab === 'shortcuts' && (
+        <section className="space-y-5">
+          <div className="relative overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-[0_18px_60px_rgba(0,0,0,0.14)]">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,hsl(var(--primary)/0.14),transparent_35%)]" />
+            <div className="relative flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+              <div className="max-w-2xl">
+                <div className="flex items-center gap-2">
+                  <Keyboard className="h-4 w-4 text-primary" />
+                  <h2 className="text-sm font-medium">Keyboard Shortcuts</h2>
+                </div>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                  IDE-style shortcuts for navigation and core workflows. Customize each binding below or disable the system entirely.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  onClick={() => setShortcutEnabled(!shortcutEnabled)}
+                  className={cn(
+                    'inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium transition-all',
+                    shortcutEnabled
+                      ? 'border-primary/40 bg-primary/12 text-primary'
+                      : 'border-border bg-background text-muted-foreground hover:text-foreground'
+                  )}
+                >
+                  <Keyboard size={15} />
+                  {shortcutEnabled ? 'Shortcuts Enabled' : 'Shortcuts Disabled'}
+                </button>
+                <button
+                  onClick={resetShortcutBindings}
+                  className="inline-flex items-center gap-2 rounded-xl border border-border bg-background px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+                >
+                  <RotateCcw size={15} />
+                  Reset Defaults
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {(['Navigation', 'Common', 'Intercept', 'Replay'] as const).map((group) => {
+            const items = shortcutDefinitions.filter((definition) => definition.group === group)
+            return (
+              <section key={group} className="rounded-2xl border border-border bg-card p-5">
+                <div className="mb-4 flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-medium text-foreground">{group}</h3>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {group === 'Navigation' && 'Fast movement between core views.'}
+                      {group === 'Common' && 'Context-aware actions shared across request views.'}
+                      {group === 'Intercept' && 'Safe combined-key actions for the intercept workflow.'}
+                      {group === 'Replay' && 'Keyboard actions for replay execution.'}
+                    </p>
+                  </div>
+                  <div className="rounded-full border border-border bg-background px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                    {items.length} actions
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  {items.map((definition) => (
+                    <ShortcutRow
+                      key={definition.id}
+                      actionId={definition.id}
+                      label={definition.label}
+                      description={definition.description}
+                      binding={shortcutBindings[definition.id]}
+                      onChange={setShortcutBinding}
+                    />
+                  ))}
+                </div>
+              </section>
+            )
+          })}
+        </section>
+      )}
+
       {/* Certificate Tab */}
       {activeTab === 'certificate' && (
         <section className="bg-card rounded-lg border border-border p-5 space-y-4">
@@ -458,6 +548,81 @@ function TabButton({ icon: Icon, label, active, onClick }: { icon: any; label: s
       <Icon size={16} />
       {label}
     </button>
+  )
+}
+
+function ShortcutRow({
+  actionId,
+  label,
+  description,
+  binding,
+  onChange,
+}: {
+  actionId: ShortcutActionId
+  label: string
+  description: string
+  binding: string
+  onChange: (actionId: ShortcutActionId, binding: string) => void
+}) {
+  const [capturing, setCapturing] = useState(false)
+
+  function handleKeyDown(event: React.KeyboardEvent<HTMLButtonElement>) {
+    if (!capturing) return
+
+    event.preventDefault()
+    event.stopPropagation()
+
+    if (event.key === 'Escape') {
+      setCapturing(false)
+      return
+    }
+
+    if (event.key === 'Backspace' || event.key === 'Delete') {
+      onChange(actionId, '')
+      setCapturing(false)
+      return
+    }
+
+    const shortcut = eventToShortcut(event.nativeEvent)
+    if (!shortcut) return
+
+    onChange(actionId, shortcut)
+    setCapturing(false)
+  }
+
+  return (
+    <div className="flex flex-col gap-3 rounded-xl border border-border/80 bg-muted/25 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+      <div className="min-w-0">
+        <div className="text-sm font-medium text-foreground">{label}</div>
+        <div className="mt-1 text-xs text-muted-foreground">{description}</div>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          data-shortcut-capture="true"
+          onClick={() => setCapturing((value) => !value)}
+          onKeyDown={handleKeyDown}
+          className={cn(
+            'min-w-40 rounded-xl border px-3 py-2 text-left font-mono text-xs transition-all',
+            capturing
+              ? 'border-primary bg-primary/12 text-primary shadow-[0_0_0_1px_hsl(var(--primary)/0.08)]'
+              : 'border-border bg-background text-foreground hover:bg-muted'
+          )}
+        >
+          {capturing ? 'Press keys...' : binding ? formatShortcut(binding) : 'Unassigned'}
+        </button>
+        {binding && (
+          <button
+            type="button"
+            onClick={() => onChange(actionId, '')}
+            className="rounded-lg border border-border px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            Clear
+          </button>
+        )}
+      </div>
+    </div>
   )
 }
 

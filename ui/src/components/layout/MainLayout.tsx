@@ -1,12 +1,14 @@
 import { Outlet } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { useWebSocket } from '@/hooks/useWebSocket'
+import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { useEffect, useRef } from 'react'
 import { api } from '@/api/client'
 import { useProxyStore } from '@/store/proxy'
 
 export function MainLayout() {
   useWebSocket()
+  useKeyboardShortcuts()
   const setStatus = useProxyStore((s) => s.setStatus)
   const setProject = useProxyStore((s) => s.setProject)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)

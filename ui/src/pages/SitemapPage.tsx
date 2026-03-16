@@ -8,6 +8,7 @@ import { SitemapTree } from '@/components/sitemap/SitemapTree'
 import { buildSitemapTree, collectBranchIds, countUniqueRoutes, getDefaultExpanded } from '@/lib/sitemap'
 import { countActiveFilters, filterRequests } from '@/lib/requestFilters'
 import { cn } from '@/lib/utils'
+import { subscribeShortcutAction } from '@/lib/shortcuts'
 
 function StatCard({
   label,
@@ -85,6 +86,16 @@ export function SitemapPage() {
     const stillVisible = filteredRequests.some((request) => request.id === selectedRequestId)
     if (!stillVisible) setSelectedRequestId(null)
   }, [filteredRequests, selectedRequestId, setSelectedRequestId])
+
+  useEffect(() => {
+    return subscribeShortcutAction((actionId) => {
+      if (actionId === 'common.openFilters') {
+        setFilterModalOpen(true)
+      } else if (actionId === 'common.closeCurrent' || actionId === 'common.escape') {
+        setFilterModalOpen(false)
+      }
+    })
+  }, [])
 
   function toggleExpanded(id: string) {
     setExpanded((current) => {

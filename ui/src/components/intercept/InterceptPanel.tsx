@@ -5,6 +5,7 @@ import { useProxyStore } from '@/store/proxy'
 import { MethodBadge } from '@/components/common/MethodBadge'
 import { Shield, ShieldOff, Check, X, Edit3 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { subscribeShortcutAction } from '@/lib/shortcuts'
 
 export function InterceptPanel() {
   const status = useProxyStore((s) => s.status)
@@ -25,6 +26,61 @@ export function InterceptPanel() {
     const t = setInterval(() => { fetchQueue().catch(console.error) }, 1000)
     return () => clearInterval(t)
   }, [])
+
+  const selected = queue.find((r) => r.id === selectedId)
+
+  useEffect(() => {
+    return subscribeShortcutAction((actionId) => {
+      if (actionId === 'common.closeCurrent' || actionId === 'common.escape') {
+        setSelectedId(null)
+        setEditing(false)
+        return
+      }
+
+      if (actionId === 'intercept.toggleEnabled') {
+        toggleIntercept().catch(console.error)
+        return
+      }
+
+      if (actionId === 'intercept.selectPrev') {
+        if (queue.length === 0) return
+        const currentIndex = queue.findIndex((request) => request.id === selectedId)
+        const nextIndex = currentIndex <= 0 ? 0 : currentIndex - 1
+        const request = queue[nextIndex]
+        if (request) {
+          setSelectedId(request.id)
+          setEditing(false)
+          setEditContent(buildRawRequest(request))
+        }
+        return
+      }
+
+      if (actionId === 'intercept.selectNext') {
+        if (queue.length === 0) return
+        const currentIndex = queue.findIndex((request) => request.id === selectedId)
+        const nextIndex = currentIndex < 0 ? 0 : Math.min(queue.length - 1, currentIndex + 1)
+        const request = queue[nextIndex]
+        if (request) {
+          setSelectedId(request.id)
+          setEditing(false)
+          setEditContent(buildRawRequest(request))
+        }
+        return
+      }
+
+      if (!selected) return
+
+      if (actionId === 'intercept.toggleEditMode') {
+        setEditing((value) => !value)
+      } else if (actionId === 'intercept.forwardSelected') {
+        forward(selected.id).catch(console.error)
+      } else if (actionId === 'intercept.dropSelected') {
+        drop(selected.id).catch(console.error)
+      } else if (actionId === 'intercept.applyAndForward' && editing) {
+        forward(selected.id).catch(console.error)
+      }
+    })
+  }, [editing, queue, selected, selectedId])
 
   async function toggleIntercept() {
     await api.intercept.toggle(!interceptEnabled)
@@ -50,8 +106,6 @@ export function InterceptPanel() {
     setEditing(false)
     await fetchQueue()
   }
-
-  const selected = queue.find((r) => r.id === selectedId)
 
   return (
     <div className="flex h-full">

@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api } from '@/api/client'
 import type { Replay } from '@/api/client'
 import { useProxyStore } from '@/store/proxy'
 import { MethodBadge } from '@/components/common/MethodBadge'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import { Send, RotateCcw, Trash2, Plus } from 'lucide-react'
+import { subscribeShortcutAction } from '@/lib/shortcuts'
 
 export function ReplayPanel() {
   const { replayQueue, removeFromReplay, clearReplay } = useProxyStore()
@@ -41,6 +42,20 @@ export function ReplayPanel() {
     setModifiedUrl('')
     setModifiedBody('')
   }
+
+  useEffect(() => {
+    return subscribeShortcutAction((actionId) => {
+      if (actionId === 'common.closeCurrent' || actionId === 'common.escape') {
+        setSelectedReqId(null)
+        setReplay(null)
+        return
+      }
+
+      if (actionId === 'replay.send' && selectedReqId) {
+        sendReplay().catch(console.error)
+      }
+    })
+  }, [selectedReqId, modifiedUrl, modifiedBody])
 
   return (
     <div className="flex h-full">

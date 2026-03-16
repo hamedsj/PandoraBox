@@ -4,7 +4,7 @@ A programmable MITM proxy (inspired by Burp Suite / Caido) with a built-in MCP s
 
 ## Overview
 
-PitokMonitor intercepts, inspects, replays, and modifies HTTP/HTTPS traffic. It also supports named projects, persisted history filters, regex-based search in the History view, and scope rules for include/exclude capture logic. It ships as a single Go binary (with React UI embedded) wrapped in an Electron desktop application.
+PitokMonitor intercepts, inspects, replays, and modifies HTTP/HTTPS traffic. It also supports named projects, persisted history filters, regex-based search in the History view, scope rules for include/exclude capture logic, and a SiteMap tree for browsing in-scope traffic by host and path. It ships as a single Go binary (with React UI embedded) wrapped in an Electron desktop application.
 
 ### Architecture
 
@@ -164,7 +164,7 @@ PitokMonitor/
 │   │   ├── main.cjs     # Electron main process (spawns Go binary, system tray)
 │   │   └── preload.cjs  # Safe IPC bridge for native folder dialogs
 │   ├── src/
-│   │   ├── App.tsx       # React Router: /history, /intercept, /replay, /scope, /settings
+│   │   ├── App.tsx       # React Router: /intercept, /history, /scope, /sitemap, /replay, /settings
 │   │   ├── api/client.ts # Typed fetch wrapper for all /api endpoints
 │   │   ├── hooks/
 │   │   │   ├── useWebSocket.ts  # Auto-reconnecting WebSocket to /ws
@@ -175,14 +175,16 @@ PitokMonitor/
 │   │   ├── pages/
 │   │   │   ├── HistoryPage.tsx    # Split-pane: RequestTable + RequestInspector
 │   │   │   ├── InterceptPage.tsx  # InterceptPanel (forward/drop/modify)
-│   │   │   ├── ReplayPage.tsx     # ReplayPanel (queue + results)
 │   │   │   ├── ScopePage.tsx      # Scope editor for include/exclude rules
+│   │   │   ├── SitemapPage.tsx    # Tree view of in-scope traffic with shared filters
+│   │   │   ├── ReplayPage.tsx     # ReplayPanel (queue + results)
 │   │   │   └── SettingsPage.tsx   # Appearance + CA cert instructions
 │   │   └── components/
 │   │       ├── layout/    # MainLayout, Sidebar, ProjectSwitcher
 │   │       ├── history/   # RequestTable, regex-capable FilterModal
 │   │       ├── inspector/ # RequestInspector
 │   │       ├── intercept/ # InterceptPanel
+│   │       ├── sitemap/   # SitemapTree
 │   │       ├── replay/    # ReplayPanel
 │   │       ├── common/    # MethodBadge, StatusBadge
 │   │       └── ThemeProvider.tsx  # Injects CSS variables from theme store

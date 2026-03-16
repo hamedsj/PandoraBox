@@ -8,6 +8,7 @@ import type { Request } from '@/api/client'
 import { Globe, Filter, RotateCcw, Trash2, ChevronUp, ChevronDown } from 'lucide-react'
 import { FilterModal } from './FilterModal'
 import { countActiveFilters, filterRequests } from '@/lib/requestFilters'
+import { subscribeShortcutAction } from '@/lib/shortcuts'
 
 type SortColumn = 'id' | 'method' | 'status' | 'host' | 'path' | 'query' | 'size' | 'time'
 type SortDirection = 'asc' | 'desc' | null
@@ -20,6 +21,16 @@ export function RequestTable() {
   const [sortColumn, setSortColumn] = useState<SortColumn>('id')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
   const [filterModalOpen, setFilterModalOpen] = useState(false)
+
+  useEffect(() => {
+    return subscribeShortcutAction((actionId) => {
+      if (actionId === 'common.openFilters') {
+        setFilterModalOpen(true)
+      } else if (actionId === 'common.closeCurrent' || actionId === 'common.escape') {
+        setFilterModalOpen(false)
+      }
+    })
+  }, [])
 
   // Sort requests
   const sortedRequests = useMemo(() => {
