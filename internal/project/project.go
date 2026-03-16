@@ -44,11 +44,12 @@ type FilterConfig struct {
 }
 
 type Config struct {
-	Name      string       `json:"name"`
-	CreatedAt time.Time    `json:"created_at"`
-	Proxy     ProxyConfig  `json:"proxy"`
-	Filters   FilterConfig `json:"filters"`
-	Scope     ScopeConfig  `json:"scope"`
+	Name        string       `json:"name"`
+	CreatedAt   time.Time    `json:"created_at"`
+	Proxy       ProxyConfig  `json:"proxy"`
+	Filters     FilterConfig `json:"filters"`
+	Scope       ScopeConfig  `json:"scope"`
+	MCPDisabled bool         `json:"mcp_disabled"`
 }
 
 type Manager struct {

@@ -35,6 +35,7 @@ export interface ProjectInfo {
   proxy: { port: number; intercept_enabled: boolean }
   filters: FilterConfig
   scope: ScopeConfig
+  mcp_disabled: boolean
 }
 
 export interface RecentProject {
@@ -171,7 +172,7 @@ export const api = {
   },
   project: {
     get: () => get<ProjectInfo>('/project'),
-    update: (body: { name?: string; proxy?: ProjectInfo['proxy']; filters?: FilterConfig; scope?: ScopeConfig }) =>
+    update: (body: { name?: string; proxy?: ProjectInfo['proxy']; filters?: FilterConfig; scope?: ScopeConfig; mcp_disabled?: boolean }) =>
       put<ProjectInfo>('/project', body),
     saveAs: (path: string, name?: string) => post<ProjectInfo>('/project/save-as', { path, name }),
     recent: () => get<RecentProject[]>('/project/recent'),

@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 
@@ -11,12 +12,13 @@ import (
 )
 
 type projectInfoResponse struct {
-	Name    string           `json:"name"`
-	Path    string           `json:"path"`
-	IsTemp  bool             `json:"is_temp"`
-	Proxy   proj.ProxyConfig  `json:"proxy"`
-	Filters proj.FilterConfig `json:"filters"`
-	Scope   proj.ScopeConfig  `json:"scope"`
+	Name        string            `json:"name"`
+	Path        string            `json:"path"`
+	IsTemp      bool              `json:"is_temp"`
+	Proxy       proj.ProxyConfig  `json:"proxy"`
+	Filters     proj.FilterConfig `json:"filters"`
+	Scope       proj.ScopeConfig  `json:"scope"`
+	MCPDisabled bool              `json:"mcp_disabled"`
 }
 
 func (s *Server) getProject(w http.ResponseWriter, r *http.Request) {
@@ -31,12 +33,13 @@ func (s *Server) getProject(w http.ResponseWriter, r *http.Request) {
 
 	cfg := mgr.Config()
 	writeJSON(w, http.StatusOK, projectInfoResponse{
-		Name:    cfg.Name,
-		Path:    mgr.Path(),
-		IsTemp:  mgr.IsTemp(),
-		Proxy:   cfg.Proxy,
-		Filters: cfg.Filters,
-		Scope:   cfg.Scope,
+		Name:        cfg.Name,
+		Path:        mgr.Path(),
+		IsTemp:      mgr.IsTemp(),
+		Proxy:       cfg.Proxy,
+		Filters:     cfg.Filters,
+		Scope:       cfg.Scope,
+		MCPDisabled: cfg.MCPDisabled,
 	})
 }
 
@@ -51,10 +54,11 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		Name    *string             `json:"name"`
-		Proxy   *proj.ProxyConfig   `json:"proxy"`
-		Filters *proj.FilterConfig  `json:"filters"`
-		Scope   *proj.ScopeConfig   `json:"scope"`
+		Name        *string            `json:"name"`
+		Proxy       *proj.ProxyConfig  `json:"proxy"`
+		Filters     *proj.FilterConfig `json:"filters"`
+		Scope       *proj.ScopeConfig  `json:"scope"`
+		MCPDisabled *bool              `json:"mcp_disabled"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -76,6 +80,9 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
 		cfg.Scope = *body.Scope
 		s.proxy.SetScope(cfg.Scope)
 	}
+	if body.MCPDisabled != nil {
+		cfg.MCPDisabled = *body.MCPDisabled
+	}
 
 	if err := mgr.Save(cfg); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -83,12 +90,13 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, projectInfoResponse{
-		Name:    cfg.Name,
-		Path:    mgr.Path(),
-		IsTemp:  mgr.IsTemp(),
-		Proxy:   cfg.Proxy,
-		Filters: cfg.Filters,
-		Scope:   cfg.Scope,
+		Name:        cfg.Name,
+		Path:        mgr.Path(),
+		IsTemp:      mgr.IsTemp(),
+		Proxy:       cfg.Proxy,
+		Filters:     cfg.Filters,
+		Scope:       cfg.Scope,
+		MCPDisabled: cfg.MCPDisabled,
 	})
 }
 
@@ -243,14 +251,13 @@ func (s *Server) newProject(w http.ResponseWriter, r *http.Request) {
 	s.switchProject(mgr, appCfg, w, r)
 }
 
-// switchProject closes the current DB, opens the new one, updates all components,
-// and broadcasts the project.switched event.
-func (s *Server) switchProject(newMgr *proj.Manager, appCfg *proj.AppConfig, w http.ResponseWriter, r *http.Request) {
-	// Open new DB
+// SwitchProject performs a full project switch: opens the new DB, swaps it on all
+// components, updates the project manager, applies proxy config, and broadcasts
+// the project.switched event. Called by HTTP handlers and the MCP server callback.
+func (s *Server) SwitchProject(newMgr *proj.Manager) error {
 	newDB, err := storage.Open(newMgr.DBPath())
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "open db: "+err.Error())
-		return
+		return fmt.Errorf("open db: %w", err)
 	}
 
 	// Swap DB on all components
@@ -269,7 +276,13 @@ func (s *Server) switchProject(newMgr *proj.Manager, appCfg *proj.AppConfig, w h
 	// Update project manager
 	s.projectMu.Lock()
 	s.project = newMgr
+	appCfg := s.appCfg
 	s.projectMu.Unlock()
+
+	// Notify MCP server of new project
+	if s.mcpServer != nil {
+		s.mcpServer.SetProject(newMgr, appCfg)
+	}
 
 	// Apply proxy config from new project
 	cfg := newMgr.Config()
@@ -292,12 +305,24 @@ func (s *Server) switchProject(newMgr *proj.Manager, appCfg *proj.AppConfig, w h
 		},
 	})
 
+	return nil
+}
+
+// switchProject is the HTTP-layer wrapper around SwitchProject.
+func (s *Server) switchProject(newMgr *proj.Manager, appCfg *proj.AppConfig, w http.ResponseWriter, r *http.Request) {
+	if err := s.SwitchProject(newMgr); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	cfg := newMgr.Config()
 	writeJSON(w, http.StatusOK, projectInfoResponse{
-		Name:    cfg.Name,
-		Path:    newMgr.Path(),
-		IsTemp:  newMgr.IsTemp(),
-		Proxy:   cfg.Proxy,
-		Filters: cfg.Filters,
-		Scope:   cfg.Scope,
+		Name:        cfg.Name,
+		Path:        newMgr.Path(),
+		IsTemp:      newMgr.IsTemp(),
+		Proxy:       cfg.Proxy,
+		Filters:     cfg.Filters,
+		Scope:       cfg.Scope,
+		MCPDisabled: cfg.MCPDisabled,
 	})
 }

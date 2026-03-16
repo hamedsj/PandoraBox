@@ -2,9 +2,10 @@ import { api } from '@/api/client'
 import { useThemeStore, fontFamilyMap, accentColorMap, getAvailableVariants, darkThemeColors, lightThemeColors, type ThemeMode, type FontFamily, type AccentColor, type ThemeVariant, DarkTheme, LightTheme } from '@/store/theme'
 import { useShortcutStore } from '@/store/shortcuts'
 import { useReplayStore } from '@/store/replay'
+import { useProxyStore } from '@/store/proxy'
 import { shortcutDefinitions, type ShortcutActionId } from '@/shortcuts/actions'
 import { eventToShortcut, formatShortcut } from '@/lib/shortcuts'
-import { Download, Sun, Moon, Palette, Type, Check, Shield, Server, Globe, LayoutDashboard, Keyboard, RotateCcw } from 'lucide-react'
+import { Download, Sun, Moon, Palette, Type, Check, Shield, Server, Globe, LayoutDashboard, Keyboard, RotateCcw, Bot } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useState } from 'react'
 
@@ -48,7 +49,7 @@ const status = {
   message: "OK"
 };`
 
-type SettingsTab = 'appearance' | 'shortcuts' | 'certificate' | 'proxy'
+type SettingsTab = 'appearance' | 'shortcuts' | 'certificate' | 'proxy' | 'mcp'
 
 export function SettingsPage() {
   const {
@@ -70,8 +71,11 @@ export function SettingsPage() {
   const resetShortcutBindings = useShortcutStore((state) => state.resetBindings)
   const autoContentLength = useReplayStore((state) => state.autoContentLength)
   const setAutoContentLength = useReplayStore((state) => state.setAutoContentLength)
+  const project = useProxyStore((state) => state.project)
+  const setProject = useProxyStore((state) => state.setProject)
 
   const [activeTab, setActiveTab] = useState<SettingsTab>('appearance')
+  const [mcpTogglePending, setMcpTogglePending] = useState(false)
   const availableVariants = getAvailableVariants(mode)
   const [fontSizeValue, setFontSizeValue] = useState(fontSize.toString())
 
@@ -115,6 +119,12 @@ export function SettingsPage() {
           label="Proxy"
           active={activeTab === 'proxy'}
           onClick={() => setActiveTab('proxy')}
+        />
+        <TabButton
+          icon={Bot}
+          label="MCP"
+          active={activeTab === 'mcp'}
+          onClick={() => setActiveTab('mcp')}
         />
       </div>
 
@@ -490,28 +500,6 @@ export function SettingsPage() {
 
             <div className="bg-muted/50 rounded-lg p-4 border border-border">
               <div className="flex items-center gap-2 mb-2">
-                <LayoutDashboard className="w-4 h-4 text-primary" />
-                <div className="text-sm font-medium">MCP Server (AI Integration)</div>
-              </div>
-              <p className="text-sm text-muted-foreground mb-3">
-                Model Context Protocol server for AI/LLM integration.
-              </p>
-              <div className="flex items-center gap-2">
-                <code className="font-mono text-primary bg-background px-3 py-1.5 rounded-md text-sm">
-                  http://localhost:9090/sse
-                </code>
-                <button
-                  onClick={() => navigator.clipboard.writeText('http://localhost:9090/sse')}
-                  className="text-xs text-muted-foreground hover:text-foreground"
-                  title="Copy to clipboard"
-                >
-                  Copy
-                </button>
-              </div>
-            </div>
-
-            <div className="bg-muted/50 rounded-lg p-4 border border-border">
-              <div className="flex items-center gap-2 mb-2">
                 <Server className="w-4 h-4 text-primary" />
                 <div className="text-sm font-medium">Web UI</div>
               </div>
@@ -550,6 +538,102 @@ export function SettingsPage() {
                   )}
                 >
                   {autoContentLength ? 'Auto Content-Length On' : 'Auto Content-Length Off'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* MCP Tab */}
+      {activeTab === 'mcp' && (
+        <section className="bg-card rounded-lg border border-border p-5 space-y-4">
+          <div className="flex items-center gap-2">
+            <Bot className="w-4 h-4" />
+            <h2 className="text-sm font-medium">Claude / MCP Integration</h2>
+          </div>
+
+          <div className="space-y-4">
+            {/* Enable toggle */}
+            <div className="bg-muted/50 rounded-lg p-4 border border-border">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <div className="text-sm font-medium">Enable MCP Access</div>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    When disabled, Claude cannot read or control this project via MCP tools.
+                  </p>
+                </div>
+                <button
+                  disabled={mcpTogglePending || !project}
+                  onClick={async () => {
+                    if (!project) return
+                    const next = !project.mcp_disabled
+                    setMcpTogglePending(true)
+                    try {
+                      const updated = await api.project.update({ mcp_disabled: next })
+                      setProject(updated)
+                    } finally {
+                      setMcpTogglePending(false)
+                    }
+                  }}
+                  className={cn(
+                    'inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium transition-all',
+                    mcpTogglePending && 'opacity-50 cursor-not-allowed',
+                    !project?.mcp_disabled
+                      ? 'border-primary/40 bg-primary/12 text-primary'
+                      : 'border-border bg-background text-muted-foreground hover:text-foreground'
+                  )}
+                >
+                  {mcpTogglePending ? 'Saving...' : !project?.mcp_disabled ? 'MCP Enabled' : 'MCP Disabled'}
+                </button>
+              </div>
+            </div>
+
+            {/* SSE endpoint */}
+            <div className="bg-muted/50 rounded-lg p-4 border border-border">
+              <div className="flex items-center gap-2 mb-2">
+                <LayoutDashboard className="w-4 h-4 text-primary" />
+                <div className="text-sm font-medium">SSE Endpoint</div>
+              </div>
+              <p className="text-sm text-muted-foreground mb-3">
+                Connect Claude Desktop or any MCP client to this URL.
+              </p>
+              <div className="flex items-center gap-2">
+                <code className="font-mono text-primary bg-background px-3 py-1.5 rounded-md text-sm">
+                  http://localhost:9090/sse
+                </code>
+                <button
+                  onClick={() => navigator.clipboard.writeText('http://localhost:9090/sse')}
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                  title="Copy to clipboard"
+                >
+                  Copy
+                </button>
+              </div>
+            </div>
+
+            {/* Claude Desktop config snippet */}
+            <div className="bg-muted/50 rounded-lg p-4 border border-border space-y-2">
+              <div className="text-sm font-medium">Claude Desktop Config</div>
+              <p className="text-xs text-muted-foreground">
+                Add this to your <code className="font-mono">claude_desktop_config.json</code> to connect Claude Desktop.
+              </p>
+              <div className="relative">
+                <pre className="bg-background rounded-md border border-border p-3 text-xs font-mono text-foreground overflow-x-auto leading-relaxed">
+{`{
+  "mcpServers": {
+    "pitokmonitor": {
+      "url": "http://localhost:9090/sse"
+    }
+  }
+}`}
+                </pre>
+                <button
+                  onClick={() => navigator.clipboard.writeText('{\n  "mcpServers": {\n    "pitokmonitor": {\n      "url": "http://localhost:9090/sse"\n    }\n  }\n}')}
+                  className="absolute top-2 right-2 text-xs text-muted-foreground hover:text-foreground"
+                  title="Copy to clipboard"
+                >
+                  Copy
                 </button>
               </div>
             </div>

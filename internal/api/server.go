@@ -25,7 +25,10 @@ type Server struct {
 	ca        *ca.CA
 	hub       *Hub
 	uiFS      fs.FS
-	mcpServer interface{ SetDB(*storage.DB) }
+	mcpServer interface {
+		SetDB(*storage.DB)
+		SetProject(*project.Manager, *project.AppConfig)
+	}
 
 	projectMu sync.RWMutex
 	project   *project.Manager
@@ -51,7 +54,10 @@ func (s *Server) SetProject(mgr *project.Manager, appCfg *project.AppConfig) {
 	s.projectMu.Unlock()
 }
 
-func (s *Server) SetMCPServer(mcp interface{ SetDB(*storage.DB) }) {
+func (s *Server) SetMCPServer(mcp interface {
+	SetDB(*storage.DB)
+	SetProject(*project.Manager, *project.AppConfig)
+}) {
 	s.mcpServer = mcp
 }
 

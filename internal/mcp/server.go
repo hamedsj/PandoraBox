@@ -8,6 +8,7 @@ import (
 
 	"github.com/hamedsj5/pitokmonitor/internal/ca"
 	"github.com/hamedsj5/pitokmonitor/internal/config"
+	proj "github.com/hamedsj5/pitokmonitor/internal/project"
 	"github.com/hamedsj5/pitokmonitor/internal/proxy"
 	"github.com/hamedsj5/pitokmonitor/internal/storage"
 	"github.com/mark3labs/mcp-go/server"
@@ -21,6 +22,11 @@ type Server struct {
 	intercept *proxy.InterceptQueue
 	ca        *ca.CA
 	mcp       *server.MCPServer
+
+	projectMu       sync.RWMutex
+	project         *proj.Manager
+	appCfg          *proj.AppConfig
+	onSwitchProject func(*proj.Manager) error
 }
 
 func (s *Server) getDB() *storage.DB {
@@ -33,6 +39,39 @@ func (s *Server) SetDB(db *storage.DB) {
 	s.dbMu.Lock()
 	s.db = db
 	s.dbMu.Unlock()
+}
+
+func (s *Server) SetProject(mgr *proj.Manager, appCfg *proj.AppConfig) {
+	s.projectMu.Lock()
+	s.project = mgr
+	s.appCfg = appCfg
+	s.projectMu.Unlock()
+}
+
+func (s *Server) getProject() *proj.Manager {
+	s.projectMu.RLock()
+	defer s.projectMu.RUnlock()
+	return s.project
+}
+
+func (s *Server) getAppCfg() *proj.AppConfig {
+	s.projectMu.RLock()
+	defer s.projectMu.RUnlock()
+	return s.appCfg
+}
+
+func (s *Server) SetSwitchProjectFn(fn func(*proj.Manager) error) {
+	s.projectMu.Lock()
+	s.onSwitchProject = fn
+	s.projectMu.Unlock()
+}
+
+func (s *Server) mcpEnabled() bool {
+	p := s.getProject()
+	if p == nil {
+		return true
+	}
+	return !p.Config().MCPDisabled
 }
 
 func NewServer(cfg *config.Config, db *storage.DB, p *proxy.Proxy, intercept *proxy.InterceptQueue, authority *ca.CA) *Server {
