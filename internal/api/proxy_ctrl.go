@@ -26,7 +26,7 @@ func (s *Server) proxyStop(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) proxyStatus(w http.ResponseWriter, r *http.Request) {
-	count, _ := s.db.CountRequests()
+	count, _ := s.getDB().CountRequests()
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"running":           s.proxy.IsRunning(),
 		"port":              s.cfg.ProxyPort,

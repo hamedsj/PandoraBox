@@ -36,7 +36,7 @@ func (s *Server) getReplay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	replay, err := s.db.GetReplay(id)
+	replay, err := s.getDB().GetReplay(id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

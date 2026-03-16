@@ -14,7 +14,7 @@ func (s *Server) interceptQueue(w http.ResponseWriter, r *http.Request) {
 	ids := s.intercept.ListPending()
 	requests := make([]interface{}, 0, len(ids))
 	for _, id := range ids {
-		req, err := s.db.GetRequest(id)
+		req, err := s.getDB().GetRequest(id)
 		if err == nil && req != nil {
 			requests = append(requests, req)
 		}

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Tray, Menu, nativeImage, shell } = require('electron')
+const { app, BrowserWindow, Tray, Menu, nativeImage, shell, ipcMain, dialog } = require('electron')
 const { spawn } = require('child_process')
 const path = require('path')
 const http = require('http')
@@ -73,6 +73,7 @@ function createWindow() {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      preload: path.join(__dirname, 'preload.cjs'),
     },
     show: false,
   })
@@ -148,6 +149,20 @@ function createTray() {
     }
   })
 }
+
+// IPC handlers for native folder dialogs
+ipcMain.handle('dialog:openFolder', async () => {
+  const result = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] })
+  return result.filePaths[0] ?? null
+})
+
+ipcMain.handle('dialog:newFolder', async () => {
+  const result = await dialog.showSaveDialog({
+    properties: ['createDirectory'],
+    buttonLabel: 'Create Project Here',
+  })
+  return result.filePath ?? null
+})
 
 app.whenReady().then(async () => {
   startBackend()

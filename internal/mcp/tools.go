@@ -93,7 +93,7 @@ func (s *Server) registerTools() {
 }
 
 func (s *Server) toolProxyStatus(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	count, _ := s.db.CountRequests()
+	count, _ := s.getDB().CountRequests()
 	result := map[string]interface{}{
 		"running":           s.proxy.IsRunning(),
 		"port":              s.cfg.ProxyPort,
@@ -144,7 +144,7 @@ func (s *Server) toolListRequests(ctx context.Context, req mcp.CallToolRequest) 
 		filter.StatusMax = int(v)
 	}
 
-	requests, total, err := s.db.ListRequests(filter)
+	requests, total, err := s.getDB().ListRequests(filter)
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +161,7 @@ func (s *Server) toolGetRequest(ctx context.Context, req mcp.CallToolRequest) (*
 		return nil, fmt.Errorf("id required")
 	}
 
-	r, err := s.db.GetRequest(int64(id))
+	r, err := s.getDB().GetRequest(int64(id))
 	if err != nil {
 		return nil, err
 	}
@@ -255,7 +255,7 @@ func (s *Server) toolSearchRequests(ctx context.Context, req mcp.CallToolRequest
 		limit = int(v)
 	}
 
-	requests, total, err := s.db.ListRequests(storage.RequestFilter{
+	requests, total, err := s.getDB().ListRequests(storage.RequestFilter{
 		Search: query,
 		Limit:  limit,
 	})

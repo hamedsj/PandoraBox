@@ -25,7 +25,7 @@ func (s *Server) listRequests(w http.ResponseWriter, r *http.Request) {
 		Offset:    offset,
 	}
 
-	requests, total, err := s.db.ListRequests(filter)
+	requests, total, err := s.getDB().ListRequests(filter)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -44,7 +44,7 @@ func (s *Server) getRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	req, err := s.db.GetRequest(id)
+	req, err := s.getDB().GetRequest(id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -64,7 +64,7 @@ func (s *Server) deleteRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.db.DeleteRequest(id); err != nil {
+	if err := s.getDB().DeleteRequest(id); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

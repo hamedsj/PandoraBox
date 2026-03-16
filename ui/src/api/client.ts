@@ -1,8 +1,50 @@
 const BASE = '/api'
 
+export interface FilterConfig {
+  search: string
+  method: string
+  host: string
+  extensionShow: string
+  extensionHide: string
+  contentTypeShow: string
+  contentTypeHide: string
+  statusCodes: string[]
+  negativeSearch: boolean
+  caseInsensitive: boolean
+  useRegex: boolean
+  searchScope: string[]
+}
+
+export interface ScopeRule {
+  enabled: boolean
+  pattern_type: 'exact' | 'contains' | 'wildcard' | 'regex'
+  host: string
+  path: string
+}
+
+export interface ScopeConfig {
+  enabled: boolean
+  include_rules: ScopeRule[]
+  exclude_rules: ScopeRule[]
+}
+
+export interface ProjectInfo {
+  name: string
+  path: string
+  is_temp: boolean
+  proxy: { port: number; intercept_enabled: boolean }
+  filters: FilterConfig
+  scope: ScopeConfig
+}
+
+export interface RecentProject {
+  path: string
+  name: string
+  exists: boolean
+}
+
 export interface Request {
   id: number
-  project_id: number
   method: string
   scheme: string
   host: string
@@ -123,5 +165,14 @@ export const api = {
   },
   ca: {
     certUrl: () => BASE + '/ca/cert',
+  },
+  project: {
+    get: () => get<ProjectInfo>('/project'),
+    update: (body: { name?: string; proxy?: ProjectInfo['proxy']; filters?: FilterConfig; scope?: ScopeConfig }) =>
+      put<ProjectInfo>('/project', body),
+    saveAs: (path: string, name?: string) => post<ProjectInfo>('/project/save-as', { path, name }),
+    recent: () => get<RecentProject[]>('/project/recent'),
+    open: (path: string) => post<ProjectInfo>('/project/open', { path }),
+    new: (path: string, name: string) => post<ProjectInfo>('/project/new', { path, name }),
   },
 }

@@ -12,6 +12,7 @@ const (
 	EventInterceptHeld     EventType = "intercept.held"
 	EventInterceptResolved EventType = "intercept.resolved"
 	EventProxyStatus       EventType = "proxy.status"
+	EventProjectSwitched   EventType = "project.switched"
 )
 
 type Event struct {

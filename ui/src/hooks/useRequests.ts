@@ -6,8 +6,10 @@ export function useRequests() {
   const { filters, setRequests } = useProxyStore()
 
   useEffect(() => {
-    const params: Record<string, string | number> = { limit: 200 }
-    if (filters.search) params.search = filters.search
+    const params: Record<string, string | number> = {
+      limit: filters.useRegex ? 2000 : 200,
+    }
+    if (filters.search && !filters.useRegex) params.search = filters.search
     if (filters.host) params.host = filters.host
     if (filters.method) params.method = filters.method
 

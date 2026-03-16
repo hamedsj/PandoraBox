@@ -18,13 +18,10 @@ type RequestFilter struct {
 }
 
 func (db *DB) SaveRequest(r *Request) (int64, error) {
-	if r.ProjectID == 0 {
-		r.ProjectID = 1
-	}
 	res, err := db.Exec(
-		`INSERT INTO requests (project_id, method, scheme, host, path, query, headers, body, raw, tags)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		r.ProjectID, r.Method, r.Scheme, r.Host, r.Path, r.Query,
+		`INSERT INTO requests (method, scheme, host, path, query, headers, body, raw, tags)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		r.Method, r.Scheme, r.Host, r.Path, r.Query,
 		r.Headers, r.Body, r.Raw, r.Tags,
 	)
 	if err != nil {
@@ -49,9 +46,9 @@ func (db *DB) SaveResponse(resp *Response) (int64, error) {
 func (db *DB) GetRequest(id int64) (*Request, error) {
 	r := &Request{}
 	err := db.QueryRow(
-		`SELECT id, project_id, method, scheme, host, path, query, headers, body, raw, timestamp, tags
+		`SELECT id, method, scheme, host, path, query, headers, body, raw, timestamp, tags
 		 FROM requests WHERE id = ?`, id,
-	).Scan(&r.ID, &r.ProjectID, &r.Method, &r.Scheme, &r.Host, &r.Path,
+	).Scan(&r.ID, &r.Method, &r.Scheme, &r.Host, &r.Path,
 		&r.Query, &r.Headers, &r.Body, &r.Raw, &r.Timestamp, &r.Tags)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -129,7 +126,7 @@ func (db *DB) ListRequests(f RequestFilter) ([]*Request, int, error) {
 	}
 
 	query := fmt.Sprintf(`
-		SELECT r.id, r.project_id, r.method, r.scheme, r.host, r.path, r.query,
+		SELECT r.id, r.method, r.scheme, r.host, r.path, r.query,
 		       r.headers, r.body, r.timestamp, r.tags,
 		       resp.id, resp.status_code, resp.status_text, resp.duration_ms, resp.size_bytes
 		FROM requests r
@@ -156,7 +153,7 @@ func (db *DB) ListRequests(f RequestFilter) ([]*Request, int, error) {
 		var ts string
 
 		err := rows.Scan(
-			&r.ID, &r.ProjectID, &r.Method, &r.Scheme, &r.Host, &r.Path, &r.Query,
+			&r.ID, &r.Method, &r.Scheme, &r.Host, &r.Path, &r.Query,
 			&r.Headers, &r.Body, &ts, &r.Tags,
 			&respID, &statusCode, &statusText, &durationMs, &sizeBytes,
 		)

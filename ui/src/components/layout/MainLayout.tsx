@@ -1,14 +1,23 @@
 import { Outlet } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { useWebSocket } from '@/hooks/useWebSocket'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { api } from '@/api/client'
 import { useProxyStore } from '@/store/proxy'
 
 export function MainLayout() {
   useWebSocket()
   const setStatus = useProxyStore((s) => s.setStatus)
+  const setProject = useProxyStore((s) => s.setProject)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const filtersRef = useRef(useProxyStore.getState().filters)
 
+  // Load project on mount
+  useEffect(() => {
+    api.project.get().then(setProject).catch(console.error)
+  }, [setProject])
+
+  // Poll proxy status
   useEffect(() => {
     api.proxy.status().then(setStatus).catch(console.error)
     const t = setInterval(() => {
@@ -16,6 +25,23 @@ export function MainLayout() {
     }, 5000)
     return () => clearInterval(t)
   }, [setStatus])
+
+  // Debounce filter changes → save to project.json
+  useEffect(() => {
+    const unsub = useProxyStore.subscribe((state) => {
+      const f = state.filters
+      if (f === filtersRef.current) return
+      filtersRef.current = f
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+      debounceRef.current = setTimeout(() => {
+        api.project.update({ filters: f }).catch(console.error)
+      }, 500)
+    })
+    return () => {
+      unsub()
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+    }
+  }, [])
 
   return (
     <div className="flex h-screen bg-background text-foreground overflow-hidden">

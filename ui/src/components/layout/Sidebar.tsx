@@ -1,13 +1,15 @@
 import { NavLink } from 'react-router-dom'
-import { Globe, Shield, RotateCcw, Settings, Sun, Moon } from 'lucide-react'
+import { Globe, Shield, RotateCcw, Settings, Sun, Moon, Target } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useProxyStore } from '@/store/proxy'
 import { useThemeStore } from '@/store/theme'
+import { ProjectSwitcher } from './ProjectSwitcher'
 
 const navItems = [
   { to: '/history', label: 'History', icon: Globe },
   { to: '/intercept', label: 'Intercept', icon: Shield },
   { to: '/replay', label: 'Replay', icon: RotateCcw },
+  { to: '/scope', label: 'Scope', icon: Target },
   { to: '/settings', label: 'Settings', icon: Settings },
 ]
 
@@ -18,12 +20,15 @@ export function Sidebar() {
   return (
     <aside className="w-56 flex flex-col py-3 border-r border-border bg-card gap-1">
       {/* Logo */}
-      <div className="px-4 mb-4">
+      <div className="px-4 mb-2">
         <div className="flex items-center gap-3 bg-primary/20 rounded-lg p-3">
           <span className="text-primary text-lg font-bold font-mono">P</span>
           <span className="text-foreground font-semibold">PitokMonitor</span>
         </div>
       </div>
+
+      {/* Project Switcher */}
+      <ProjectSwitcher />
 
       {/* Navigation */}
       <nav className="flex-1 px-3 space-y-1">
