@@ -11,20 +11,24 @@ import (
 	"github.com/hamedsj5/pitokmonitor/internal/ca"
 	"github.com/hamedsj5/pitokmonitor/internal/config"
 	"github.com/hamedsj5/pitokmonitor/internal/events"
+	proj "github.com/hamedsj5/pitokmonitor/internal/project"
 	"github.com/hamedsj5/pitokmonitor/internal/storage"
 )
 
 type Proxy struct {
 	cfg       *config.Config
-	db        *storage.DB
 	ca        *ca.CA
 	certCache *ca.CertCache
 	bus       *events.Bus
 	intercept *InterceptQueue
+	scope     *ScopeChecker
 
 	mu       sync.Mutex
 	running  bool
 	listener net.Listener
+
+	dbMu sync.RWMutex
+	db   *storage.DB
 
 	requestCount atomic.Int64
 }
@@ -37,7 +41,29 @@ func New(cfg *config.Config, db *storage.DB, authority *ca.CA, bus *events.Bus, 
 		certCache: ca.NewCertCache(authority),
 		bus:       bus,
 		intercept: intercept,
+		scope:     &ScopeChecker{},
 	}
+}
+
+func (p *Proxy) SetScope(cfg proj.ScopeConfig) {
+	p.scope.SetConfig(cfg)
+}
+
+func (p *Proxy) getDB() *storage.DB {
+	p.dbMu.RLock()
+	defer p.dbMu.RUnlock()
+	return p.db
+}
+
+func (p *Proxy) SetDB(db *storage.DB) {
+	p.dbMu.Lock()
+	p.db = db
+	p.dbMu.Unlock()
+}
+
+func (p *Proxy) ApplyConfig(port int, interceptEnabled bool) {
+	p.intercept.SetEnabled(interceptEnabled)
+	// Port changes require a proxy restart; port is noted but not applied live.
 }
 
 func (p *Proxy) Start(ctx context.Context) error {

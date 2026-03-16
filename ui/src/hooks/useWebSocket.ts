@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react'
 import { useProxyStore } from '@/store/proxy'
+import { api } from '@/api/client'
 import type { Request, ProxyStatus } from '@/api/client'
 
 interface WSEvent {
@@ -10,7 +11,7 @@ interface WSEvent {
 export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
-  const { prependRequest, setStatus } = useProxyStore()
+  const { prependRequest, setStatus, setProject, setRequests } = useProxyStore()
 
   const connect = useCallback(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -47,6 +48,11 @@ export function useWebSocket() {
     } else if (evt.type === 'proxy.status') {
       const status = evt.data as ProxyStatus
       setStatus(status)
+    } else if (evt.type === 'project.switched') {
+      api.project.get().then((p) => {
+        setProject(p)
+        setRequests([])
+      }).catch(console.error)
     }
   }
 

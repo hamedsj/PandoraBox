@@ -1,30 +1,18 @@
 import { create } from 'zustand'
-import type { Request, ProxyStatus } from '@/api/client'
+import type { Request, ProxyStatus, ProjectInfo, FilterConfig } from '@/api/client'
 
-interface RequestFilters {
-  // Toolbar (live)
-  search: string
-  method: string
+export type { FilterConfig }
 
-  // Modal (staged, applied on confirm)
-  host: string
-  extensionShow: string   // only show paths with this extension
-  extensionHide: string   // hide paths with this extension
-  contentTypeShow: string // only show responses with this content-type
-  contentTypeHide: string // hide responses with this content-type
-  statusCodes: string[]   // e.g. ['2xx', '4xx'] — empty means all
-
-  // Search options
-  negativeSearch: boolean
-  caseInsensitive: boolean
-  useRegex: boolean
-  searchScope: string[]   // e.g. ['host', 'path'] — empty means all fields
-}
+export type RequestFilters = FilterConfig
 
 interface ProxyStore {
   // Status
   status: ProxyStatus | null
   setStatus: (s: ProxyStatus) => void
+
+  // Project
+  project: ProjectInfo | null
+  setProject: (p: ProjectInfo) => void
 
   // Traffic
   requests: Request[]
@@ -43,13 +31,13 @@ interface ProxyStore {
   interceptQueue: Request[]
   setInterceptQueue: (queue: Request[]) => void
 
-  // Filters
+  // Filters (sourced from project.json, not localStorage)
   filters: RequestFilters
   setFilters: (f: Partial<RequestFilters>) => void
   resetFilters: () => void
 }
 
-const defaultFilters: RequestFilters = {
+export const defaultFilters: RequestFilters = {
   search: '',
   method: '',
   host: '',
@@ -67,6 +55,9 @@ const defaultFilters: RequestFilters = {
 export const useProxyStore = create<ProxyStore>((set) => ({
   status: null,
   setStatus: (s) => set({ status: s }),
+
+  project: null,
+  setProject: (p) => set({ project: p, filters: p.filters }),
 
   requests: [],
   selectedRequestId: null,

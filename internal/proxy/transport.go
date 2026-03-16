@@ -61,9 +61,27 @@ func (p *Proxy) roundTrip(req *http.Request, scheme string) (*http.Response, *st
 		Raw:     rawReq,
 	}
 
+	// Fast-forward out-of-scope requests without saving or intercepting
+	if !p.scope.InScope(req.Host, req.URL.Path) {
+		req.RequestURI = ""
+		removeHopByHop(req.Header)
+		transport := &http.Transport{DisableCompression: true}
+		resp, err := transport.RoundTrip(req)
+		if err != nil {
+			return nil, nil, fmt.Errorf("upstream: %w", err)
+		}
+		respBodyBytes, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		resp.Body = io.NopCloser(bytes.NewReader(respBodyBytes))
+		removeHopByHop(resp.Header)
+		resp.ContentLength = int64(len(respBodyBytes))
+		resp.TransferEncoding = nil
+		return resp, nil, nil
+	}
+
 	// Handle intercept queue
 	if p.intercept.IsEnabled() {
-		reqID, err := p.db.SaveRequest(captured)
+		reqID, err := p.getDB().SaveRequest(captured)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -130,8 +148,9 @@ func (p *Proxy) roundTrip(req *http.Request, scheme string) (*http.Response, *st
 	respHeadersJSON, _ := json.Marshal(resp.Header)
 
 	// Save to DB (request may already be saved if intercept was enabled)
+	db := p.getDB()
 	if captured.ID == 0 {
-		reqID, err := p.db.SaveRequest(captured)
+		reqID, err := db.SaveRequest(captured)
 		if err != nil {
 			slog.Error("Failed to save request", "err", err)
 		} else {
@@ -150,7 +169,7 @@ func (p *Proxy) roundTrip(req *http.Request, scheme string) (*http.Response, *st
 			DurationMs: duration,
 			SizeBytes:  int64(len(respBodyBytes)),
 		}
-		respID, err := p.db.SaveResponse(respRecord)
+		respID, err := db.SaveResponse(respRecord)
 		if err != nil {
 			slog.Error("Failed to save response", "err", err)
 		} else {
@@ -184,7 +203,8 @@ func (p *Proxy) SendRequest(method, url string, headers map[string]string, body 
 
 // ReplayRequest replays a stored request with optional modifications.
 func (p *Proxy) ReplayRequest(reqID int64, modHeaders map[string]string, modBody []byte, modURL string) (*storage.Replay, error) {
-	orig, err := p.db.GetRequest(reqID)
+	db := p.getDB()
+	orig, err := db.GetRequest(reqID)
 	if err != nil || orig == nil {
 		return nil, fmt.Errorf("request not found: %d", reqID)
 	}
@@ -231,14 +251,14 @@ func (p *Proxy) ReplayRequest(reqID int64, modHeaders map[string]string, modBody
 	headersJSON, _ := json.Marshal(req.Header)
 	newReqCapture.Headers = string(headersJSON)
 
-	newReqID, err := p.db.SaveRequest(newReqCapture)
+	newReqID, err := db.SaveRequest(newReqCapture)
 	if err != nil {
 		return nil, err
 	}
 	newReqCapture.ID = newReqID
 	replay.RequestID = newReqID
 
-	replayID, err := p.db.SaveReplay(replay)
+	replayID, err := db.SaveReplay(replay)
 	if err != nil {
 		return nil, err
 	}
@@ -250,7 +270,7 @@ func (p *Proxy) ReplayRequest(reqID int64, modHeaders map[string]string, modBody
 	transport := &http.Transport{DisableCompression: true}
 	resp, err := transport.RoundTrip(req)
 	if err != nil {
-		p.db.UpdateReplay(replayID, nil, "error", err.Error())
+		db.UpdateReplay(replayID, nil, "error", err.Error())
 		return replay, err
 	}
 	defer resp.Body.Close()
@@ -268,10 +288,10 @@ func (p *Proxy) ReplayRequest(reqID int64, modHeaders map[string]string, modBody
 		DurationMs: duration,
 		SizeBytes:  int64(len(respBodyBytes)),
 	}
-	respID, _ := p.db.SaveResponse(respRecord)
+	respID, _ := db.SaveResponse(respRecord)
 	respRecord.ID = respID
 
-	p.db.UpdateReplay(replayID, &respID, "done", "")
+	db.UpdateReplay(replayID, &respID, "done", "")
 
 	replay.Status = "done"
 	replay.ResponseID = &respID

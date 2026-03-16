@@ -3,18 +3,21 @@ package api
 import (
 	"io/fs"
 	"net/http"
+	"sync"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/hamedsj5/pitokmonitor/internal/ca"
 	"github.com/hamedsj5/pitokmonitor/internal/config"
 	"github.com/hamedsj5/pitokmonitor/internal/events"
+	"github.com/hamedsj5/pitokmonitor/internal/project"
 	"github.com/hamedsj5/pitokmonitor/internal/proxy"
 	"github.com/hamedsj5/pitokmonitor/internal/storage"
 )
 
 type Server struct {
 	cfg       *config.Config
+	dbMu      sync.RWMutex
 	db        *storage.DB
 	bus       *events.Bus
 	proxy     *proxy.Proxy
@@ -22,6 +25,11 @@ type Server struct {
 	ca        *ca.CA
 	hub       *Hub
 	uiFS      fs.FS
+	mcpServer interface{ SetDB(*storage.DB) }
+
+	projectMu sync.RWMutex
+	project   *project.Manager
+	appCfg    *project.AppConfig
 }
 
 func NewServer(cfg *config.Config, db *storage.DB, bus *events.Bus, p *proxy.Proxy, intercept *proxy.InterceptQueue, authority *ca.CA) *Server {
@@ -34,6 +42,29 @@ func NewServer(cfg *config.Config, db *storage.DB, bus *events.Bus, p *proxy.Pro
 		ca:        authority,
 		hub:       NewHub(bus),
 	}
+}
+
+func (s *Server) SetProject(mgr *project.Manager, appCfg *project.AppConfig) {
+	s.projectMu.Lock()
+	s.project = mgr
+	s.appCfg = appCfg
+	s.projectMu.Unlock()
+}
+
+func (s *Server) SetMCPServer(mcp interface{ SetDB(*storage.DB) }) {
+	s.mcpServer = mcp
+}
+
+func (s *Server) getDB() *storage.DB {
+	s.dbMu.RLock()
+	defer s.dbMu.RUnlock()
+	return s.db
+}
+
+func (s *Server) setDB(db *storage.DB) {
+	s.dbMu.Lock()
+	s.db = db
+	s.dbMu.Unlock()
 }
 
 func (s *Server) Handler() http.Handler {
@@ -71,6 +102,14 @@ func (s *Server) Handler() http.Handler {
 
 		// CA cert download
 		r.Get("/ca/cert", s.getCACert)
+
+		// Project management
+		r.Get("/project", s.getProject)
+		r.Put("/project", s.updateProject)
+		r.Post("/project/save-as", s.projectSaveAs)
+		r.Get("/project/recent", s.getRecentProjects)
+		r.Post("/project/open", s.openProject)
+		r.Post("/project/new", s.newProject)
 	})
 
 	// Serve embedded UI for all non-API routes

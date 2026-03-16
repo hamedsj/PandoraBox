@@ -14,6 +14,7 @@ import (
 	"github.com/hamedsj5/pitokmonitor/internal/config"
 	"github.com/hamedsj5/pitokmonitor/internal/events"
 	mcpsrv "github.com/hamedsj5/pitokmonitor/internal/mcp"
+	"github.com/hamedsj5/pitokmonitor/internal/project"
 	"github.com/hamedsj5/pitokmonitor/internal/proxy"
 	"github.com/hamedsj5/pitokmonitor/internal/storage"
 	"github.com/spf13/cobra"
@@ -58,7 +59,8 @@ func main() {
 	serveCmd.Flags().Int("proxy-port", 8080, "Proxy port")
 	serveCmd.Flags().Int("api-port", 7777, "API/UI port")
 	serveCmd.Flags().Int("mcp-port", 9090, "MCP SSE port")
-	serveCmd.Flags().String("db", "pitok.db", "SQLite database path")
+	serveCmd.Flags().String("db", "", "SQLite database path (overrides project DB)")
+	serveCmd.Flags().String("project", "", "Project folder path to open on startup")
 
 	root.AddCommand(serveCmd, caCmd)
 
@@ -73,8 +75,58 @@ func runServe(cmd *cobra.Command, args []string) error {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(logger)
 
+	// Load global app config (recent projects, last opened)
+	appCfg, err := project.LoadAppConfig()
+	if err != nil {
+		slog.Warn("Failed to load app config, using defaults", "err", err)
+		appCfg = &project.AppConfig{}
+	}
+
+	// Determine which project to open
+	projectPath, _ := cmd.Flags().GetString("project")
+	var projectMgr *project.Manager
+	if projectPath != "" {
+		projectMgr, err = project.OpenProject(projectPath)
+		if err != nil {
+			slog.Warn("Failed to open specified project, falling back to temp", "path", projectPath, "err", err)
+		}
+	}
+	if projectMgr == nil && appCfg.LastProject != "" {
+		projectMgr, err = project.OpenProject(appCfg.LastProject)
+		if err != nil {
+			slog.Warn("Failed to open last project, falling back to temp", "path", appCfg.LastProject, "err", err)
+		}
+	}
+	if projectMgr == nil {
+		projectMgr, err = project.TempProject()
+		if err != nil {
+			return fmt.Errorf("create temp project: %w", err)
+		}
+	}
+
+	slog.Info("Opened project", "name", projectMgr.Config().Name, "path", projectMgr.Path())
+
+	// Apply project proxy port to config if not overridden by flag
+	dbOverride, _ := cmd.Flags().GetString("db")
+	dbPath := projectMgr.DBPath()
+	if dbOverride != "" {
+		dbPath = dbOverride
+	}
+
+	// Apply project proxy port to cfg
+	projCfg := projectMgr.Config()
+	if projCfg.Proxy.Port > 0 {
+		cfg.ProxyPort = projCfg.Proxy.Port
+	}
+
+	// Update recent projects
+	appCfg.AddRecent(projectMgr.Path())
+	if saveErr := appCfg.Save(); saveErr != nil {
+		slog.Warn("Failed to save app config", "err", saveErr)
+	}
+
 	// Storage
-	db, err := storage.Open(cfg.DBPath)
+	db, err := storage.Open(dbPath)
 	if err != nil {
 		return fmt.Errorf("open db: %w", err)
 	}
@@ -91,6 +143,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	// Intercept queue
 	interceptQueue := proxy.NewInterceptQueue()
+	interceptQueue.SetEnabled(projCfg.Proxy.InterceptEnabled)
 
 	// Proxy engine
 	proxyEngine := proxy.New(cfg, db, authority, bus, interceptQueue)
@@ -98,9 +151,11 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// API server
 	apiServer := api.NewServer(cfg, db, bus, proxyEngine, interceptQueue, authority)
 	apiServer.SetStaticFS(getUIFS())
+	apiServer.SetProject(projectMgr, appCfg)
 
 	// MCP server
 	mcpServer := mcpsrv.NewServer(cfg, db, proxyEngine, interceptQueue, authority)
+	apiServer.SetMCPServer(mcpServer)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()

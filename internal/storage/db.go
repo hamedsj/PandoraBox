@@ -34,18 +34,8 @@ func Open(path string) (*DB, error) {
 
 func migrate(db *sql.DB) error {
 	schema := `
-CREATE TABLE IF NOT EXISTS projects (
-    id INTEGER PRIMARY KEY,
-    name TEXT NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-
--- Insert default project
-INSERT OR IGNORE INTO projects (id, name) VALUES (1, 'Default');
-
 CREATE TABLE IF NOT EXISTS requests (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    project_id INTEGER NOT NULL REFERENCES projects(id),
     method TEXT NOT NULL,
     scheme TEXT NOT NULL,
     host TEXT NOT NULL,

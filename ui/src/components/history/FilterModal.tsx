@@ -284,6 +284,12 @@ function SearchTab({
   toggleBool: <K extends keyof LocalFilters>(key: K) => void
   toggleArray: (key: 'statusCodes' | 'searchScope', value: string) => void
 }) {
+  const regexError: string | null = (() => {
+    if (!local.useRegex || !local.search) return null
+    try { new RegExp(local.search); return null }
+    catch (e) { return (e as Error).message }
+  })()
+
   return (
     <div className="flex flex-col gap-4">
       <div>
@@ -292,7 +298,12 @@ function SearchTab({
           placeholder="Search across selected fields..."
           value={local.search}
           onChange={v => patch('search', v)}
+          mono={local.useRegex}
+          className={regexError ? 'border-red-500 focus:ring-red-500' : undefined}
         />
+        {regexError && (
+          <p className="text-xs text-red-400 mt-1">{regexError}</p>
+        )}
       </div>
 
       <div className="flex gap-6">
@@ -461,8 +472,8 @@ function Toggle({ label, checked, onChange }: {
   )
 }
 
-function TextInput({ placeholder, value, onChange, mono }: {
-  placeholder: string; value: string; onChange: (v: string) => void; mono?: boolean
+function TextInput({ placeholder, value, onChange, mono, className }: {
+  placeholder: string; value: string; onChange: (v: string) => void; mono?: boolean; className?: string
 }) {
   return (
     <div className="relative">
@@ -473,6 +484,7 @@ function TextInput({ placeholder, value, onChange, mono }: {
           'w-full px-3 py-2 text-sm bg-background border border-border rounded-md',
           'focus:outline-none focus:ring-1 focus:ring-primary placeholder:text-muted-foreground',
           mono && 'font-mono',
+          className,
         )}
       />
       {value && (

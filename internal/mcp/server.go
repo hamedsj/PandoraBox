@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 
 	"github.com/hamedsj5/pitokmonitor/internal/ca"
 	"github.com/hamedsj5/pitokmonitor/internal/config"
@@ -14,11 +15,24 @@ import (
 
 type Server struct {
 	cfg       *config.Config
+	dbMu      sync.RWMutex
 	db        *storage.DB
 	proxy     *proxy.Proxy
 	intercept *proxy.InterceptQueue
 	ca        *ca.CA
 	mcp       *server.MCPServer
+}
+
+func (s *Server) getDB() *storage.DB {
+	s.dbMu.RLock()
+	defer s.dbMu.RUnlock()
+	return s.db
+}
+
+func (s *Server) SetDB(db *storage.DB) {
+	s.dbMu.Lock()
+	s.db = db
+	s.dbMu.Unlock()
 }
 
 func NewServer(cfg *config.Config, db *storage.DB, p *proxy.Proxy, intercept *proxy.InterceptQueue, authority *ca.CA) *Server {

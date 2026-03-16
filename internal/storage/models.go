@@ -4,7 +4,6 @@ import "time"
 
 type Request struct {
 	ID        int64     `json:"id"`
-	ProjectID int64     `json:"project_id"`
 	Method    string    `json:"method"`
 	Scheme    string    `json:"scheme"`
 	Host      string    `json:"host"`
