@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useProxyStore } from '@/store/proxy'
 import { cn } from '@/lib/utils'
-import { X, Filter } from 'lucide-react'
+import { X, Filter, Check } from 'lucide-react'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -40,15 +40,19 @@ const CONTENT_TYPE_CHIPS = [
   { label: 'Protobuf', value: 'protobuf' },
 ] as const
 
-// ─── Local filter state ───────────────────────────────────────────────────────
+// ─── Local state ──────────────────────────────────────────────────────────────
 
 interface LocalFilters {
   search: string
   host: string
   extensionShow: string
+  extensionShowEnabled: boolean
   extensionHide: string
+  extensionHideEnabled: boolean
   contentTypeShow: string
+  contentTypeShowEnabled: boolean
   contentTypeHide: string
+  contentTypeHideEnabled: boolean
   statusCodes: string[]
   negativeSearch: boolean
   caseInsensitive: boolean
@@ -56,28 +60,52 @@ interface LocalFilters {
   searchScope: string[]
 }
 
-function fromStore(filters: ReturnType<typeof useProxyStore.getState>['filters']): LocalFilters {
+function fromStore(f: ReturnType<typeof useProxyStore.getState>['filters']): LocalFilters {
   return {
-    search:          filters.search,
-    host:            filters.host,
-    extensionShow:   filters.extensionShow,
-    extensionHide:   filters.extensionHide,
-    contentTypeShow: filters.contentTypeShow,
-    contentTypeHide: filters.contentTypeHide,
-    statusCodes:     filters.statusCodes,
-    negativeSearch:  filters.negativeSearch,
-    caseInsensitive: filters.caseInsensitive,
-    useRegex:        filters.useRegex,
-    searchScope:     filters.searchScope,
+    search:                f.search,
+    host:                  f.host,
+    extensionShow:         f.extensionShow,
+    extensionShowEnabled:  !!f.extensionShow,
+    extensionHide:         f.extensionHide,
+    extensionHideEnabled:  !!f.extensionHide,
+    contentTypeShow:       f.contentTypeShow,
+    contentTypeShowEnabled: !!f.contentTypeShow,
+    contentTypeHide:       f.contentTypeHide,
+    contentTypeHideEnabled: !!f.contentTypeHide,
+    statusCodes:           f.statusCodes,
+    negativeSearch:        f.negativeSearch,
+    caseInsensitive:       f.caseInsensitive,
+    useRegex:              f.useRegex,
+    searchScope:           f.searchScope,
   }
 }
 
 function empty(): LocalFilters {
   return {
-    search: '', host: '', extensionShow: '', extensionHide: '',
-    contentTypeShow: '', contentTypeHide: '',
+    search: '', host: '',
+    extensionShow: '', extensionShowEnabled: false,
+    extensionHide: '', extensionHideEnabled: false,
+    contentTypeShow: '', contentTypeShowEnabled: false,
+    contentTypeHide: '', contentTypeHideEnabled: false,
     statusCodes: [], negativeSearch: false,
     caseInsensitive: true, useRegex: false, searchScope: [],
+  }
+}
+
+// Strip enabled flags before writing to store
+function resolve(l: LocalFilters) {
+  return {
+    search:          l.search,
+    host:            l.host,
+    extensionShow:   l.extensionShowEnabled  ? l.extensionShow   : '',
+    extensionHide:   l.extensionHideEnabled  ? l.extensionHide   : '',
+    contentTypeShow: l.contentTypeShowEnabled ? l.contentTypeShow : '',
+    contentTypeHide: l.contentTypeHideEnabled ? l.contentTypeHide : '',
+    statusCodes:     l.statusCodes,
+    negativeSearch:  l.negativeSearch,
+    caseInsensitive: l.caseInsensitive,
+    useRegex:        l.useRegex,
+    searchScope:     l.searchScope,
   }
 }
 
@@ -86,9 +114,9 @@ function countForTab(tab: Tab, f: LocalFilters): number {
     case 'search':
       return [f.search, f.searchScope.length > 0, f.negativeSearch, !f.caseInsensitive, f.useRegex].filter(Boolean).length
     case 'request':
-      return [f.host, f.extensionShow, f.extensionHide].filter(Boolean).length
+      return [f.host, f.extensionShowEnabled && f.extensionShow, f.extensionHideEnabled && f.extensionHide].filter(Boolean).length
     case 'response':
-      return [f.statusCodes.length > 0, f.contentTypeShow, f.contentTypeHide].filter(Boolean).length
+      return [f.statusCodes.length > 0, f.contentTypeShowEnabled && f.contentTypeShow, f.contentTypeHideEnabled && f.contentTypeHide].filter(Boolean).length
   }
 }
 
@@ -112,7 +140,7 @@ export function FilterModal({ isOpen, onClose }: { isOpen: boolean; onClose: () 
     if (!isOpen) return
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { setFilters(localRef.current); onClose() }
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { setFilters(resolve(localRef.current)); onClose() }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
@@ -133,12 +161,23 @@ export function FilterModal({ isOpen, onClose }: { isOpen: boolean; onClose: () 
     })
   }
 
-  const handleApply = () => { setFilters(local); onClose() }
+  // Mutually exclusive enable toggle: enabling one disables the other
+  function togglePair(
+    enabledKey: 'extensionShowEnabled' | 'extensionHideEnabled' | 'contentTypeShowEnabled' | 'contentTypeHideEnabled',
+    otherKey:   'extensionShowEnabled' | 'extensionHideEnabled' | 'contentTypeShowEnabled' | 'contentTypeHideEnabled',
+  ) {
+    setLocal(prev => {
+      const enabling = !prev[enabledKey]
+      return { ...prev, [enabledKey]: enabling, ...(enabling ? { [otherKey]: false } : {}) }
+    })
+  }
+
+  const handleApply = () => { setFilters(resolve(local)); onClose() }
   const handleReset = () => { resetFilters(); setLocal(empty()) }
   const handleBackdrop = (e: React.MouseEvent) => { if (e.target === backdropRef.current) onClose() }
 
   const totalActive = (['search', 'request', 'response'] as Tab[]).reduce(
-    (n, t) => n + countForTab(t, local), 0
+    (n, t) => n + countForTab(t, local), 0,
   )
 
   if (!isOpen) return null
@@ -178,9 +217,7 @@ export function FilterModal({ isOpen, onClose }: { isOpen: boolean; onClose: () 
                 onClick={() => setActiveTab(tab)}
                 className={cn(
                   'flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium capitalize transition-colors border-b-2 -mb-px',
-                  active
-                    ? 'border-primary text-foreground'
-                    : 'border-transparent text-muted-foreground hover:text-foreground',
+                  active ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground',
                 )}
               >
                 {tab}
@@ -197,11 +234,17 @@ export function FilterModal({ isOpen, onClose }: { isOpen: boolean; onClose: () 
           })}
         </div>
 
-        {/* Tab content — fixed height, no scroll */}
+        {/* Tab content */}
         <div className="h-72 p-5">
-          {activeTab === 'search' && <SearchTab local={local} patch={patch} toggleBool={toggleBool} toggleArray={toggleArray} />}
-          {activeTab === 'request' && <RequestTab local={local} patch={patch} />}
-          {activeTab === 'response' && <ResponseTab local={local} patch={patch} toggleArray={toggleArray} />}
+          {activeTab === 'search' && (
+            <SearchTab local={local} patch={patch} toggleBool={toggleBool} toggleArray={toggleArray} />
+          )}
+          {activeTab === 'request' && (
+            <RequestTab local={local} patch={patch} togglePair={togglePair} />
+          )}
+          {activeTab === 'response' && (
+            <ResponseTab local={local} patch={patch} toggleArray={toggleArray} togglePair={togglePair} />
+          )}
         </div>
 
         {/* Footer */}
@@ -228,6 +271,10 @@ export function FilterModal({ isOpen, onClose }: { isOpen: boolean; onClose: () 
 // ─── Tab panels ───────────────────────────────────────────────────────────────
 
 type PatchFn = <K extends keyof LocalFilters>(key: K, value: LocalFilters[K]) => void
+type TogglePairFn = (
+  enabledKey: 'extensionShowEnabled' | 'extensionHideEnabled' | 'contentTypeShowEnabled' | 'contentTypeHideEnabled',
+  otherKey:   'extensionShowEnabled' | 'extensionHideEnabled' | 'contentTypeShowEnabled' | 'contentTypeHideEnabled',
+) => void
 
 function SearchTab({
   local, patch, toggleBool, toggleArray,
@@ -239,7 +286,6 @@ function SearchTab({
 }) {
   return (
     <div className="flex flex-col gap-4">
-      {/* Search term — full width */}
       <div>
         <FieldLabel>Search Term</FieldLabel>
         <TextInput
@@ -249,7 +295,6 @@ function SearchTab({
         />
       </div>
 
-      {/* Scope + Options — side by side */}
       <div className="flex gap-6">
         {/* Scope */}
         <div className="flex-1 min-w-0">
@@ -273,16 +318,15 @@ function SearchTab({
           </div>
         </div>
 
-        {/* Divider */}
         <div className="w-px bg-border flex-shrink-0" />
 
         {/* Options */}
-        <div className="w-44 flex-shrink-0">
+        <div className="w-40 flex-shrink-0">
           <FieldLabel>Options</FieldLabel>
           <div className="divide-y divide-border/40">
-            <Toggle label="Case Sensitive"     checked={!local.caseInsensitive} onChange={v => patch('caseInsensitive', !v)} />
-            <Toggle label="Regular Expression"  checked={local.useRegex}         onChange={v => patch('useRegex', v)} />
-            <Toggle label="Invert Results"     checked={local.negativeSearch}    onChange={() => toggleBool('negativeSearch')} />
+            <Toggle label="Case Sensitive" checked={!local.caseInsensitive} onChange={v => patch('caseInsensitive', !v)} />
+            <Toggle label="Use Regex"      checked={local.useRegex}         onChange={v => patch('useRegex', v)} />
+            <Toggle label="Invert Results" checked={local.negativeSearch}   onChange={() => toggleBool('negativeSearch')} />
           </div>
         </div>
       </div>
@@ -290,23 +334,29 @@ function SearchTab({
   )
 }
 
-function RequestTab({ local, patch }: { local: LocalFilters; patch: PatchFn }) {
+function RequestTab({ local, patch, togglePair }: { local: LocalFilters; patch: PatchFn; togglePair: TogglePairFn }) {
   return (
     <div className="flex flex-col gap-5">
       <div>
         <FieldLabel>Host</FieldLabel>
-        <TextInput
-          placeholder="e.g. api.example.com"
-          value={local.host}
-          onChange={v => patch('host', v)}
-        />
+        <TextInput placeholder="e.g. api.example.com" value={local.host} onChange={v => patch('host', v)} />
       </div>
 
       <div>
         <FieldLabel>File Extension</FieldLabel>
         <div className="space-y-2">
-          <LabeledInput label="Only Show" placeholder="e.g. php, json"       value={local.extensionShow} onChange={v => patch('extensionShow', v)} intent="show" mono />
-          <LabeledInput label="Hide"      placeholder="e.g. js, css, png"    value={local.extensionHide} onChange={v => patch('extensionHide', v)} intent="hide" mono />
+          <LabeledInput
+            label="Only Show" placeholder="e.g. php, json" mono intent="show"
+            value={local.extensionShow} onChange={v => patch('extensionShow', v)}
+            enabled={local.extensionShowEnabled}
+            onToggle={() => togglePair('extensionShowEnabled', 'extensionHideEnabled')}
+          />
+          <LabeledInput
+            label="Hide" placeholder="e.g. js, css, png" mono intent="hide"
+            value={local.extensionHide} onChange={v => patch('extensionHide', v)}
+            enabled={local.extensionHideEnabled}
+            onToggle={() => togglePair('extensionHideEnabled', 'extensionShowEnabled')}
+          />
         </div>
       </div>
     </div>
@@ -314,11 +364,12 @@ function RequestTab({ local, patch }: { local: LocalFilters; patch: PatchFn }) {
 }
 
 function ResponseTab({
-  local, patch, toggleArray,
+  local, patch, toggleArray, togglePair,
 }: {
   local: LocalFilters
   patch: PatchFn
   toggleArray: (key: 'statusCodes' | 'searchScope', value: string) => void
+  togglePair: TogglePairFn
 }) {
   return (
     <div className="flex flex-col gap-5">
@@ -327,8 +378,7 @@ function ResponseTab({
         <div className="flex gap-2">
           {STATUS_OPTIONS.map(code => (
             <Chip
-              key={code}
-              label={code}
+              key={code} label={code}
               active={local.statusCodes.includes(code)}
               activeClass={statusActiveClass(code)}
               onClick={() => toggleArray('statusCodes', code)}
@@ -342,16 +392,32 @@ function ResponseTab({
         <div className="flex flex-wrap gap-1.5 mb-3">
           {CONTENT_TYPE_CHIPS.map(({ label, value }) => (
             <Chip
-              key={label}
-              label={label}
-              active={local.contentTypeShow === value}
-              onClick={() => patch('contentTypeShow', local.contentTypeShow === value ? '' : value)}
+              key={label} label={label}
+              active={local.contentTypeShow === value && local.contentTypeShowEnabled}
+              onClick={() => {
+                const selecting = local.contentTypeShow !== value || !local.contentTypeShowEnabled
+                patch('contentTypeShow', selecting ? value : '')
+                if (selecting) {
+                  patch('contentTypeShowEnabled', true)
+                  patch('contentTypeHideEnabled', false)
+                }
+              }}
             />
           ))}
         </div>
         <div className="space-y-2">
-          <LabeledInput label="Only Show" placeholder="e.g. application/json" value={local.contentTypeShow} onChange={v => patch('contentTypeShow', v)} intent="show" mono />
-          <LabeledInput label="Hide"      placeholder="e.g. text/css"         value={local.contentTypeHide} onChange={v => patch('contentTypeHide', v)} intent="hide" mono />
+          <LabeledInput
+            label="Only Show" placeholder="e.g. application/json" mono intent="show"
+            value={local.contentTypeShow} onChange={v => patch('contentTypeShow', v)}
+            enabled={local.contentTypeShowEnabled}
+            onToggle={() => togglePair('contentTypeShowEnabled', 'contentTypeHideEnabled')}
+          />
+          <LabeledInput
+            label="Hide" placeholder="e.g. text/css" mono intent="hide"
+            value={local.contentTypeHide} onChange={v => patch('contentTypeHide', v)}
+            enabled={local.contentTypeHideEnabled}
+            onToggle={() => togglePair('contentTypeHideEnabled', 'contentTypeShowEnabled')}
+          />
         </div>
       </div>
     </div>
@@ -361,20 +427,11 @@ function ResponseTab({
 // ─── Primitives ───────────────────────────────────────────────────────────────
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-      {children}
-    </p>
-  )
+  return <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">{children}</p>
 }
 
-function Chip({
-  label, active, activeClass, onClick,
-}: {
-  label: string
-  active: boolean
-  activeClass?: string
-  onClick: () => void
+function Chip({ label, active, activeClass, onClick }: {
+  label: string; active: boolean; activeClass?: string; onClick: () => void
 }) {
   return (
     <button
@@ -391,45 +448,26 @@ function Chip({
   )
 }
 
-function Toggle({
-  label, checked, onChange,
-}: {
-  label: string
-  checked: boolean
-  onChange: (v: boolean) => void
+function Toggle({ label, checked, onChange }: {
+  label: string; checked: boolean; onChange: (v: boolean) => void
 }) {
   return (
-    <button
-      onClick={() => onChange(!checked)}
-      className="flex items-center justify-between w-full py-2 group"
-    >
-      <span className="text-sm text-muted-foreground group-hover:text-foreground transition-colors">
-        {label}
-      </span>
-      <div className={cn('w-9 h-5 rounded-full flex-shrink-0 transition-colors relative', checked ? 'bg-primary' : 'bg-muted-foreground/30')}>
-        <div className={cn(
-          'absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform',
-          checked ? 'translate-x-4' : 'translate-x-0',
-        )} />
+    <button onClick={() => onChange(!checked)} className="flex items-center justify-between w-full py-2 group">
+      <span className="text-sm text-muted-foreground group-hover:text-foreground transition-colors">{label}</span>
+      <div className={cn('w-9 h-5 rounded-full flex-shrink-0 transition-colors relative ml-2', checked ? 'bg-primary' : 'bg-muted-foreground/30')}>
+        <div className={cn('absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform', checked ? 'translate-x-4' : 'translate-x-0')} />
       </div>
     </button>
   )
 }
 
-function TextInput({
-  placeholder, value, onChange, mono,
-}: {
-  placeholder: string
-  value: string
-  onChange: (v: string) => void
-  mono?: boolean
+function TextInput({ placeholder, value, onChange, mono }: {
+  placeholder: string; value: string; onChange: (v: string) => void; mono?: boolean
 }) {
   return (
     <div className="relative">
       <input
-        type="text"
-        placeholder={placeholder}
-        value={value}
+        type="text" placeholder={placeholder} value={value}
         onChange={e => onChange(e.target.value)}
         className={cn(
           'w-full px-3 py-2 text-sm bg-background border border-border rounded-md',
@@ -446,40 +484,53 @@ function TextInput({
   )
 }
 
-function LabeledInput({
-  label, placeholder, value, onChange, intent, mono,
-}: {
-  label: string
-  placeholder: string
-  value: string
-  onChange: (v: string) => void
-  intent: 'show' | 'hide'
-  mono?: boolean
+function LabeledInput({ label, placeholder, value, onChange, intent, mono, enabled, onToggle }: {
+  label: string; placeholder: string; value: string; onChange: (v: string) => void
+  intent: 'show' | 'hide'; mono?: boolean; enabled: boolean; onToggle: () => void
 }) {
+  const isShow = intent === 'show'
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex items-center gap-2.5">
+      {/* Checkbox */}
+      <button
+        onClick={onToggle}
+        className={cn(
+          'w-4 h-4 rounded flex-shrink-0 border-2 flex items-center justify-center transition-colors',
+          enabled
+            ? isShow ? 'bg-green-500 border-green-500' : 'bg-red-500 border-red-500'
+            : 'border-border bg-transparent hover:border-muted-foreground',
+        )}
+      >
+        {enabled && <Check size={9} className="text-white" strokeWidth={3} />}
+      </button>
+
+      {/* Label */}
       <span className={cn(
-        'text-xs font-medium w-16 text-right flex-shrink-0',
-        intent === 'show' ? 'text-green-400' : 'text-red-400',
+        'text-xs font-medium w-16 text-right flex-shrink-0 transition-colors',
+        enabled ? isShow ? 'text-green-400' : 'text-red-400' : 'text-muted-foreground',
       )}>
         {label}
       </span>
+
+      {/* Input */}
       <div className="relative flex-1">
         <input
-          type="text"
-          placeholder={placeholder}
-          value={value}
+          type="text" placeholder={placeholder} value={value}
           onChange={e => onChange(e.target.value)}
+          disabled={!enabled}
           className={cn(
-            'w-full px-3 py-1.5 text-sm bg-background border rounded-md',
+            'w-full px-3 py-1.5 text-sm bg-background border rounded-md transition-colors',
             'focus:outline-none focus:ring-1 placeholder:text-muted-foreground',
+            'disabled:opacity-40 disabled:cursor-not-allowed',
             mono && 'font-mono',
-            intent === 'show'
-              ? 'border-green-500/30 focus:ring-green-500/40 focus:border-green-500/50'
-              : 'border-red-500/30 focus:ring-red-500/40 focus:border-red-500/50',
+            enabled
+              ? isShow
+                ? 'border-green-500/40 focus:ring-green-500/40 focus:border-green-500/60'
+                : 'border-red-500/40 focus:ring-red-500/40 focus:border-red-500/60'
+              : 'border-border',
           )}
         />
-        {value && (
+        {value && enabled && (
           <button onClick={() => onChange('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
             <X size={13} />
           </button>
