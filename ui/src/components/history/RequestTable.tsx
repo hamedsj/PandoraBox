@@ -4,12 +4,12 @@ import { MethodBadge } from '@/components/common/MethodBadge'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import { cn } from '@/lib/utils'
 import type { Request } from '@/api/client'
-import { Search, Globe } from 'lucide-react'
+import { Search, Globe, RotateCcw, Trash2 } from 'lucide-react'
 
 export function RequestTable() {
   useRequests()
 
-  const { requests, selectedRequestId, setSelectedRequestId, filters, setFilters } = useProxyStore()
+  const { requests, selectedRequestId, setSelectedRequestId, filters, setFilters, addToReplay, removeFromReplay, replayQueue } = useProxyStore()
 
   return (
     <div className="flex flex-col h-full">
@@ -18,7 +18,7 @@ export function RequestTable() {
         <div className="relative flex-1">
           <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <input
-            className="w-full pl-8 pr-3 py-1.5 text-sm bg-input border border-border rounded-md font-mono placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            className="w-full pl-7 pr-3 py-1.5 text-sm bg-input border border-border rounded-md font-mono placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
             placeholder="Search host, path, query..."
             value={filters.search}
             onChange={(e) => setFilters({ search: e.target.value })}
@@ -51,6 +51,7 @@ export function RequestTable() {
               <th className="text-left px-3 py-2 min-w-0">Path</th>
               <th className="text-right px-3 py-2 w-20 hidden min-[900px]:table-cell">Size</th>
               <th className="text-right px-3 py-2 w-20 hidden min-[900px]:table-cell">Time</th>
+              <th className="text-left px-3 py-2 w-24 hidden min-[1000px]:table-cell">Replay</th>
             </tr>
           </thead>
           <tbody>
@@ -59,7 +60,10 @@ export function RequestTable() {
                 key={req.id}
                 req={req}
                 selected={req.id === selectedRequestId}
+                inReplay={replayQueue.some((r) => r.id === req.id)}
                 onClick={() => setSelectedRequestId(req.id === selectedRequestId ? null : req.id)}
+                onAddToReplay={() => addToReplay(req)}
+                onRemoveFromReplay={() => removeFromReplay(req.id)}
               />
             ))}
           </tbody>
@@ -79,11 +83,17 @@ export function RequestTable() {
 function RequestRow({
   req,
   selected,
+  inReplay,
   onClick,
+  onAddToReplay,
+  onRemoveFromReplay,
 }: {
   req: Request
   selected: boolean
+  inReplay: boolean
   onClick: () => void
+  onAddToReplay: () => void
+  onRemoveFromReplay: () => void
 }) {
   const resp = req.response
   return (
@@ -116,6 +126,27 @@ function RequestRow({
       </td>
       <td className="px-3 py-1.5 text-right font-mono text-xs text-muted-foreground hidden min-[900px]:table-cell">
         {resp ? `${resp.duration_ms}ms` : '—'}
+      </td>
+      <td className="px-3 py-1.5 hidden min-[1000px]:table-cell" onClick={(e) => e.stopPropagation()}>
+        {inReplay ? (
+          <button
+            onClick={onRemoveFromReplay}
+            className="flex items-center gap-1 px-2 py-1 rounded text-xs bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
+            title="Remove from Replay"
+          >
+            <Trash2 size={12} />
+            Remove
+          </button>
+        ) : (
+          <button
+            onClick={onAddToReplay}
+            className="flex items-center gap-1 px-2 py-1 rounded text-xs bg-primary/20 text-primary hover:bg-primary/30 transition-colors"
+            title="Send to Replay"
+          >
+            <RotateCcw size={12} />
+            Replay
+          </button>
+        )}
       </td>
     </tr>
   )

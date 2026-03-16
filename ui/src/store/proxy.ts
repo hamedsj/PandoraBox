@@ -13,6 +13,12 @@ interface ProxyStore {
   prependRequest: (req: Request) => void
   setSelectedRequestId: (id: number | null) => void
 
+  // Replay queue (requests explicitly sent to replay)
+  replayQueue: Request[]
+  addToReplay: (req: Request) => void
+  removeFromReplay: (id: number) => void
+  clearReplay: () => void
+
   // Intercept
   interceptQueue: Request[]
   setInterceptQueue: (queue: Request[]) => void
@@ -36,6 +42,20 @@ export const useProxyStore = create<ProxyStore>((set) => ({
   prependRequest: (req) =>
     set((state) => ({ requests: [req, ...state.requests].slice(0, 5000) })),
   setSelectedRequestId: (id) => set({ selectedRequestId: id }),
+
+  // Replay queue
+  replayQueue: [],
+  addToReplay: (req) =>
+    set((state) => {
+      // Don't add duplicates
+      if (state.replayQueue.find((r) => r.id === req.id)) {
+        return state
+      }
+      return { replayQueue: [req, ...state.replayQueue].slice(0, 100) }
+    }),
+  removeFromReplay: (id) =>
+    set((state) => ({ replayQueue: state.replayQueue.filter((r) => r.id !== id) })),
+  clearReplay: () => set({ replayQueue: [] }),
 
   interceptQueue: [],
   setInterceptQueue: (queue) => set({ interceptQueue: queue }),

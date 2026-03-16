@@ -4,17 +4,17 @@ import type { Replay } from '@/api/client'
 import { useProxyStore } from '@/store/proxy'
 import { MethodBadge } from '@/components/common/MethodBadge'
 import { StatusBadge } from '@/components/common/StatusBadge'
-import { Send } from 'lucide-react'
+import { Send, RotateCcw, Trash2, Plus } from 'lucide-react'
 
 export function ReplayPanel() {
-  const requests = useProxyStore((s) => s.requests)
+  const { replayQueue, removeFromReplay, clearReplay } = useProxyStore()
   const [selectedReqId, setSelectedReqId] = useState<number | null>(null)
   const [modifiedUrl, setModifiedUrl] = useState('')
   const [modifiedBody, setModifiedBody] = useState('')
   const [replay, setReplay] = useState<Replay | null>(null)
   const [loading, setLoading] = useState(false)
 
-  const selectedReq = requests.find((r) => r.id === selectedReqId)
+  const selectedReq = replayQueue.find((r) => r.id === selectedReqId)
 
   async function sendReplay() {
     if (!selectedReqId) return
@@ -33,34 +33,81 @@ export function ReplayPanel() {
     }
   }
 
+  function handleRemoveRequest() {
+    if (!selectedReqId) return
+    removeFromReplay(selectedReqId)
+    setSelectedReqId(null)
+    setReplay(null)
+    setModifiedUrl('')
+    setModifiedBody('')
+  }
+
   return (
     <div className="flex h-full">
       {/* Left: Request picker */}
       <div className="w-72 flex flex-col border-r border-border">
-        <div className="px-3 py-2 border-b border-border text-xs text-muted-foreground font-medium">
-          Select Request
+        <div className="px-3 py-2 border-b border-border">
+          <div className="flex items-center justify-between">
+            <div className="text-xs text-muted-foreground font-medium">
+              Replay Queue
+            </div>
+            <button
+              onClick={clearReplay}
+              disabled={replayQueue.length === 0}
+              className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-30 transition-colors"
+              title="Clear all"
+            >
+              Clear
+            </button>
+          </div>
         </div>
         <div className="flex-1 overflow-auto">
-          {requests.slice(0, 100).map((req) => (
-            <div
-              key={req.id}
-              onClick={() => {
-                setSelectedReqId(req.id)
-                setModifiedUrl(`${req.scheme}://${req.host}${req.path}${req.query ? '?' + req.query : ''}`)
-                setModifiedBody('')
-                setReplay(null)
-              }}
-              className={`px-3 py-2 border-b border-border/50 cursor-pointer transition-colors ${
-                selectedReqId === req.id ? 'bg-primary/10' : 'hover:bg-muted/30'
-              }`}
-            >
-              <div className="flex items-center gap-2 mb-0.5">
-                <MethodBadge method={req.method} />
-                {req.response && <StatusBadge code={req.response.status_code} />}
-              </div>
-              <div className="text-xs font-mono text-muted-foreground truncate">{req.host}{req.path}</div>
+          {replayQueue.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-40 text-muted-foreground p-3 text-center">
+              <RotateCcw className="mb-2 opacity-30" size={32} />
+              <p className="text-sm mb-2">No requests in replay queue</p>
+              <p className="text-xs">Send requests from History to Replay</p>
             </div>
-          ))}
+          ) : (
+            replayQueue.map((req) => (
+              <div
+                key={req.id}
+                onClick={() => {
+                  setSelectedReqId(req.id)
+                  setModifiedUrl(`${req.scheme}://${req.host}${req.path}${req.query ? '?' + req.query : ''}`)
+                  setModifiedBody('')
+                  setReplay(null)
+                }}
+                className={`px-3 py-2 border-b border-border/50 cursor-pointer transition-colors ${
+                  selectedReqId === req.id ? 'bg-primary/10' : 'hover:bg-muted/30'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-2">
+                    <MethodBadge method={req.method} />
+                    {req.response && <StatusBadge code={req.response.status_code} />}
+                  </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      removeFromReplay(req.id)
+                      if (selectedReqId === req.id) {
+                        setSelectedReqId(null)
+                        setReplay(null)
+                        setModifiedUrl('')
+                        setModifiedBody('')
+                      }
+                    }}
+                    className="p-1 rounded hover:bg-muted-50 transition-colors"
+                    title="Remove from queue"
+                  >
+                    <Trash2 size={12} className="text-muted-foreground hover:text-red-400" />
+                  </button>
+                </div>
+                <div className="text-xs font-mono text-muted-foreground truncate">{req.host}{req.path}</div>
+              </div>
+            ))
+          )}
         </div>
       </div>
 
@@ -120,8 +167,10 @@ export function ReplayPanel() {
             )}
           </>
         ) : (
-          <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-            Select a request from the list to replay it
+          <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+            <Plus className="mb-2 opacity-30" size={32} />
+            <p className="text-sm">Select a request from the queue</p>
+            <p className="text-xs mt-1">or send requests from History to Replay</p>
           </div>
         )}
       </div>

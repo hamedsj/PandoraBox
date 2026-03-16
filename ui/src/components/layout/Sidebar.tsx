@@ -16,48 +16,61 @@ export function Sidebar() {
   const { mode, setMode } = useThemeStore()
 
   return (
-    <aside className="w-14 flex flex-col items-center py-3 border-r border-border bg-card gap-1">
+    <aside className="w-56 flex flex-col py-3 border-r border-border bg-card gap-1">
       {/* Logo */}
-      <div className="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center mb-3">
-        <span className="text-primary text-xs font-bold font-mono">P</span>
+      <div className="px-4 mb-4">
+        <div className="flex items-center gap-3 bg-primary/20 rounded-lg p-3">
+          <span className="text-primary text-lg font-bold font-mono">P</span>
+          <span className="text-foreground font-semibold">PitokMonitor</span>
+        </div>
       </div>
 
-      {navItems.map(({ to, label, icon: Icon }) => (
-        <NavLink
-          key={to}
-          to={to}
-          title={label}
-          className={({ isActive }) =>
-            cn(
-              'w-10 h-10 rounded-lg flex items-center justify-center transition-colors',
-              isActive
-                ? 'bg-primary/20 text-primary'
-                : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-            )
-          }
-        >
-          <Icon size={18} />
-        </NavLink>
-      ))}
+      {/* Navigation */}
+      <nav className="flex-1 px-3 space-y-1">
+        {navItems.map(({ to, label, icon: Icon }) => (
+          <NavLink
+            key={to}
+            to={to}
+            className={({ isActive }) =>
+              cn(
+                'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all text-sm',
+                isActive
+                  ? 'bg-primary/20 text-primary font-medium'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+              )
+            }
+          >
+            <Icon size={18} />
+            <span>{label}</span>
+          </NavLink>
+        ))}
+      </nav>
 
-      <div className="mt-auto flex flex-col gap-2">
+      {/* Bottom section */}
+      <div className="px-3 flex flex-col gap-2">
         {/* Theme Toggle */}
         <button
           onClick={() => setMode(mode === 'dark' ? 'light' : 'dark')}
           title={mode === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-          className="w-10 h-10 rounded-lg flex items-center justify-center transition-colors text-muted-foreground hover:text-foreground hover:bg-muted"
+          className="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all text-sm text-muted-foreground hover:text-foreground hover:bg-muted"
         >
           {mode === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+          <span>{mode === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
         </button>
 
         {/* Proxy Status Indicator */}
-        <div
-          title={status?.running ? 'Proxy running' : 'Proxy stopped'}
-          className={cn(
-            'w-2 h-2 rounded-full mx-auto',
-            status?.running ? 'bg-emerald-400' : 'bg-red-400'
-          )}
-        />
+        <div className="flex items-center gap-3 px-3 py-2">
+          <div
+            title={status?.running ? 'Proxy running' : 'Proxy stopped'}
+            className={cn(
+              'w-2 h-2 rounded-full',
+              status?.running ? 'bg-emerald-400' : 'bg-red-400'
+            )}
+          />
+          <span className="text-xs text-muted-foreground">
+            {status?.running ? 'Proxy Active' : 'Proxy Stopped'}
+          </span>
+        </div>
       </div>
     </aside>
   )
