@@ -43,6 +43,7 @@ const CONTENT_TYPE_CHIPS = [
 // ─── Local filter state ───────────────────────────────────────────────────────
 
 interface LocalFilters {
+  search: string
   host: string
   extensionShow: string
   extensionHide: string
@@ -57,6 +58,7 @@ interface LocalFilters {
 
 function fromStore(filters: ReturnType<typeof useProxyStore.getState>['filters']): LocalFilters {
   return {
+    search:          filters.search,
     host:            filters.host,
     extensionShow:   filters.extensionShow,
     extensionHide:   filters.extensionHide,
@@ -72,7 +74,7 @@ function fromStore(filters: ReturnType<typeof useProxyStore.getState>['filters']
 
 function empty(): LocalFilters {
   return {
-    host: '', extensionShow: '', extensionHide: '',
+    search: '', host: '', extensionShow: '', extensionHide: '',
     contentTypeShow: '', contentTypeHide: '',
     statusCodes: [], negativeSearch: false,
     caseInsensitive: true, useRegex: false, searchScope: [],
@@ -82,7 +84,7 @@ function empty(): LocalFilters {
 function countForTab(tab: Tab, f: LocalFilters): number {
   switch (tab) {
     case 'search':
-      return [f.searchScope.length > 0, f.negativeSearch, !f.caseInsensitive, f.useRegex].filter(Boolean).length
+      return [f.search, f.searchScope.length > 0, f.negativeSearch, !f.caseInsensitive, f.useRegex].filter(Boolean).length
     case 'request':
       return [f.host, f.extensionShow, f.extensionHide].filter(Boolean).length
     case 'response':
@@ -196,7 +198,7 @@ export function FilterModal({ isOpen, onClose }: { isOpen: boolean; onClose: () 
         </div>
 
         {/* Tab content — fixed height, no scroll */}
-        <div className="h-72 p-5">
+        <div className="h-80 p-5">
           {activeTab === 'search' && <SearchTab local={local} patch={patch} toggleBool={toggleBool} toggleArray={toggleArray} />}
           {activeTab === 'request' && <RequestTab local={local} patch={patch} />}
           {activeTab === 'response' && <ResponseTab local={local} patch={patch} toggleArray={toggleArray} />}
@@ -237,6 +239,16 @@ function SearchTab({
 }) {
   return (
     <div className="flex flex-col gap-5">
+      {/* Search term */}
+      <div>
+        <FieldLabel>Search Term</FieldLabel>
+        <TextInput
+          placeholder="Search across selected fields..."
+          value={local.search}
+          onChange={v => patch('search', v)}
+        />
+      </div>
+
       {/* Scope */}
       <div>
         <FieldLabel>Search Scope <span className="font-normal normal-case tracking-normal text-muted-foreground ml-1">— none = all fields</span></FieldLabel>

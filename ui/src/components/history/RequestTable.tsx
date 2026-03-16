@@ -5,7 +5,7 @@ import { MethodBadge } from '@/components/common/MethodBadge'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import { cn } from '@/lib/utils'
 import type { Request } from '@/api/client'
-import { Search, Globe, Filter, RotateCcw, Trash2, ChevronUp, ChevronDown } from 'lucide-react'
+import { Globe, Filter, RotateCcw, Trash2, ChevronUp, ChevronDown } from 'lucide-react'
 import { FilterModal } from './FilterModal'
 
 type SortColumn = 'id' | 'method' | 'status' | 'host' | 'path' | 'query' | 'size' | 'time'
@@ -182,6 +182,7 @@ export function RequestTable() {
   }
 
   const activeFilterCount = [
+    filters.search,
     filters.host,
     filters.extensionShow,
     filters.extensionHide,
@@ -198,15 +199,6 @@ export function RequestTable() {
     <div className="flex flex-col h-full">
       {/* Toolbar */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-card">
-        <div className="relative flex-1">
-          <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <input
-            className="w-full pl-7 pr-3 py-1.5 text-sm bg-input border border-border rounded-md font-mono placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-            placeholder="Search host, path, query..."
-            value={filters.search}
-            onChange={(e) => setFilters({ search: e.target.value })}
-          />
-        </div>
         <button
           onClick={() => setFilterModalOpen(true)}
           className={cn(
