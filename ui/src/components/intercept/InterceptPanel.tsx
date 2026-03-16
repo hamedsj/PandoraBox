@@ -6,9 +6,12 @@ import { MethodBadge } from '@/components/common/MethodBadge'
 import { Shield, ShieldOff, Check, X, Edit3 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { subscribeShortcutAction } from '@/lib/shortcuts'
+import { useNavigate } from 'react-router-dom'
 
 export function InterceptPanel() {
+  const navigate = useNavigate()
   const status = useProxyStore((s) => s.status)
+  const addToReplay = useProxyStore((s) => s.addToReplay)
   const [queue, setQueue] = useState<Request[]>([])
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [editContent, setEditContent] = useState('')
@@ -70,7 +73,10 @@ export function InterceptPanel() {
 
       if (!selected) return
 
-      if (actionId === 'intercept.toggleEditMode') {
+      if (actionId === 'common.sendSelectedToReplay') {
+        addToReplay(selected)
+        navigate('/replay')
+      } else if (actionId === 'intercept.toggleEditMode') {
         setEditing((value) => !value)
       } else if (actionId === 'intercept.forwardSelected') {
         forward(selected.id).catch(console.error)
@@ -80,7 +86,7 @@ export function InterceptPanel() {
         forward(selected.id).catch(console.error)
       }
     })
-  }, [editing, queue, selected, selectedId])
+  }, [addToReplay, editing, navigate, queue, selected, selectedId])
 
   async function toggleIntercept() {
     await api.intercept.toggle(!interceptEnabled)

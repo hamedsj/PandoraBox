@@ -202,54 +202,19 @@ func (p *Proxy) SendRequest(method, url string, headers map[string]string, body 
 }
 
 // ReplayRequest replays a stored request with optional modifications.
-func (p *Proxy) ReplayRequest(reqID int64, modHeaders map[string]string, modBody []byte, modURL string) (*storage.Replay, error) {
+func (p *Proxy) ReplayRequest(reqID int64, modHeaders map[string]string, modBody []byte, modURL string, raw []byte) (*storage.Replay, error) {
 	db := p.getDB()
 	orig, err := db.GetRequest(reqID)
 	if err != nil || orig == nil {
 		return nil, fmt.Errorf("request not found: %d", reqID)
 	}
 
-	targetURL := fmt.Sprintf("%s://%s%s", orig.Scheme, orig.Host, orig.Path)
-	if orig.Query != "" {
-		targetURL += "?" + orig.Query
-	}
-	if modURL != "" {
-		targetURL = modURL
-	}
-
-	body := orig.Body
-	if modBody != nil {
-		body = modBody
-	}
-
-	req, err := http.NewRequest(orig.Method, targetURL, bytes.NewReader(body))
+	req, newReqCapture, err := buildReplayRequest(orig, modHeaders, modBody, modURL, raw)
 	if err != nil {
 		return nil, err
 	}
 
-	var origHeaders map[string][]string
-	json.Unmarshal([]byte(orig.Headers), &origHeaders)
-	for k, vs := range origHeaders {
-		for _, v := range vs {
-			req.Header.Add(k, v)
-		}
-	}
-	for k, v := range modHeaders {
-		req.Header.Set(k, v)
-	}
-
 	replay := &storage.Replay{OriginRequestID: &reqID, Status: "pending"}
-
-	newReqCapture := &storage.Request{
-		Method:  req.Method,
-		Scheme:  orig.Scheme,
-		Host:    orig.Host,
-		Path:    req.URL.Path,
-		Query:   req.URL.RawQuery,
-		Body:    body,
-	}
-	headersJSON, _ := json.Marshal(req.Header)
-	newReqCapture.Headers = string(headersJSON)
 
 	newReqID, err := db.SaveRequest(newReqCapture)
 	if err != nil {
@@ -299,4 +264,93 @@ func (p *Proxy) ReplayRequest(reqID int64, modHeaders map[string]string, modBody
 	replay.Request = newReqCapture
 
 	return replay, nil
+}
+
+func buildReplayRequest(orig *storage.Request, modHeaders map[string]string, modBody []byte, modURL string, raw []byte) (*http.Request, *storage.Request, error) {
+	if len(raw) > 0 {
+		return buildReplayRequestFromRaw(orig, raw)
+	}
+
+	targetURL := fmt.Sprintf("%s://%s%s", orig.Scheme, orig.Host, orig.Path)
+	if orig.Query != "" {
+		targetURL += "?" + orig.Query
+	}
+	if modURL != "" {
+		targetURL = modURL
+	}
+
+	body := orig.Body
+	if modBody != nil {
+		body = modBody
+	}
+
+	req, err := http.NewRequest(orig.Method, targetURL, bytes.NewReader(body))
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var origHeaders map[string][]string
+	json.Unmarshal([]byte(orig.Headers), &origHeaders)
+	for k, vs := range origHeaders {
+		for _, v := range vs {
+			req.Header.Add(k, v)
+		}
+	}
+	for k, v := range modHeaders {
+		req.Header.Set(k, v)
+	}
+
+	rawReq, _ := httputil.DumpRequest(req, true)
+	headersJSON, _ := json.Marshal(req.Header)
+
+	return req, &storage.Request{
+		Method:  req.Method,
+		Scheme:  req.URL.Scheme,
+		Host:    req.URL.Host,
+		Path:    req.URL.Path,
+		Query:   req.URL.RawQuery,
+		Headers: string(headersJSON),
+		Body:    body,
+		Raw:     rawReq,
+	}, nil
+}
+
+func buildReplayRequestFromRaw(orig *storage.Request, raw []byte) (*http.Request, *storage.Request, error) {
+	req, err := http.ReadRequest(bufio.NewReader(bytes.NewReader(raw)))
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if req.URL.Scheme == "" {
+		req.URL.Scheme = orig.Scheme
+	}
+	if req.URL.Host == "" {
+		if req.Host != "" {
+			req.URL.Host = req.Host
+		} else {
+			req.URL.Host = orig.Host
+		}
+	}
+	if req.Host == "" {
+		req.Host = req.URL.Host
+	}
+
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		return nil, nil, err
+	}
+	req.Body = io.NopCloser(bytes.NewReader(body))
+	req.ContentLength = int64(len(body))
+
+	headersJSON, _ := json.Marshal(req.Header)
+	return req, &storage.Request{
+		Method:  req.Method,
+		Scheme:  req.URL.Scheme,
+		Host:    req.URL.Host,
+		Path:    req.URL.Path,
+		Query:   req.URL.RawQuery,
+		Headers: string(headersJSON),
+		Body:    body,
+		Raw:     raw,
+	}, nil
 }

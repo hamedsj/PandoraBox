@@ -53,13 +53,17 @@ export function useKeyboardShortcuts() {
         dispatchPageAction(actionId)
         setSelectedRequestId(null)
       } else if (actionId === 'common.sendSelectedToReplay') {
-        const selectedId = useProxyStore.getState().selectedRequestId
-        const selectedRequest = useProxyStore.getState().requests.find((request) => request.id === selectedId)
-        if (selectedRequest) {
-          useProxyStore.getState().addToReplay(selectedRequest)
-          navigate('/replay')
+        if (location.pathname === '/intercept') {
+          dispatchPageAction(actionId)
         } else {
-          handled = false
+          const selectedId = useProxyStore.getState().selectedRequestId
+          const selectedRequest = useProxyStore.getState().requests.find((request) => request.id === selectedId)
+          if (selectedRequest) {
+            useProxyStore.getState().addToReplay(selectedRequest)
+            navigate('/replay')
+          } else {
+            handled = false
+          }
         }
       } else {
         dispatchPageAction(actionId)

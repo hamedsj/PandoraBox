@@ -52,6 +52,7 @@ export interface Request {
   query: string
   headers: string
   body: string | number[] | null
+  raw?: string | null
   timestamp: string
   tags: string
   response?: Response
@@ -64,6 +65,7 @@ export interface Response {
   status_text: string
   headers: string
   body: string | number[] | null
+  raw?: string | null
   duration_ms: number
   size_bytes: number
   timestamp: string
@@ -160,6 +162,7 @@ export const api = {
       modified_headers?: Record<string, string>
       modified_body?: number[]
       modified_url?: string
+      raw?: string
     }) => post<Replay>('/replay', body),
     get: (id: number) => get<Replay>(`/replay/${id}`),
   },

@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils'
 import { useProxyStore } from '@/store/proxy'
 import { useThemeStore } from '@/store/theme'
 import { ProjectSwitcher } from './ProjectSwitcher'
+import { useEffect, useState } from 'react'
 
 const navItems = [
   { to: '/intercept', label: 'Intercept', icon: Shield },
@@ -16,7 +17,20 @@ const navItems = [
 
 export function Sidebar() {
   const status = useProxyStore((s) => s.status)
+  const replayAttentionTick = useProxyStore((s) => s.replayAttentionTick)
   const { mode, setMode } = useThemeStore()
+  const [blinkReplay, setBlinkReplay] = useState(false)
+
+  useEffect(() => {
+    if (replayAttentionTick === 0) return
+    setBlinkReplay(false)
+    const frame = window.requestAnimationFrame(() => setBlinkReplay(true))
+    const timeout = window.setTimeout(() => setBlinkReplay(false), 950)
+    return () => {
+      window.cancelAnimationFrame(frame)
+      window.clearTimeout(timeout)
+    }
+  }, [replayAttentionTick])
 
   return (
     <aside className="w-56 flex flex-col py-3 border-r border-border bg-card gap-1">
@@ -40,6 +54,7 @@ export function Sidebar() {
             className={({ isActive }) =>
               cn(
                 'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all text-sm',
+                to === '/replay' && blinkReplay && 'replay-attention',
                 isActive
                   ? 'bg-primary/20 text-primary font-medium'
                   : 'text-muted-foreground hover:text-foreground hover:bg-muted'

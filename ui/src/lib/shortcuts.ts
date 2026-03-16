@@ -60,6 +60,7 @@ export function isEditableTarget(target: EventTarget | null): boolean {
 export function allowsInEditable(actionId: ShortcutActionId): boolean {
   return (
     actionId === 'common.closeCurrent' ||
+    actionId === 'common.sendSelectedToReplay' ||
     actionId === 'common.escape' ||
     actionId === 'intercept.applyAndForward' ||
     actionId === 'replay.send'
