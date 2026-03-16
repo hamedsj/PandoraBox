@@ -316,9 +316,7 @@ CA files stored at: `~/.pitokmonitor/ca.crt` and `~/.pitokmonitor/ca.key`
 
 ## Planned Features (Phase 6)
 
-- [ ] HAR export
 - [ ] Upstream proxy chaining
-- [ ] Request diffing in Replay view
 - [ ] WebSocket traffic support
-- [ ] MCP `modify_request` tool
+- [x] MCP parity + per-project MCP toggle
 - [ ] Auto-update via electron-updater
