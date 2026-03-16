@@ -2,20 +2,21 @@ import { create } from 'zustand'
 import type { Request, ProxyStatus } from '@/api/client'
 
 interface RequestFilters {
-  // Basic filters
+  // Toolbar (live)
   search: string
   method: string
-  host: string
 
-  // Advanced filters
+  // Modal (staged, applied on confirm)
+  host: string
   pathExtension: string
   contentType: string
+  statusCodes: string[]   // e.g. ['2xx', '4xx'] — empty means all
 
   // Search options
   negativeSearch: boolean
   caseInsensitive: boolean
   useRegex: boolean
-  searchScope: 'all' | 'host' | 'path' | 'query' | 'headers' | 'body'
+  searchScope: string[]   // e.g. ['host', 'path'] — empty means all fields
 }
 
 interface ProxyStore {
@@ -52,10 +53,11 @@ const defaultFilters: RequestFilters = {
   host: '',
   pathExtension: '',
   contentType: '',
+  statusCodes: [],
   negativeSearch: false,
   caseInsensitive: true,
   useRegex: false,
-  searchScope: 'all',
+  searchScope: [],
 }
 
 export const useProxyStore = create<ProxyStore>((set) => ({

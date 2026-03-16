@@ -73,65 +73,65 @@ export function RequestTable() {
       // Method filter
       if (filters.method && req.method !== filters.method) return false
 
+      // Host filter
+      if (filters.host && !req.host.toLowerCase().includes(filters.host.toLowerCase())) return false
+
       // Path extension filter
       if (filters.pathExtension) {
         const pathLower = req.path.toLowerCase()
-        const extension = '.' + filters.pathExtension.toLowerCase()
+        const extension = '.' + filters.pathExtension.toLowerCase().replace(/^\./, '')
         if (!pathLower.endsWith(extension)) return false
       }
 
-      // Content-Type filter
+      // Status code filter
+      if (filters.statusCodes.length > 0) {
+        const status = req.response?.status_code
+        if (!status) return false
+        const matches = filters.statusCodes.some(code => Math.floor(status / 100) === parseInt(code[0]))
+        if (!matches) return false
+      }
+
+      // Content-Type filter (checks response headers)
       if (filters.contentType) {
         try {
-          const headers = JSON.parse(req.headers)
-          const requestContentType = headers['content-type'] || headers['Content-Type']
-          if (requestContentType) {
-            if (!requestContentType.toLowerCase().includes(filters.contentType.toLowerCase())) {
-              return false
-            }
-          }
+          const respHeaders = req.response ? JSON.parse(req.response.headers ?? '{}') : {}
+          const ct: string = respHeaders['content-type'] || respHeaders['Content-Type'] || ''
+          if (!ct.toLowerCase().includes(filters.contentType.toLowerCase())) return false
         } catch {
-          // Invalid JSON, skip this filter
+          return false
         }
       }
 
       // Search filter
       if (filters.search) {
-        let searchText = filters.search
-        if (filters.caseInsensitive) {
-          searchText = searchText.toLowerCase()
-        }
+        const inScope = (field: string) =>
+          filters.searchScope.length === 0 || filters.searchScope.includes(field)
 
-        const checkSearch = (value: string) => {
+        const checkSearch = (value: string): boolean => {
           if (filters.useRegex) {
             try {
-              const regex = new RegExp(searchText, filters.caseInsensitive ? 'i' : '')
-              return regex.test(value)
+              return new RegExp(filters.search, filters.caseInsensitive ? 'i' : '').test(value)
             } catch {
               return false
             }
-          } else {
-            const searchValue = filters.caseInsensitive ? value.toLowerCase() : value
-            return searchValue.includes(searchText)
           }
-        }
-
-        const shouldCheck = (field: string) => {
-          if (filters.searchScope === 'all') return true
-          return filters.searchScope === field
+          const haystack = filters.caseInsensitive ? value.toLowerCase() : value
+          const needle = filters.caseInsensitive ? filters.search.toLowerCase() : filters.search
+          return haystack.includes(needle)
         }
 
         let matches = false
-        if (shouldCheck('host') && checkSearch(req.host)) matches = true
-        if (shouldCheck('path') && checkSearch(req.path)) matches = true
-        if (shouldCheck('query') && req.query && checkSearch(req.query)) matches = true
-        if (shouldCheck('headers') && checkSearch(req.headers)) matches = true
-        if (shouldCheck('body') && req.body && checkSearch(new TextDecoder().decode(new Uint8Array(req.body)))) matches = true
+        if (inScope('host') && checkSearch(req.host)) matches = true
+        if (!matches && inScope('path') && checkSearch(req.path)) matches = true
+        if (!matches && inScope('query') && req.query && checkSearch(req.query)) matches = true
+        if (!matches && inScope('headers') && checkSearch(req.headers)) matches = true
+        if (!matches && inScope('body') && req.body) {
+          try {
+            matches = checkSearch(new TextDecoder().decode(new Uint8Array(req.body)))
+          } catch { /* ignore */ }
+        }
 
-        // Negative search: exclude if matches, include only if doesn't match
-        if (filters.negativeSearch && matches) return false
-        // Positive search: exclude if doesn't match, include only if matches
-        if (!filters.negativeSearch && !matches) return false
+        if (filters.negativeSearch ? matches : !matches) return false
       }
 
       return true
@@ -164,12 +164,14 @@ export function RequestTable() {
   }
 
   const activeFilterCount = [
+    filters.host,
     filters.pathExtension,
     filters.contentType,
+    filters.statusCodes.length > 0,
     filters.negativeSearch,
     !filters.caseInsensitive,
     filters.useRegex,
-    filters.searchScope !== 'all',
+    filters.searchScope.length > 0,
   ].filter(Boolean).length
 
   return (
