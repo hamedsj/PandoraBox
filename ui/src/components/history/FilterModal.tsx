@@ -321,7 +321,7 @@ function SearchTab({
         <div className="w-px bg-border flex-shrink-0" />
 
         {/* Options */}
-        <div className="w-40 flex-shrink-0">
+        <div className="w-48 flex-shrink-0">
           <FieldLabel>Options</FieldLabel>
           <div className="divide-y divide-border/40">
             <Toggle label="Case Sensitive" checked={!local.caseInsensitive} onChange={v => patch('caseInsensitive', !v)} />
@@ -506,7 +506,7 @@ function LabeledInput({ label, placeholder, value, onChange, intent, mono, enabl
 
       {/* Label */}
       <span className={cn(
-        'text-xs font-medium w-16 text-right flex-shrink-0 transition-colors',
+        'text-xs font-medium w-20 text-right flex-shrink-0 transition-colors',
         enabled ? isShow ? 'text-green-400' : 'text-red-400' : 'text-muted-foreground',
       )}>
         {label}
