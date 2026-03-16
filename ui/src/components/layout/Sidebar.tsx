@@ -6,11 +6,11 @@ import { useThemeStore } from '@/store/theme'
 import { ProjectSwitcher } from './ProjectSwitcher'
 
 const navItems = [
-  { to: '/history', label: 'History', icon: Globe },
-  { to: '/sitemap', label: 'SiteMap', icon: Network },
   { to: '/intercept', label: 'Intercept', icon: Shield },
-  { to: '/replay', label: 'Replay', icon: RotateCcw },
+  { to: '/history', label: 'History', icon: Globe },
   { to: '/scope', label: 'Scope', icon: Target },
+  { to: '/sitemap', label: 'SiteMap', icon: Network },
+  { to: '/replay', label: 'Replay', icon: RotateCcw },
   { to: '/settings', label: 'Settings', icon: Settings },
 ]
 
