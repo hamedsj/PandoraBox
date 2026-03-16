@@ -120,15 +120,26 @@ export function RequestTable() {
           return haystack.includes(needle)
         }
 
+        const decodeBody = (body: number[] | null): string => {
+          if (!body) return ''
+          try { return new TextDecoder().decode(new Uint8Array(body)) } catch { return '' }
+        }
+
         let matches = false
-        if (inScope('host') && checkSearch(req.host)) matches = true
+        if (!matches && inScope('host') && checkSearch(req.host)) matches = true
         if (!matches && inScope('path') && checkSearch(req.path)) matches = true
         if (!matches && inScope('query') && req.query && checkSearch(req.query)) matches = true
-        if (!matches && inScope('headers') && checkSearch(req.headers)) matches = true
-        if (!matches && inScope('body') && req.body) {
-          try {
-            matches = checkSearch(new TextDecoder().decode(new Uint8Array(req.body)))
-          } catch { /* ignore */ }
+        if (!matches && inScope('req.headers') && checkSearch(req.headers)) matches = true
+        if (!matches && inScope('req.body')) {
+          const text = decodeBody(req.body)
+          if (text) matches = checkSearch(text)
+        }
+        if (!matches && inScope('res.headers') && req.response?.headers) {
+          matches = checkSearch(req.response.headers)
+        }
+        if (!matches && inScope('res.body')) {
+          const text = decodeBody(req.response?.body ?? null)
+          if (text) matches = checkSearch(text)
         }
 
         if (filters.negativeSearch ? matches : !matches) return false

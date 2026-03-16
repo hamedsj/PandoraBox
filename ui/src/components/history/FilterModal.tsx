@@ -3,7 +3,25 @@ import { useProxyStore } from '@/store/proxy'
 import { cn } from '@/lib/utils'
 import { X, Filter } from 'lucide-react'
 
-const SCOPE_OPTIONS = ['host', 'path', 'query', 'headers', 'body'] as const
+const SCOPE_GROUPS = [
+  {
+    label: 'Request',
+    options: [
+      { value: 'host',        label: 'Host'    },
+      { value: 'path',        label: 'Path'    },
+      { value: 'query',       label: 'Query'   },
+      { value: 'req.headers', label: 'Headers' },
+      { value: 'req.body',    label: 'Body'    },
+    ],
+  },
+  {
+    label: 'Response',
+    options: [
+      { value: 'res.headers', label: 'Headers' },
+      { value: 'res.body',    label: 'Body'    },
+    ],
+  },
+] as const
 const STATUS_OPTIONS = ['1xx', '2xx', '3xx', '4xx', '5xx'] as const
 const CONTENT_TYPE_CHIPS = [
   { label: 'JSON',     value: 'application/json' },
@@ -157,15 +175,22 @@ export function FilterModal({ isOpen, onClose }: { isOpen: boolean; onClose: () 
         <div className="flex-1 overflow-y-auto p-5 space-y-5 min-h-0">
 
           {/* Search Scope */}
-          <Section title="Search Scope" hint="Where the search bar looks — none selected = all fields">
-            <div className="flex flex-wrap gap-1.5">
-              {SCOPE_OPTIONS.map(scope => (
-                <Chip
-                  key={scope}
-                  label={scope.charAt(0).toUpperCase() + scope.slice(1)}
-                  active={local.searchScope.includes(scope)}
-                  onClick={() => toggleArrayItem('searchScope', scope)}
-                />
+          <Section title="Search Scope" hint="None selected = all fields">
+            <div className="space-y-2">
+              {SCOPE_GROUPS.map(group => (
+                <div key={group.label} className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground w-16 flex-shrink-0">{group.label}</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {group.options.map(({ value, label }) => (
+                      <Chip
+                        key={value}
+                        label={label}
+                        active={local.searchScope.includes(value)}
+                        onClick={() => toggleArrayItem('searchScope', value)}
+                      />
+                    ))}
+                  </div>
+                </div>
               ))}
             </div>
           </Section>
