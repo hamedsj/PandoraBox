@@ -4,7 +4,7 @@ A programmable MITM proxy (inspired by Burp Suite / Caido) with a built-in MCP s
 
 ## Overview
 
-PitokMonitor intercepts, inspects, replays, and modifies HTTP/HTTPS traffic. It also supports named projects, persisted history filters, regex-based search in the History view, scope rules for include/exclude capture logic, and a SiteMap tree for browsing in-scope traffic by host and path. It ships as a single Go binary (with React UI embedded) wrapped in an Electron desktop application.
+PitokMonitor intercepts, inspects, replays, and modifies HTTP/HTTPS traffic. It supports named projects, persisted history filters, regex-based search in the History view, scope rules for include/exclude capture logic, a SiteMap tree for browsing in-scope traffic by host and path, customizable keyboard shortcuts, decoded request/response body inspection, and a raw-packet Replay editor. It ships as a single Go binary (with React UI embedded) wrapped in an Electron desktop application.
 
 ### Architecture
 
@@ -140,13 +140,13 @@ PitokMonitor/
 │   │   ├── proxy_ctrl.go # /api/proxy/start|stop|status|config
 │   │   ├── traffic.go   # /api/requests/* (list, get, delete)
 │   │   ├── intercept.go # /api/intercept/* (list, forward, drop, modify)
-│   │   ├── replay.go    # /api/replay/*
+│   │   ├── replay.go    # /api/replay/* (raw packet replay)
 │   │   ├── project.go   # /api/project/* (open, create, update, save-as, recent)
 │   │   ├── ws.go        # WebSocket hub (broadcasts event bus to all clients)
 │   │   ├── static.go    # Serves embedded React UI
 │   │   └── helpers.go   # JSON response helpers
 │   ├── project/         # Project workspaces, persisted app config, scope/filter settings
-│   │   ├── project.go   # project.json loading/saving, temp project, save-as
+│   │   ├── project.go   # project.json loading/saving, temp project reset, save-as
 │   │   └── appconfig.go # recent projects + last opened project
 │   ├── storage/         # SQLite persistence (modernc.org/sqlite, WAL mode)
 │   │   ├── db.go        # Schema migrations, PRAGMA setup
@@ -161,32 +161,41 @@ PitokMonitor/
 │
 ├── ui/
 │   ├── electron/
-│   │   ├── main.cjs     # Electron main process (spawns Go binary, system tray)
-│   │   └── preload.cjs  # Safe IPC bridge for native folder dialogs
+│   │   ├── main.cjs     # Electron main process (spawns Go binary, system tray, body decode)
+│   │   └── preload.cjs  # Safe IPC bridge for native dialogs + body decode
 │   ├── src/
 │   │   ├── App.tsx       # React Router: /intercept, /history, /scope, /sitemap, /replay, /settings
 │   │   ├── api/client.ts # Typed fetch wrapper for all /api endpoints
 │   │   ├── hooks/
 │   │   │   ├── useWebSocket.ts  # Auto-reconnecting WebSocket to /ws
-│   │   │   └── useRequests.ts
+│   │   │   ├── useRequests.ts
+│   │   │   └── useKeyboardShortcuts.ts
+│   │   ├── lib/
+│   │   │   ├── shortcuts.ts       # Shortcut matching / dispatch helpers
+│   │   │   ├── httpBodies.ts      # Request/response body decode helpers
+│   │   │   ├── bodyPresentation.ts # Pretty formatting + language detection
+│   │   │   └── rawHttp.ts         # Raw request construction + replay helpers
 │   │   ├── store/
-│   │   │   ├── proxy.ts  # Zustand: requests, current project, persisted filters, replay/intercept queues
-│   │   │   └── theme.ts  # Zustand+persist: dark/light modes, fonts, accent colors
+│   │   │   ├── proxy.ts      # Zustand: requests, current project, filters, replay/intercept queues
+│   │   │   ├── theme.ts      # Zustand+persist: dark/light modes, fonts, accent colors
+│   │   │   ├── shortcuts.ts  # Persisted keymap + enable/disable
+│   │   │   ├── replay.ts     # Replay editor settings (auto Content-Length)
+│   │   │   └── workspace.ts  # Inspector placement + workspace layout prefs
 │   │   ├── pages/
-│   │   │   ├── HistoryPage.tsx    # Split-pane: RequestTable + RequestInspector
+│   │   │   ├── HistoryPage.tsx    # Request table + movable inspector
 │   │   │   ├── InterceptPage.tsx  # InterceptPanel (forward/drop/modify)
 │   │   │   ├── ScopePage.tsx      # Scope editor for include/exclude rules
 │   │   │   ├── SitemapPage.tsx    # Tree view of in-scope traffic with shared filters
-│   │   │   ├── ReplayPage.tsx     # ReplayPanel (queue + results)
-│   │   │   └── SettingsPage.tsx   # Appearance + CA cert instructions
+│   │   │   ├── ReplayPage.tsx     # ReplayPanel (queue + raw packet editor + results)
+│   │   │   └── SettingsPage.tsx   # Appearance, shortcuts, replay, CA cert instructions
 │   │   └── components/
-│   │       ├── layout/    # MainLayout, Sidebar, ProjectSwitcher
+│   │       ├── layout/    # MainLayout, Sidebar, ProjectSwitcher, RequestWorkspaceLayout
 │   │       ├── history/   # RequestTable, regex-capable FilterModal
-│   │       ├── inspector/ # RequestInspector
+│   │       ├── inspector/ # RequestInspector with decoded body viewer
 │   │       ├── intercept/ # InterceptPanel
 │   │       ├── sitemap/   # SitemapTree
 │   │       ├── replay/    # ReplayPanel
-│   │       ├── common/    # MethodBadge, StatusBadge
+│   │       ├── common/    # MethodBadge, StatusBadge, CodeViewer
 │   │       └── ThemeProvider.tsx  # Injects CSS variables from theme store
 │   ├── vite.config.ts    # Dev proxy: /api + /ws → localhost:7777
 │   └── package.json      # electron-builder config, npm scripts
@@ -238,7 +247,7 @@ Base URL: `http://localhost:7777`
 | POST | /api/intercept/{id}/drop | Drop held request |
 | POST | /api/intercept/{id}/modify | Forward with modified raw bytes |
 | GET | /api/intercept/toggle | Toggle intercept on/off |
-| POST | /api/replay | Queue a replay |
+| POST | /api/replay | Replay a captured request from a raw packet |
 | GET | /api/replay/{id} | Get replay result |
 | GET | /api/ca/cert | Download CA certificate (PEM) |
 | GET | /api/project | Get current project config |
@@ -308,10 +317,8 @@ CA files stored at: `~/.pitokmonitor/ca.crt` and `~/.pitokmonitor/ca.key`
 ## Planned Features (Phase 6)
 
 - [ ] HAR export
-- [ ] Keyboard shortcuts
 - [ ] Upstream proxy chaining
 - [ ] Request diffing in Replay view
 - [ ] WebSocket traffic support
-- [ ] Body decoding (gzip/br decompression in UI)
 - [ ] MCP `modify_request` tool
 - [ ] Auto-update via electron-updater
