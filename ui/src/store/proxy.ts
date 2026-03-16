@@ -1,6 +1,23 @@
 import { create } from 'zustand'
 import type { Request, ProxyStatus } from '@/api/client'
 
+interface RequestFilters {
+  // Basic filters
+  search: string
+  method: string
+  host: string
+
+  // Advanced filters
+  pathExtension: string
+  contentType: string
+
+  // Search options
+  negativeSearch: boolean
+  caseInsensitive: boolean
+  useRegex: boolean
+  searchScope: 'all' | 'host' | 'path' | 'query' | 'headers' | 'body'
+}
+
 interface ProxyStore {
   // Status
   status: ProxyStatus | null
@@ -24,12 +41,21 @@ interface ProxyStore {
   setInterceptQueue: (queue: Request[]) => void
 
   // Filters
-  filters: {
-    search: string
-    host: string
-    method: string
-  }
-  setFilters: (f: Partial<ProxyStore['filters']>) => void
+  filters: RequestFilters
+  setFilters: (f: Partial<RequestFilters>) => void
+  resetFilters: () => void
+}
+
+const defaultFilters: RequestFilters = {
+  search: '',
+  method: '',
+  host: '',
+  pathExtension: '',
+  contentType: '',
+  negativeSearch: false,
+  caseInsensitive: true,
+  useRegex: false,
+  searchScope: 'all',
 }
 
 export const useProxyStore = create<ProxyStore>((set) => ({
@@ -43,11 +69,9 @@ export const useProxyStore = create<ProxyStore>((set) => ({
     set((state) => ({ requests: [req, ...state.requests].slice(0, 5000) })),
   setSelectedRequestId: (id) => set({ selectedRequestId: id }),
 
-  // Replay queue
   replayQueue: [],
   addToReplay: (req) =>
     set((state) => {
-      // Don't add duplicates
       if (state.replayQueue.find((r) => r.id === req.id)) {
         return state
       }
@@ -60,6 +84,7 @@ export const useProxyStore = create<ProxyStore>((set) => ({
   interceptQueue: [],
   setInterceptQueue: (queue) => set({ interceptQueue: queue }),
 
-  filters: { search: '', host: '', method: '' },
+  filters: defaultFilters,
   setFilters: (f) => set((state) => ({ filters: { ...state.filters, ...f } })),
+  resetFilters: () => set({ filters: defaultFilters }),
 }))

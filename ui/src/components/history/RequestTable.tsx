@@ -1,11 +1,12 @@
-import { useState } from 'react'
+import { useState, useCallback, useEffect, useMemo } from 'react'
 import { useProxyStore } from '@/store/proxy'
 import { useRequests } from '@/hooks/useRequests'
 import { MethodBadge } from '@/components/common/MethodBadge'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import { cn } from '@/lib/utils'
 import type { Request } from '@/api/client'
-import { Search, Globe, RotateCcw, Trash2, ChevronUp, ChevronDown } from 'lucide-react'
+import { Search, Globe, Filter, RotateCcw, Trash2, ChevronUp, ChevronDown } from 'lucide-react'
+import { FilterModal } from './FilterModal'
 
 type SortColumn = 'id' | 'method' | 'status' | 'host' | 'path' | 'query' | 'size' | 'time'
 type SortDirection = 'asc' | 'desc' | null
@@ -17,69 +18,128 @@ export function RequestTable() {
 
   const [sortColumn, setSortColumn] = useState<SortColumn>('id')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
+  const [filterModalOpen, setFilterModalOpen] = useState(false)
 
-  // Sort and filter requests
-  const sortedRequests = [...requests].sort((a, b) => {
-    if (!sortDirection) return 0
+  // Sort requests
+  const sortedRequests = useMemo(() => {
+    return [...requests].sort((a, b) => {
+      if (!sortDirection) return 0
 
-    let comparison = 0
+      let comparison = 0
 
-    switch (sortColumn) {
-      case 'id':
-        comparison = a.id - b.id
-        break
-      case 'method':
-        comparison = a.method.localeCompare(b.method)
-        break
-      case 'status': {
-        const aStatus = a.response?.status_code || 0
-        const bStatus = b.response?.status_code || 0
-        comparison = aStatus - bStatus
-        break
+      switch (sortColumn) {
+        case 'id':
+          comparison = a.id - b.id
+          break
+        case 'method':
+          comparison = a.method.localeCompare(b.method)
+          break
+        case 'status': {
+          const aStatus = a.response?.status_code || 0
+          const bStatus = b.response?.status_code || 0
+          comparison = aStatus - bStatus
+          break
+        }
+        case 'host':
+          comparison = a.host.localeCompare(b.host)
+          break
+        case 'path':
+          comparison = a.path.localeCompare(b.path)
+          break
+        case 'query':
+          comparison = (a.query || '').localeCompare(b.query || '')
+          break
+        case 'size': {
+          const aSize = a.response?.size_bytes || 0
+          const bSize = b.response?.size_bytes || 0
+          comparison = aSize - bSize
+          break
+        }
+        case 'time': {
+          const aTime = a.response?.duration_ms || 0
+          const bTime = b.response?.duration_ms || 0
+          comparison = aTime - bTime
+          break
+        }
       }
-      case 'host':
-        comparison = a.host.localeCompare(b.host)
-        break
-      case 'path':
-        comparison = a.path.localeCompare(b.path)
-        break
-      case 'query':
-        comparison = (a.query || '').localeCompare(b.query || '')
-        break
-      case 'size': {
-        const aSize = a.response?.size_bytes || 0
-        const bSize = b.response?.size_bytes || 0
-        comparison = aSize - bSize
-        break
-      }
-      case 'time': {
-        const aTime = a.response?.duration_ms || 0
-        const bTime = b.response?.duration_ms || 0
-        comparison = aTime - bTime
-        break
-      }
-    }
 
-    return sortDirection === 'asc' ? comparison : -comparison
-  })
+      return sortDirection === 'asc' ? comparison : -comparison
+    })
+  }, [requests, sortColumn, sortDirection])
 
-  // Apply filters
-  const filteredRequests = sortedRequests.filter((req) => {
-    if (filters.method && req.method !== filters.method) return false
-    if (filters.search) {
-      const searchLower = filters.search.toLowerCase()
-      return (
-        req.host.toLowerCase().includes(searchLower) ||
-        req.path.toLowerCase().includes(searchLower) ||
-        req.query.toLowerCase().includes(searchLower)
-      )
-    }
-    return true
-  })
+  // Filter requests
+  const filteredRequests = useMemo(() => {
+    return sortedRequests.filter((req: Request) => {
+      // Method filter
+      if (filters.method && req.method !== filters.method) return false
+
+      // Path extension filter
+      if (filters.pathExtension) {
+        const pathLower = req.path.toLowerCase()
+        const extension = '.' + filters.pathExtension.toLowerCase()
+        if (!pathLower.endsWith(extension)) return false
+      }
+
+      // Content-Type filter
+      if (filters.contentType) {
+        try {
+          const headers = JSON.parse(req.headers)
+          const requestContentType = headers['content-type'] || headers['Content-Type']
+          if (requestContentType) {
+            if (!requestContentType.toLowerCase().includes(filters.contentType.toLowerCase())) {
+              return false
+            }
+          }
+        } catch {
+          // Invalid JSON, skip this filter
+        }
+      }
+
+      // Search filter
+      if (filters.search) {
+        let searchText = filters.search
+        if (filters.caseInsensitive) {
+          searchText = searchText.toLowerCase()
+        }
+
+        const checkSearch = (value: string) => {
+          if (filters.useRegex) {
+            try {
+              const regex = new RegExp(searchText, filters.caseInsensitive ? 'i' : '')
+              return regex.test(value)
+            } catch {
+              return false
+            }
+          } else {
+            const searchValue = filters.caseInsensitive ? value.toLowerCase() : value
+            return searchValue.includes(searchText)
+          }
+        }
+
+        const shouldCheck = (field: string) => {
+          if (filters.searchScope === 'all') return true
+          return filters.searchScope === field
+        }
+
+        let matches = false
+        if (shouldCheck('host') && checkSearch(req.host)) matches = true
+        if (shouldCheck('path') && checkSearch(req.path)) matches = true
+        if (shouldCheck('query') && req.query && checkSearch(req.query)) matches = true
+        if (shouldCheck('headers') && checkSearch(req.headers)) matches = true
+        if (shouldCheck('body') && req.body && checkSearch(new TextDecoder().decode(new Uint8Array(req.body)))) matches = true
+
+        // Negative search: exclude if matches, include only if doesn't match
+        if (filters.negativeSearch && matches) return false
+        // Positive search: exclude if doesn't match, include only if matches
+        if (!filters.negativeSearch && !matches) return false
+      }
+
+      return true
+    })
+  }, [sortedRequests, filters])
 
   function handleSort(column: SortColumn) {
     if (sortColumn === column) {
-      // Toggle direction
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
     } else {
       setSortColumn(column)
@@ -103,6 +163,15 @@ export function RequestTable() {
     return sortDirection === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} />
   }
 
+  const activeFilterCount = [
+    filters.pathExtension,
+    filters.contentType,
+    filters.negativeSearch,
+    !filters.caseInsensitive,
+    filters.useRegex,
+    filters.searchScope !== 'all',
+  ].filter(Boolean).length
+
   return (
     <div className="flex flex-col h-full">
       {/* Toolbar */}
@@ -116,6 +185,22 @@ export function RequestTable() {
             onChange={(e) => setFilters({ search: e.target.value })}
           />
         </div>
+        <button
+          onClick={() => setFilterModalOpen(true)}
+          className={cn(
+            'flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-colors border border-border',
+            activeFilterCount > 0 ? 'bg-primary/20 border-primary text-primary' : 'hover:bg-muted text-muted-foreground'
+          )}
+          title="Advanced Filters"
+        >
+          <Filter size={16} />
+          <span className="text-sm">Filter</span>
+          {activeFilterCount > 0 && (
+            <span className="bg-primary text-primary-foreground text-xs px-1.5 py-0.5 rounded-full font-medium">
+              {activeFilterCount}
+            </span>
+          )}
+        </button>
         <select
           className="text-sm bg-input border border-border rounded-md px-2 py-1.5 text-foreground focus:outline-none"
           value={filters.method}
@@ -203,12 +288,12 @@ export function RequestTable() {
             </tr>
           </thead>
           <tbody>
-            {filteredRequests.map((req) => (
+            {filteredRequests.map((req: Request) => (
               <RequestRow
                 key={req.id}
                 req={req}
                 selected={req.id === selectedRequestId}
-                inReplay={replayQueue.some((r) => r.id === req.id)}
+                inReplay={replayQueue.some((r: Request) => r.id === req.id)}
                 onClick={() => setSelectedRequestId(req.id === selectedRequestId ? null : req.id)}
                 onAddToReplay={() => addToReplay(req)}
                 onRemoveFromReplay={() => removeFromReplay(req.id)}
@@ -226,6 +311,9 @@ export function RequestTable() {
           </div>
         )}
       </div>
+
+      {/* Filter Modal */}
+      <FilterModal isOpen={filterModalOpen} onClose={() => setFilterModalOpen(false)} />
     </div>
   )
 }
@@ -272,7 +360,7 @@ function RequestRow({
   }
 
   // Close context menu on click outside or Escape
-  useState(() => {
+  useEffect(() => {
     if (typeof window !== 'undefined') {
       const handleOutsideClick = () => setContextMenuOpen(false)
       document.addEventListener('click', handleOutsideClick)
