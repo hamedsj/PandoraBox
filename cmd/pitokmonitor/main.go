@@ -155,6 +155,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	// Proxy engine
 	proxyEngine := proxy.New(cfg, db, authority, bus, interceptQueue)
+	proxyEngine.SetScope(projCfg.Scope)
 
 	// API server
 	apiServer := api.NewServer(cfg, db, bus, proxyEngine, interceptQueue, authority)
@@ -163,6 +164,8 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	// MCP server
 	mcpServer := mcpsrv.NewServer(cfg, db, proxyEngine, interceptQueue, authority)
+	mcpServer.SetProject(projectMgr, appCfg)
+	mcpServer.SetSwitchProjectFn(apiServer.SwitchProject)
 	apiServer.SetMCPServer(mcpServer)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
