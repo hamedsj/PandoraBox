@@ -99,8 +99,11 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/intercept/queue", s.interceptQueue)
 		r.Put("/intercept/toggle", s.interceptToggle)
 		r.Post("/intercept/forward/{id}", s.interceptForward)
+		r.Post("/intercept/forward-all", s.interceptForwardAll)
 		r.Post("/intercept/drop/{id}", s.interceptDrop)
 		r.Post("/intercept/modify/{id}", s.interceptModify)
+		r.Get("/intercept/filter", s.getInterceptFilter)
+		r.Put("/intercept/filter", s.setInterceptFilter)
 
 		// Replay
 		r.Post("/replay", s.createReplay)

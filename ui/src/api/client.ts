@@ -38,6 +38,12 @@ export interface ProjectInfo {
   mcp_disabled: boolean
 }
 
+export interface InterceptFilter {
+  host: string
+  method: string
+  path: string
+}
+
 export interface RecentProject {
   path: string
   name: string
@@ -154,8 +160,11 @@ export const api = {
     queue: () => get<{ queue: Request[] }>('/intercept/queue'),
     toggle: (enabled: boolean) => put<{ enabled: boolean }>('/intercept/toggle', { enabled }),
     forward: (id: number) => post<{ success: boolean }>(`/intercept/forward/${id}`),
+    forwardAll: () => post<{ forwarded: number }>('/intercept/forward-all'),
     drop: (id: number) => post<{ success: boolean }>(`/intercept/drop/${id}`),
     modify: (id: number, raw: string) => post<{ success: boolean }>(`/intercept/modify/${id}`, { raw }),
+    getFilter: () => get<InterceptFilter>('/intercept/filter'),
+    setFilter: (filter: InterceptFilter) => put<InterceptFilter>('/intercept/filter', filter),
   },
   replay: {
     create: (body: {

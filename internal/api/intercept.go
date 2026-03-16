@@ -10,6 +10,31 @@ import (
 	"github.com/hamedsj5/pitokmonitor/internal/proxy"
 )
 
+func (s *Server) getInterceptFilter(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, s.intercept.GetFilter())
+}
+
+func (s *Server) setInterceptFilter(w http.ResponseWriter, r *http.Request) {
+	var f proxy.InterceptFilter
+	if err := json.NewDecoder(r.Body).Decode(&f); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	s.intercept.SetFilter(f)
+	writeJSON(w, http.StatusOK, f)
+}
+
+func (s *Server) interceptForwardAll(w http.ResponseWriter, r *http.Request) {
+	ids := s.intercept.ListPending()
+	count := 0
+	for _, id := range ids {
+		if s.intercept.Resolve(id, proxy.InterceptDecision{Forward: true}) {
+			count++
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"forwarded": count})
+}
+
 func (s *Server) interceptQueue(w http.ResponseWriter, r *http.Request) {
 	ids := s.intercept.ListPending()
 	requests := make([]interface{}, 0, len(ids))

@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"strings"
 	"sync"
 )
 
@@ -8,6 +9,13 @@ type InterceptDecision struct {
 	Forward     bool
 	Drop        bool
 	ModifiedRaw []byte
+}
+
+// InterceptFilter controls which requests are held. Empty fields match everything.
+type InterceptFilter struct {
+	Host   string `json:"host"`   // case-insensitive substring match
+	Method string `json:"method"` // exact match (case-insensitive); empty = all
+	Path   string `json:"path"`   // substring match
 }
 
 type pendingRequest struct {
@@ -19,6 +27,7 @@ type pendingRequest struct {
 type InterceptQueue struct {
 	mu      sync.RWMutex
 	enabled bool
+	filter  InterceptFilter
 	pending map[int64]*pendingRequest
 }
 
@@ -75,4 +84,35 @@ func (q *InterceptQueue) ListPending() []int64 {
 		ids = append(ids, id)
 	}
 	return ids
+}
+
+func (q *InterceptQueue) SetFilter(f InterceptFilter) {
+	q.mu.Lock()
+	q.filter = f
+	q.mu.Unlock()
+}
+
+func (q *InterceptQueue) GetFilter() InterceptFilter {
+	q.mu.RLock()
+	defer q.mu.RUnlock()
+	return q.filter
+}
+
+// Matches returns true if the request should be held given the current filter.
+// An empty filter matches everything.
+func (q *InterceptQueue) Matches(host, method, path string) bool {
+	q.mu.RLock()
+	f := q.filter
+	q.mu.RUnlock()
+
+	if f.Host != "" && !strings.Contains(strings.ToLower(host), strings.ToLower(f.Host)) {
+		return false
+	}
+	if f.Method != "" && !strings.EqualFold(method, f.Method) {
+		return false
+	}
+	if f.Path != "" && !strings.Contains(path, f.Path) {
+		return false
+	}
+	return true
 }

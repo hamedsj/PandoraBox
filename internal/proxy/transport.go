@@ -80,7 +80,7 @@ func (p *Proxy) roundTrip(req *http.Request, scheme string) (*http.Response, *st
 	}
 
 	// Handle intercept queue
-	if p.intercept.IsEnabled() {
+	if p.intercept.IsEnabled() && p.intercept.Matches(req.Host, req.Method, req.URL.Path) {
 		reqID, err := p.getDB().SaveRequest(captured)
 		if err != nil {
 			return nil, nil, err
