@@ -4,15 +4,6 @@ import { cn } from '@/lib/utils'
 import { api } from '@/api/client'
 import { useProxyStore } from '@/store/proxy'
 
-declare global {
-  interface Window {
-    electron?: {
-      openFolder: () => Promise<string | null>
-      newFolder: () => Promise<string | null>
-    }
-  }
-}
-
 export function ProjectSwitcher() {
   const [open, setOpen] = useState(false)
   const [recent, setRecent] = useState<{ path: string; name: string; exists: boolean }[]>([])

@@ -51,7 +51,7 @@ export interface Request {
   path: string
   query: string
   headers: string
-  body: number[] | null
+  body: string | number[] | null
   timestamp: string
   tags: string
   response?: Response
@@ -63,7 +63,7 @@ export interface Response {
   status_code: number
   status_text: string
   headers: string
-  body: number[] | null
+  body: string | number[] | null
   duration_ms: number
   size_bytes: number
   timestamp: string
