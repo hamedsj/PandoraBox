@@ -188,7 +188,7 @@ export function FilterModal({ isOpen, onClose }: { isOpen: boolean; onClose: () 
       className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
       onClick={handleBackdrop}
     >
-      <div className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-lg flex flex-col">
+      <div className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-2xl flex flex-col">
 
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3 border-b border-border">
