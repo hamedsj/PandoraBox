@@ -5,15 +5,18 @@ import type { Request } from '@/api/client'
 import { MethodBadge } from '@/components/common/MethodBadge'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import { CodeViewer } from '@/components/common/CodeViewer'
-import { X, Copy } from 'lucide-react'
+import { X, Copy, PanelBottomOpen, PanelRightOpen } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { decodeBodyBytes, decodeBodyForDisplay, type DecodedBody, type RawBody } from '@/lib/httpBodies'
 import { presentBody } from '@/lib/bodyPresentation'
+import { useWorkspaceStore } from '@/store/workspace'
 
 type Tab = 'request' | 'response'
 
-export function RequestInspector() {
+export function RequestInspector({ edge = 'left' }: { edge?: 'left' | 'top' | 'none' }) {
   const { selectedRequestId, setSelectedRequestId } = useProxyStore()
+  const inspectorPosition = useWorkspaceStore((state) => state.inspectorPosition)
+  const setInspectorPosition = useWorkspaceStore((state) => state.setInspectorPosition)
   const [req, setReq] = useState<Request | null>(null)
   const [activeTab, setActiveTab] = useState<Tab>('request')
   const [copiedMsg, setCopiedMsg] = useState('')
@@ -69,7 +72,13 @@ export function RequestInspector() {
   }
 
   return (
-    <div className="flex flex-col h-full bg-card border-l border-border">
+    <div
+      className={cn(
+        'flex h-full flex-col bg-card',
+        edge === 'left' && 'border-l border-border',
+        edge === 'top' && 'border-t border-border'
+      )}
+    >
       {/* Header */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-border">
         <MethodBadge method={req.method} />
@@ -77,6 +86,13 @@ export function RequestInspector() {
           {req.scheme}://{req.host}{req.path}
           {req.query ? <span className="text-muted-foreground/60">?{req.query}</span> : null}
         </span>
+        <button
+          onClick={() => setInspectorPosition(inspectorPosition === 'right' ? 'bottom' : 'right')}
+          title={inspectorPosition === 'right' ? 'Move viewer to bottom' : 'Move viewer to side'}
+          className="p-1 text-muted-foreground hover:text-foreground transition-colors"
+        >
+          {inspectorPosition === 'right' ? <PanelBottomOpen size={14} /> : <PanelRightOpen size={14} />}
+        </button>
         <button
           onClick={copyRaw}
           title="Copy raw request"
@@ -199,6 +215,7 @@ function BodySection({ title, body }: { title: string; body: DecodedBody }) {
         <CodeViewer
           value={presentation.text}
           language={presentation.language}
+          maxHeight={2000}
         />
       )}
     </div>
