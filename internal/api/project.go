@@ -116,6 +116,13 @@ func (s *Server) projectSaveAs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if db := s.getDB(); db != nil {
+		if err := db.Checkpoint(); err != nil {
+			writeError(w, http.StatusInternalServerError, "checkpoint db: "+err.Error())
+			return
+		}
+	}
+
 	if err := mgr.SaveAs(body.Path); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -186,7 +193,13 @@ func (s *Server) openProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mgr, err := proj.OpenProject(body.Path)
+	var mgr *proj.Manager
+	var err error
+	if proj.IsTempPath(body.Path) {
+		mgr, err = proj.TempProject()
+	} else {
+		mgr, err = proj.OpenProject(body.Path)
+	}
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

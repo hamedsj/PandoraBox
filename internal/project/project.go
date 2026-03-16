@@ -57,6 +57,8 @@ type Manager struct {
 	mu   sync.RWMutex
 }
 
+const defaultHiddenExtensionsCSV = "js, gif, jpg, png, css, woff, woff2, svg, json, map, fnt, ogg, jpeg, img, exe, mp4, flv, pdf, doc, ogv, webm, wmv, webp, mov, mp3, m4a, m4p, ppt, pptx, scss, tif, tiff, ttf, otf, bmp, ico, eot, htc, swf, rtf, image, rf, txt, ml, ip"
+
 func defaultConfig(name string) Config {
 	return Config{
 		Name:      name,
@@ -67,6 +69,7 @@ func defaultConfig(name string) Config {
 		},
 		Filters: FilterConfig{
 			CaseInsensitive: true,
+			ExtensionHide:   defaultHiddenExtensionsCSV,
 			StatusCodes:     []string{},
 			SearchScope:     []string{},
 		},
@@ -101,6 +104,22 @@ func OpenProject(path string) (*Manager, error) {
 	return &Manager{path: path, cfg: cfg}, nil
 }
 
+func TempProjectPath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".pitokmonitor", "temp"), nil
+}
+
+func IsTempPath(path string) bool {
+	tempPath, err := TempProjectPath()
+	if err != nil {
+		return false
+	}
+	return path == tempPath
+}
+
 func CreateProject(path, name string) (*Manager, error) {
 	if err := os.MkdirAll(path, 0755); err != nil {
 		return nil, fmt.Errorf("create project dir: %w", err)
@@ -113,16 +132,14 @@ func CreateProject(path, name string) (*Manager, error) {
 }
 
 func TempProject() (*Manager, error) {
-	home, err := os.UserHomeDir()
+	tempPath, err := TempProjectPath()
 	if err != nil {
 		return nil, err
 	}
-	tempPath := filepath.Join(home, ".pitokmonitor", "temp")
-	cfgFile := filepath.Join(tempPath, "project.json")
-	if _, err := os.Stat(cfgFile); os.IsNotExist(err) {
-		return CreateProject(tempPath, "Temporary Project")
+	if err := os.RemoveAll(tempPath); err != nil {
+		return nil, fmt.Errorf("reset temp project: %w", err)
 	}
-	return OpenProject(tempPath)
+	return CreateProject(tempPath, "Temporary Project")
 }
 
 func (m *Manager) DBPath() string {
@@ -147,18 +164,26 @@ func (m *Manager) Save(cfg Config) error {
 }
 
 func (m *Manager) IsTemp() bool {
-	home, _ := os.UserHomeDir()
-	tempPath := filepath.Join(home, ".pitokmonitor", "temp")
-	return m.path == tempPath
+	return IsTempPath(m.path)
 }
 
 func (m *Manager) SaveAs(destPath string) error {
 	if err := os.MkdirAll(destPath, 0755); err != nil {
 		return fmt.Errorf("create dest dir: %w", err)
 	}
-	if err := copyFile(m.DBPath(), filepath.Join(destPath, "pitok.db")); err != nil {
+	if err := copyOptionalFile(m.DBPath(), filepath.Join(destPath, "pitok.db")); err != nil {
 		if !os.IsNotExist(err) {
 			return fmt.Errorf("copy db: %w", err)
+		}
+	}
+	if err := copyOptionalFile(m.DBPath()+"-wal", filepath.Join(destPath, "pitok.db-wal")); err != nil {
+		if !os.IsNotExist(err) {
+			return fmt.Errorf("copy wal: %w", err)
+		}
+	}
+	if err := copyOptionalFile(m.DBPath()+"-shm", filepath.Join(destPath, "pitok.db-shm")); err != nil {
+		if !os.IsNotExist(err) {
+			return fmt.Errorf("copy shm: %w", err)
 		}
 	}
 	newMgr := &Manager{path: destPath, cfg: m.Config()}
@@ -187,4 +212,11 @@ func copyFile(src, dst string) error {
 	defer out.Close()
 	_, err = io.Copy(out, in)
 	return err
+}
+
+func copyOptionalFile(src, dst string) error {
+	if err := os.Remove(dst); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return copyFile(src, dst)
 }

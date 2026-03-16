@@ -86,13 +86,21 @@ func runServe(cmd *cobra.Command, args []string) error {
 	projectPath, _ := cmd.Flags().GetString("project")
 	var projectMgr *project.Manager
 	if projectPath != "" {
-		projectMgr, err = project.OpenProject(projectPath)
+		if project.IsTempPath(projectPath) {
+			projectMgr, err = project.TempProject()
+		} else {
+			projectMgr, err = project.OpenProject(projectPath)
+		}
 		if err != nil {
 			slog.Warn("Failed to open specified project, falling back to temp", "path", projectPath, "err", err)
 		}
 	}
 	if projectMgr == nil && appCfg.LastProject != "" {
-		projectMgr, err = project.OpenProject(appCfg.LastProject)
+		if project.IsTempPath(appCfg.LastProject) {
+			projectMgr, err = project.TempProject()
+		} else {
+			projectMgr, err = project.OpenProject(appCfg.LastProject)
+		}
 		if err != nil {
 			slog.Warn("Failed to open last project, falling back to temp", "path", appCfg.LastProject, "err", err)
 		}

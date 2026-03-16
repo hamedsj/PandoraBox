@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { useProxyStore } from '@/store/proxy'
+import { defaultFilters, useProxyStore } from '@/store/proxy'
 import { cn } from '@/lib/utils'
 import { X, Filter, Check } from 'lucide-react'
 
@@ -80,16 +80,8 @@ function fromStore(f: ReturnType<typeof useProxyStore.getState>['filters']): Loc
   }
 }
 
-function empty(): LocalFilters {
-  return {
-    search: '', host: '',
-    extensionShow: '', extensionShowEnabled: false,
-    extensionHide: '', extensionHideEnabled: false,
-    contentTypeShow: '', contentTypeShowEnabled: false,
-    contentTypeHide: '', contentTypeHideEnabled: false,
-    statusCodes: [], negativeSearch: false,
-    caseInsensitive: true, useRegex: false, searchScope: [],
-  }
+function defaultLocalFilters(): LocalFilters {
+  return fromStore(defaultFilters)
 }
 
 // Strip enabled flags before writing to store
@@ -173,7 +165,7 @@ export function FilterModal({ isOpen, onClose }: { isOpen: boolean; onClose: () 
   }
 
   const handleApply = () => { setFilters(resolve(local)); onClose() }
-  const handleReset = () => { resetFilters(); setLocal(empty()) }
+  const handleReset = () => { resetFilters(); setLocal(defaultLocalFilters()) }
   const handleBackdrop = (e: React.MouseEvent) => { if (e.target === backdropRef.current) onClose() }
 
   const totalActive = (['search', 'request', 'response'] as Tab[]).reduce(

@@ -5,6 +5,56 @@ export type { FilterConfig }
 
 export type RequestFilters = FilterConfig
 
+const defaultHiddenExtensions = [
+  'js',
+  'gif',
+  'jpg',
+  'png',
+  'css',
+  'woff',
+  'woff2',
+  'svg',
+  'json',
+  'map',
+  'fnt',
+  'ogg',
+  'jpeg',
+  'img',
+  'exe',
+  'mp4',
+  'flv',
+  'pdf',
+  'doc',
+  'ogv',
+  'webm',
+  'wmv',
+  'webp',
+  'mov',
+  'mp3',
+  'm4a',
+  'm4p',
+  'ppt',
+  'pptx',
+  'scss',
+  'tif',
+  'tiff',
+  'ttf',
+  'otf',
+  'bmp',
+  'ico',
+  'eot',
+  'htc',
+  'swf',
+  'rtf',
+  'image',
+  'rf',
+  'txt',
+  'ml',
+  'ip',
+] as const
+
+export const defaultHiddenExtensionsCSV = defaultHiddenExtensions.join(', ')
+
 interface ProxyStore {
   // Status
   status: ProxyStatus | null
@@ -42,7 +92,7 @@ export const defaultFilters: RequestFilters = {
   method: '',
   host: '',
   extensionShow: '',
-  extensionHide: '',
+  extensionHide: defaultHiddenExtensionsCSV,
   contentTypeShow: '',
   contentTypeHide: '',
   statusCodes: [],

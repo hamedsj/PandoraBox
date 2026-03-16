@@ -11,6 +11,11 @@ type DB struct {
 	*sql.DB
 }
 
+func (db *DB) Checkpoint() error {
+	_, err := db.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`)
+	return err
+}
+
 func Open(path string) (*DB, error) {
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
