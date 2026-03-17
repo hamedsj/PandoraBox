@@ -3,6 +3,8 @@ import { Plus, X, Target, AlertCircle } from 'lucide-react'
 import { api, type ScopeConfig, type ScopeRule } from '@/api/client'
 import { useProxyStore } from '@/store/proxy'
 import { cn } from '@/lib/utils'
+import { Checkbox } from '@/components/ui/Checkbox'
+import { Select } from '@/components/ui/Select'
 
 const PATTERN_TYPES = [
   { value: 'contains', label: 'Contains' },
@@ -41,21 +43,16 @@ function RuleRow({ rule, onChange, onDelete }: RuleRowProps) {
 
   return (
     <div className="flex items-center gap-2 p-2 rounded-lg bg-muted/40 border border-border">
-      <input
-        type="checkbox"
+      <Checkbox
         checked={rule.enabled}
-        onChange={(e) => onChange({ ...rule, enabled: e.target.checked })}
-        className="w-4 h-4 accent-primary flex-shrink-0 cursor-pointer"
+        onChange={(checked) => onChange({ ...rule, enabled: checked })}
       />
-      <select
+      <Select
         value={rule.pattern_type}
-        onChange={(e) => onChange({ ...rule, pattern_type: e.target.value as ScopeRule['pattern_type'] })}
-        className="bg-background border border-border rounded px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary flex-shrink-0 w-24"
-      >
-        {PATTERN_TYPES.map((pt) => (
-          <option key={pt.value} value={pt.value}>{pt.label}</option>
-        ))}
-      </select>
+        onChange={(v) => onChange({ ...rule, pattern_type: v as ScopeRule['pattern_type'] })}
+        options={PATTERN_TYPES.map((pt) => ({ value: pt.value, label: pt.label }))}
+        className="w-24 flex-shrink-0"
+      />
       <input
         type="text"
         value={rule.host}
