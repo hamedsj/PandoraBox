@@ -7,7 +7,7 @@ import { shortcutDefinitions, type ShortcutActionId } from '@/shortcuts/actions'
 import { eventToShortcut, formatShortcut } from '@/lib/shortcuts'
 import { Download, Sun, Moon, Palette, Type, Check, Shield, Server, Globe, LayoutDashboard, Keyboard, RotateCcw, Bot } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 const accentColors: { value: AccentColor; label: string }[] = [
   { value: 'teal', label: 'Teal' },
@@ -76,6 +76,13 @@ export function SettingsPage() {
 
   const [activeTab, setActiveTab] = useState<SettingsTab>('appearance')
   const [mcpTogglePending, setMcpTogglePending] = useState(false)
+  const [upstreamURL, setUpstreamURL] = useState(project?.proxy?.upstream_url ?? '')
+  const [upstreamSaving, setUpstreamSaving] = useState(false)
+  const [upstreamError, setUpstreamError] = useState<string | null>(null)
+
+  useEffect(() => {
+    setUpstreamURL(project?.proxy?.upstream_url ?? '')
+  }, [project?.proxy?.upstream_url])
   const availableVariants = getAvailableVariants(mode)
   const [fontSizeValue, setFontSizeValue] = useState(fontSize.toString())
 
@@ -88,6 +95,22 @@ export function SettingsPage() {
   const handleFontSizeChange = (value: string) => {
     setFontSizeValue(value)
     setFontSize(parseInt(value, 10))
+  }
+
+  async function saveUpstreamProxy() {
+    if (!project) return
+    setUpstreamSaving(true)
+    setUpstreamError(null)
+    try {
+      const updated = await api.project.update({
+        proxy: { ...project.proxy, upstream_url: upstreamURL.trim() || undefined }
+      })
+      setProject(updated)
+    } catch (e: unknown) {
+      setUpstreamError(e instanceof Error ? e.message : 'Save failed')
+    } finally {
+      setUpstreamSaving(false)
+    }
   }
 
   return (
@@ -498,27 +521,6 @@ export function SettingsPage() {
               </div>
             </div>
 
-            <div className="bg-muted/50 rounded-lg p-4 border border-border">
-              <div className="flex items-center gap-2 mb-2">
-                <Server className="w-4 h-4 text-primary" />
-                <div className="text-sm font-medium">Web UI</div>
-              </div>
-              <p className="text-sm text-muted-foreground mb-3">
-                Access the web interface in your browser.
-              </p>
-              <div className="flex items-center gap-2">
-                <code className="font-mono text-primary bg-background px-3 py-1.5 rounded-md text-sm">
-                  http://localhost:7777
-                </code>
-                <button
-                  onClick={() => navigator.clipboard.writeText('http://localhost:7777')}
-                  className="text-xs text-muted-foreground hover:text-foreground"
-                  title="Copy to clipboard"
-                >
-                  Copy
-                </button>
-              </div>
-            </div>
 
             <div className="bg-muted/50 rounded-lg p-4 border border-border">
               <div className="flex items-center justify-between gap-4">
@@ -538,6 +540,46 @@ export function SettingsPage() {
                   )}
                 >
                   {autoContentLength ? 'Auto Content-Length On' : 'Auto Content-Length Off'}
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-muted/50 rounded-lg p-4 border border-border space-y-3">
+              <div className="flex items-center gap-2">
+                <Globe className="w-4 h-4 text-primary" />
+                <div className="text-sm font-medium">Upstream Proxy</div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Route all outbound traffic through another proxy.
+                Supported: <code className="font-mono">http://</code>, <code className="font-mono">socks5://</code>.
+                Leave empty to connect directly.
+              </p>
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">Proxy URL</label>
+                <input
+                  type="text"
+                  value={upstreamURL}
+                  onChange={(e) => setUpstreamURL(e.target.value)}
+                  placeholder="http://127.0.0.1:8080  or  socks5://user:pass@host:1080"
+                  className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm font-mono text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+                {upstreamError && <p className="text-xs text-red-400">{upstreamError}</p>}
+              </div>
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-muted-foreground">
+                  {upstreamURL.trim() ? 'Traffic routes through the proxy above.' : 'Direct connections (no upstream proxy).'}
+                </p>
+                <button
+                  onClick={saveUpstreamProxy}
+                  disabled={upstreamSaving || !project}
+                  className={cn(
+                    'inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-medium transition-all',
+                    upstreamSaving
+                      ? 'opacity-50 cursor-not-allowed border-border text-muted-foreground'
+                      : 'border-primary/40 bg-primary/12 text-primary hover:bg-primary/20'
+                  )}
+                >
+                  {upstreamSaving ? 'Saving…' : 'Save'}
                 </button>
               </div>
             </div>

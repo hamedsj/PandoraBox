@@ -498,7 +498,7 @@ func (s *Server) toolUpdateProject(ctx context.Context, req mcp.CallToolRequest)
 		return nil, err
 	}
 	if proxyChanged {
-		s.proxy.ApplyConfig(cfg.Proxy.Port, cfg.Proxy.InterceptEnabled)
+		s.proxy.ApplyConfig(cfg.Proxy.Port, cfg.Proxy.InterceptEnabled, cfg.Proxy.UpstreamURL)
 	}
 	if scopeChanged {
 		s.proxy.SetScope(cfg.Scope)

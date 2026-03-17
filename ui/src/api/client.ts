@@ -32,7 +32,7 @@ export interface ProjectInfo {
   name: string
   path: string
   is_temp: boolean
-  proxy: { port: number; intercept_enabled: boolean }
+  proxy: { port: number; intercept_enabled: boolean; upstream_url?: string }
   filters: FilterConfig
   scope: ScopeConfig
   mcp_disabled: boolean
@@ -88,6 +88,25 @@ export interface Replay {
   created_at: string
   request?: Request
   response?: Response
+}
+
+export interface WebSocketFrame {
+  id: number
+  session_id: number
+  direction: 'c2s' | 's2c'
+  opcode: number // 1=text, 2=binary, 8=close, 9=ping, 10=pong
+  fin: number
+  payload: string | null // base64-encoded unmasked payload
+  length: number         // original size before any truncation
+  truncated: boolean
+  timestamp: string
+}
+
+export interface WebSocketSession {
+  id: number
+  request_id: number
+  created_at: string
+  closed_at: string | null
 }
 
 export interface ProxyStatus {
@@ -155,6 +174,8 @@ export const api = {
     }) => get<{ requests: Request[]; total: number }>('/requests', params as Record<string, string | number>),
     get: (id: number) => get<Request>(`/requests/${id}`),
     delete: (id: number) => del(`/requests/${id}`),
+    wsFrames: (id: number) =>
+      get<{ session: WebSocketSession | null; frames: WebSocketFrame[] | null }>(`/requests/${id}/ws-frames`),
   },
   intercept: {
     queue: () => get<{ queue: Request[] }>('/intercept/queue'),

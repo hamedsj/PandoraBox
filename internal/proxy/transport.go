@@ -65,7 +65,7 @@ func (p *Proxy) roundTrip(req *http.Request, scheme string) (*http.Response, *st
 	if !p.scope.InScope(req.Host, req.URL.Path) {
 		req.RequestURI = ""
 		removeHopByHop(req.Header)
-		transport := &http.Transport{DisableCompression: true}
+		transport := p.makeTransport()
 		resp, err := transport.RoundTrip(req)
 		if err != nil {
 			return nil, nil, fmt.Errorf("upstream: %w", err)
@@ -121,9 +121,7 @@ func (p *Proxy) roundTrip(req *http.Request, scheme string) (*http.Response, *st
 	removeHopByHop(req.Header)
 
 	start := time.Now()
-	transport := &http.Transport{
-		DisableCompression: true, // pass compressed bodies through unchanged
-	}
+	transport := p.makeTransport()
 	resp, err := transport.RoundTrip(req)
 	if err != nil {
 		return nil, captured, fmt.Errorf("upstream: %w", err)
@@ -232,7 +230,7 @@ func (p *Proxy) ReplayRequest(reqID int64, modHeaders map[string]string, modBody
 	start := time.Now()
 	removeHopByHop(req.Header)
 	req.RequestURI = ""
-	transport := &http.Transport{DisableCompression: true}
+	transport := p.makeTransport()
 	resp, err := transport.RoundTrip(req)
 	if err != nil {
 		db.UpdateReplay(replayID, nil, "error", err.Error())

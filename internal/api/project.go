@@ -71,7 +71,7 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.Proxy != nil {
 		cfg.Proxy = *body.Proxy
-		s.proxy.ApplyConfig(cfg.Proxy.Port, cfg.Proxy.InterceptEnabled)
+		s.proxy.ApplyConfig(cfg.Proxy.Port, cfg.Proxy.InterceptEnabled, cfg.Proxy.UpstreamURL)
 	}
 	if body.Filters != nil {
 		cfg.Filters = *body.Filters
@@ -286,7 +286,7 @@ func (s *Server) SwitchProject(newMgr *proj.Manager) error {
 
 	// Apply proxy config from new project
 	cfg := newMgr.Config()
-	s.proxy.ApplyConfig(cfg.Proxy.Port, cfg.Proxy.InterceptEnabled)
+	s.proxy.ApplyConfig(cfg.Proxy.Port, cfg.Proxy.InterceptEnabled, cfg.Proxy.UpstreamURL)
 	s.proxy.SetScope(cfg.Scope)
 
 	// Update recent projects
