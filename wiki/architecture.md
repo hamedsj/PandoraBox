@@ -9,7 +9,7 @@
 └───────────────────────────┬──────────────────────────────────────┘
                             │ child process
 ┌───────────────────────────▼──────────────────────────────────────┐
-│  Go Binary  (bin/pitokmonitor)                                   │
+│  Go Binary  (bin/pandorabox)                                   │
 │                                                                  │
 │  ┌─────────────────┐  ┌──────────────────┐  ┌────────────────┐  │
 │  │  MITM Proxy     │  │  REST API        │  │  MCP Server    │  │
@@ -25,7 +25,7 @@
 │  └────────────────────────────┬─────────────────────────────┘    │
 │                               │                                  │
 │  ┌────────────────────────────▼─────────────────────────────┐    │
-│  │  SQLite  (pitok.db, WAL mode, modernc.org/sqlite)        │    │
+│  │  SQLite  (pandora.db, WAL mode, modernc.org/sqlite)        │    │
 │  └──────────────────────────────────────────────────────────┘    │
 └──────────────────────────────────────────────────────────────────┘
          ↑ HTTP proxy
@@ -96,7 +96,7 @@ Browser → GET /chat HTTP/1.1 + Upgrade: websocket
 
 ## Go Package Map
 
-### `cmd/pitokmonitor`
+### `cmd/pandorabox`
 
 - `main.go` — Cobra CLI. Wires config, storage, CA, proxy, API, MCP. Subcommands: `serve`, `ca export`, `ca regenerate`.
 - `embed.go` — `//go:embed all:dist` embeds the compiled React bundle into the binary.
@@ -150,7 +150,7 @@ Browser → GET /chat HTTP/1.1 + Upgrade: websocket
 ### `internal/project`
 
 - `project.go` — `Manager`: loads/saves `project.json`, `TempProject()`, `SaveAs(path)`, `CreateProject(path, name)`, `OpenProject(path)`.
-- `appconfig.go` — `~/.pitokmonitor/config.json`: recent projects (10-item MRU), last opened project.
+- `appconfig.go` — `~/.pandorabox/config.json`: recent projects (10-item MRU), last opened project.
 
 ### `internal/mcp`
 
@@ -169,9 +169,9 @@ HTTP `CONNECT` tunneling requires reading the raw TCP stream before any HTTP fra
 
 No CGo dependency means `go build` produces a single self-contained binary. Cross-compilation to any target works without a C toolchain.
 
-### Why embed path `cmd/pitokmonitor/dist`?
+### Why embed path `cmd/pandorabox/dist`?
 
-Go's `//go:embed` directive does not allow `..` path traversal. The Makefile copies `ui/dist` → `cmd/pitokmonitor/dist` at build time so the embed directive can reference a sibling path. Never change this pattern.
+Go's `//go:embed` directive does not allow `..` path traversal. The Makefile copies `ui/dist` → `cmd/pandorabox/dist` at build time so the embed directive can reference a sibling path. Never change this pattern.
 
 ### ALPN negotiation (`NextProtos: ["http/1.1"]`)
 

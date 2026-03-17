@@ -30,6 +30,6 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
       setSitemapRightSplit: (sitemapRightSplit) => set({ sitemapRightSplit }),
       setSitemapBottomSplit: (sitemapBottomSplit) => set({ sitemapBottomSplit }),
     }),
-    { name: 'pitok-workspace' }
+    { name: 'pandora-workspace' }
   )
 )

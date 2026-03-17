@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"os"
 
-	proj "github.com/hamedsj5/pitokmonitor/internal/project"
-	"github.com/hamedsj5/pitokmonitor/internal/proxy"
-	"github.com/hamedsj5/pitokmonitor/internal/storage"
+	proj "github.com/hamedsj5/pandorabox/internal/project"
+	"github.com/hamedsj5/pandorabox/internal/proxy"
+	"github.com/hamedsj5/pandorabox/internal/storage"
 	"github.com/mark3labs/mcp-go/mcp"
 )
 

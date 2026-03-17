@@ -12,6 +12,6 @@ export const useReplayStore = create<ReplayStore>()(
       autoContentLength: true,
       setAutoContentLength: (autoContentLength) => set({ autoContentLength }),
     }),
-    { name: 'pitok-replay' }
+    { name: 'pandora-replay' }
   )
 )

@@ -25,6 +25,6 @@ export const useShortcutStore = create<ShortcutStore>()(
         })),
       resetBindings: () => set({ bindings: defaultShortcutBindings }),
     }),
-    { name: 'pitok-shortcuts' }
+    { name: 'pandora-shortcuts' }
   )
 )

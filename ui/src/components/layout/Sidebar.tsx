@@ -42,7 +42,7 @@ export function Sidebar() {
       <div className="px-4 mb-2">
         <div className="flex items-center gap-3 bg-primary/20 rounded-lg p-3">
           <span className="text-primary text-lg font-bold font-mono">P</span>
-          <span className="text-foreground font-semibold">PitokMonitor</span>
+          <span className="text-foreground font-semibold">PandoraBox</span>
         </div>
       </div>
 

@@ -6,11 +6,11 @@ import (
 	"log/slog"
 	"sync"
 
-	"github.com/hamedsj5/pitokmonitor/internal/ca"
-	"github.com/hamedsj5/pitokmonitor/internal/config"
-	proj "github.com/hamedsj5/pitokmonitor/internal/project"
-	"github.com/hamedsj5/pitokmonitor/internal/proxy"
-	"github.com/hamedsj5/pitokmonitor/internal/storage"
+	"github.com/hamedsj5/pandorabox/internal/ca"
+	"github.com/hamedsj5/pandorabox/internal/config"
+	proj "github.com/hamedsj5/pandorabox/internal/project"
+	"github.com/hamedsj5/pandorabox/internal/proxy"
+	"github.com/hamedsj5/pandorabox/internal/storage"
 	"github.com/mark3labs/mcp-go/server"
 )
 
@@ -84,7 +84,7 @@ func NewServer(cfg *config.Config, db *storage.DB, p *proxy.Proxy, intercept *pr
 	}
 
 	mcpServer := server.NewMCPServer(
-		"PitokMonitor",
+		"PandoraBox",
 		"1.0.0",
 	)
 

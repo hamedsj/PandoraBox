@@ -9,10 +9,10 @@ make build
 This runs three steps in sequence:
 
 1. `npm run build` — TypeScript compilation + Vite production bundle → `ui/dist/`
-2. `cp -r ui/dist cmd/pitokmonitor/dist` — copies the bundle into the Go package
-3. `go build -o bin/pitokmonitor ./cmd/pitokmonitor` — compiles the binary with the UI embedded
+2. `cp -r ui/dist cmd/pandorabox/dist` — copies the bundle into the Go package
+3. `go build -o bin/pandorabox ./cmd/pandorabox` — compiles the binary with the UI embedded
 
-**Always use `make build`**, not `npm run build` alone. The Go binary embeds the UI from `cmd/pitokmonitor/dist/` via `//go:embed all:dist`. Running only the npm step leaves the binary with a stale bundle.
+**Always use `make build`**, not `npm run build` alone. The Go binary embeds the UI from `cmd/pandorabox/dist/` via `//go:embed all:dist`. Running only the npm step leaves the binary with a stale bundle.
 
 ---
 
@@ -25,7 +25,7 @@ Run in two terminals:
 ```bash
 # Terminal 1 — Go backend (restart manually after Go changes)
 make dev-backend
-# → go run ./cmd/pitokmonitor serve
+# → go run ./cmd/pandorabox serve
 
 # Terminal 2 — Vite dev server with HMR
 make dev-ui
@@ -49,7 +49,7 @@ After any change to `.go` or `.tsx`/`.ts` files:
 
 ```bash
 make build
-./bin/pitokmonitor serve
+./bin/pandorabox serve
 ```
 
 ---
@@ -57,9 +57,9 @@ make build
 ## Project Structure
 
 ```
-PitokMonitor/
+PandoraBox/
 │
-├── cmd/pitokmonitor/
+├── cmd/pandorabox/
 │   ├── main.go          CLI entry point (Cobra: serve, ca export, ca regenerate)
 │   └── embed.go         //go:embed all:dist — embeds React bundle
 │
@@ -97,7 +97,7 @@ PitokMonitor/
 │   │   └── helpers.go   writeJSON, writeError
 │   ├── project/
 │   │   ├── project.go   Manager: project.json load/save, TempProject, SaveAs
-│   │   └── appconfig.go ~/.pitokmonitor/config.json: recent projects, last project
+│   │   └── appconfig.go ~/.pandorabox/config.json: recent projects, last project
 │   └── mcp/
 │       ├── server.go    MCP SSE server, runtime project/DB injection
 │       └── tools.go     20 MCP tools
@@ -191,7 +191,7 @@ PitokMonitor/
 
 ### Main process (`ui/electron/main.cjs`)
 
-- Spawns `bin/pitokmonitor` (dev) or `resources/pitokmonitor` (packaged) as a child process.
+- Spawns `bin/pandorabox` (dev) or `resources/pandorabox` (packaged) as a child process.
 - Polls `http://localhost:7777/api/proxy/status` every 500 ms (up to 30 attempts) before showing the window.
 - Window: 1400×900 px, minimum 900×600. `titleBarStyle: 'default'` — native macOS title bar sits above web content. Do **not** use `hiddenInset` or add a spacer div.
 - System tray: Show / Open in Browser / Quit.
@@ -212,9 +212,9 @@ window.electron.decodeBody(base64, encoding)  // native body decoding
 
 | Command | Output |
 |---|---|
-| `make electron-mac` | `ui/dist-electron/PitokMonitor.dmg` + `.zip` |
-| `make electron-win` | `ui/dist-electron/PitokMonitor Setup.exe` (NSIS) |
-| `make electron-linux` | `ui/dist-electron/PitokMonitor.AppImage` + `.deb` |
+| `make electron-mac` | `ui/dist-electron/PandoraBox.dmg` + `.zip` |
+| `make electron-win` | `ui/dist-electron/PandoraBox Setup.exe` (NSIS) |
+| `make electron-linux` | `ui/dist-electron/PandoraBox.AppImage` + `.deb` |
 
 ---
 
@@ -244,7 +244,7 @@ actions:
   appendWsFrame, clearWsFrames
 ```
 
-### `useThemeStore` (persisted: `"pitok-theme"`)
+### `useThemeStore` (persisted: `"pandora-theme"`)
 
 ```ts
 mode: 'dark' | 'light'
@@ -259,7 +259,7 @@ Light variants: `day`, `cream`, `cool`, `paper`, `solar`
 Accent colors: `teal`, `blue`, `purple`, `orange`, `red`, `green`, `pink`, `indigo`, `cyan`, `yellow`
 Fonts: `system`, `inter`, `source-code`, `jetbrains` (default), `fira-code`, `cascadia`, `ibm-plex`, `roboto-mono`, `monospace`
 
-### `useWorkspaceStore` (persisted: `"pitok-workspace"`)
+### `useWorkspaceStore` (persisted: `"pandora-workspace"`)
 
 ```ts
 inspectorPosition: 'right' | 'bottom'
@@ -269,7 +269,7 @@ sitemapRightSplit: number    // 48%
 sitemapBottomSplit: number   // 56%
 ```
 
-### `useShortcutStore` (persisted: `"pitok-shortcuts"`)
+### `useShortcutStore` (persisted: `"pandora-shortcuts"`)
 
 ```ts
 enabled: boolean
@@ -278,7 +278,7 @@ bindings: Record<ShortcutActionId, string>
 
 18 actions across 4 groups: Navigation (6), Common (5), Intercept (7), Replay (1).
 
-### `useReplayStore` (persisted: `"pitok-replay"`)
+### `useReplayStore` (persisted: `"pandora-replay"`)
 
 ```ts
 autoContentLength: boolean   // recalculate Content-Length on body edit

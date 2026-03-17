@@ -54,7 +54,7 @@ func caDir() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	dir := filepath.Join(home, ".pitokmonitor")
+	dir := filepath.Join(home, ".pandorabox")
 	return dir, os.MkdirAll(dir, 0700)
 }
 
@@ -84,8 +84,8 @@ func generate(certPath, keyPath string) (*CA, error) {
 	tmpl := &x509.Certificate{
 		SerialNumber: serial,
 		Subject: pkix.Name{
-			CommonName:   "PitokMonitor CA",
-			Organization: []string{"PitokMonitor"},
+			CommonName:   "PandoraBox CA",
+			Organization: []string{"PandoraBox"},
 		},
 		SubjectKeyId:          skid,
 		NotBefore:             time.Now().Add(-1 * time.Minute),

@@ -77,11 +77,11 @@ Desktop.ini
 *.db
 *.db-shm
 *.db-wal
-pitok.db
+pandora.db
 
 # Certificate Authority (generated, not committed)
 # If user wants to track their CA, remove this line
-~/.pitokmonitor/
+~/.pandorabox/
 
 # Electron
 *.dmg

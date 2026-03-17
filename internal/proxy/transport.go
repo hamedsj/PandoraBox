@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hamedsj5/pitokmonitor/internal/events"
-	"github.com/hamedsj5/pitokmonitor/internal/storage"
+	"github.com/hamedsj5/pandorabox/internal/events"
+	"github.com/hamedsj5/pandorabox/internal/storage"
 )
 
 // hopByHopHeaders are connection-scoped headers that must never be forwarded

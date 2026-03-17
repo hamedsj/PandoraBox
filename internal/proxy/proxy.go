@@ -9,11 +9,11 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/hamedsj5/pitokmonitor/internal/ca"
-	"github.com/hamedsj5/pitokmonitor/internal/config"
-	"github.com/hamedsj5/pitokmonitor/internal/events"
-	proj "github.com/hamedsj5/pitokmonitor/internal/project"
-	"github.com/hamedsj5/pitokmonitor/internal/storage"
+	"github.com/hamedsj5/pandorabox/internal/ca"
+	"github.com/hamedsj5/pandorabox/internal/config"
+	"github.com/hamedsj5/pandorabox/internal/events"
+	proj "github.com/hamedsj5/pandorabox/internal/project"
+	"github.com/hamedsj5/pandorabox/internal/storage"
 )
 
 type Proxy struct {

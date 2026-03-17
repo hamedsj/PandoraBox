@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/hamedsj5/pitokmonitor/internal/events"
-	proj "github.com/hamedsj5/pitokmonitor/internal/project"
-	"github.com/hamedsj5/pitokmonitor/internal/storage"
+	"github.com/hamedsj5/pandorabox/internal/events"
+	proj "github.com/hamedsj5/pandorabox/internal/project"
+	"github.com/hamedsj5/pandorabox/internal/storage"
 )
 
 type projectInfoResponse struct {

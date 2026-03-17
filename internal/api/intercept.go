@@ -7,7 +7,7 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/hamedsj5/pitokmonitor/internal/proxy"
+	"github.com/hamedsj5/pandorabox/internal/proxy"
 )
 
 func (s *Server) getInterceptFilter(w http.ResponseWriter, r *http.Request) {

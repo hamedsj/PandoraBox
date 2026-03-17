@@ -417,13 +417,13 @@ export function SettingsPage() {
             <h2 className="text-sm font-medium">CA Certificate</h2>
           </div>
           <p className="text-sm text-muted-foreground">
-            Install PitokMonitor CA certificate in your browser to intercept HTTPS traffic.
+            Install PandoraBox CA certificate in your browser to intercept HTTPS traffic.
           </p>
 
           <div className="flex gap-2">
             <a
               href={api.ca.certUrl()}
-              download="pitokmonitor-ca.crt"
+              download="pandorabox-ca.crt"
               className="inline-flex items-center gap-2 text-sm px-4 py-2 rounded-md bg-primary/20 text-primary hover:bg-primary/30 transition-colors"
             >
               <Download size={14} />
@@ -440,7 +440,7 @@ export function SettingsPage() {
                 'Double-click it → it opens Keychain Access',
                 'IMPORTANT: Change destination to "System" keychain (not "login")',
                 'Enter your password',
-                'Find "PitokMonitor CA" in System keychain → double-click',
+                'Find "PandoraBox CA" in System keychain → double-click',
                 'Expand "Trust" → "When using this certificate: Always Trust"',
                 'Restart browser completely',
               ]}
@@ -449,14 +449,14 @@ export function SettingsPage() {
               title="Firefox (all platforms)"
               steps={[
                 'Settings → Privacy & Security → Certificates → View Certificates',
-                'Authorities tab → Import → select pitokmonitor-ca.crt',
+                'Authorities tab → Import → select pandorabox-ca.crt',
                 'Check "Trust this CA to identify websites"',
               ]}
             />
             <InstallStep
               title="Windows (Chrome / Edge)"
               steps={[
-                'Double-click pitokmonitor-ca.crt → Install Certificate',
+                'Double-click pandorabox-ca.crt → Install Certificate',
                 'Select "Local Machine" → Next',
                 'Place in "Trusted Root Certification Authorities"',
                 'Restart browser',
@@ -466,7 +466,7 @@ export function SettingsPage() {
               title="Linux (Chrome)"
               steps={[
                 'chrome://settings/certificates → Authorities → Import',
-                'Select pitokmonitor-ca.crt',
+                'Select pandorabox-ca.crt',
                 'Check "Trust this certificate for identifying websites"',
               ]}
             />
@@ -648,14 +648,14 @@ export function SettingsPage() {
                 <pre className="bg-background rounded-md border border-border p-3 text-xs font-mono text-foreground overflow-x-auto leading-relaxed">
 {`{
   "mcpServers": {
-    "pitokmonitor": {
+    "pandorabox": {
       "url": "http://localhost:9090/sse"
     }
   }
 }`}
                 </pre>
                 <button
-                  onClick={() => navigator.clipboard.writeText('{\n  "mcpServers": {\n    "pitokmonitor": {\n      "url": "http://localhost:9090/sse"\n    }\n  }\n}')}
+                  onClick={() => navigator.clipboard.writeText('{\n  "mcpServers": {\n    "pandorabox": {\n      "url": "http://localhost:9090/sse"\n    }\n  }\n}')}
                   className="absolute top-2 right-2 text-xs text-muted-foreground hover:text-foreground"
                   title="Copy to clipboard"
                 >

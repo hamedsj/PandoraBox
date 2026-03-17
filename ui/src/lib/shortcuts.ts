@@ -68,7 +68,7 @@ export function allowsInEditable(actionId: ShortcutActionId): boolean {
 }
 
 export function createShortcutEvent(actionId: ShortcutActionId): CustomEvent<{ actionId: ShortcutActionId }> {
-  return new CustomEvent('pitok:shortcut-action', {
+  return new CustomEvent('pandora:shortcut-action', {
     detail: { actionId },
   })
 }
@@ -81,6 +81,6 @@ export function subscribeShortcutAction(
     handler(shortcutEvent.detail.actionId)
   }
 
-  window.addEventListener('pitok:shortcut-action', listener)
-  return () => window.removeEventListener('pitok:shortcut-action', listener)
+  window.addEventListener('pandora:shortcut-action', listener)
+  return () => window.removeEventListener('pandora:shortcut-action', listener)
 }

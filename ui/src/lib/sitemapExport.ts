@@ -26,13 +26,13 @@ function isoTimestamp(): string {
 
 function exportFilename(format: 'json' | 'har'): string {
   const ts = new Date().toISOString().replace(/:/g, '-').replace(/\..+/, '')
-  return `pitok-export-${ts}.${format}`
+  return `pandora-export-${ts}.${format}`
 }
 
 function buildJsonExport(requests: Request[]): object {
   return {
     version: '1',
-    tool: 'PitokMonitor',
+    tool: 'PandoraBox',
     exported_at: isoTimestamp(),
     count: requests.length,
     entries: requests.map((req) => {
@@ -79,7 +79,7 @@ function buildHarExport(requests: Request[]): object {
   return {
     log: {
       version: '1.2',
-      creator: { name: 'PitokMonitor', version: '1.0' },
+      creator: { name: 'PandoraBox', version: '1.0' },
       entries: requests.map((req) => {
         const url = `${req.scheme}://${req.host}${req.path || '/'}${req.query ? '?' + req.query : ''}`
         const reqBody = bodyToBase64(req.body)

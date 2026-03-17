@@ -9,20 +9,20 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/hamedsj5/pitokmonitor/internal/api"
-	"github.com/hamedsj5/pitokmonitor/internal/ca"
-	"github.com/hamedsj5/pitokmonitor/internal/config"
-	"github.com/hamedsj5/pitokmonitor/internal/events"
-	mcpsrv "github.com/hamedsj5/pitokmonitor/internal/mcp"
-	"github.com/hamedsj5/pitokmonitor/internal/project"
-	"github.com/hamedsj5/pitokmonitor/internal/proxy"
-	"github.com/hamedsj5/pitokmonitor/internal/storage"
+	"github.com/hamedsj5/pandorabox/internal/api"
+	"github.com/hamedsj5/pandorabox/internal/ca"
+	"github.com/hamedsj5/pandorabox/internal/config"
+	"github.com/hamedsj5/pandorabox/internal/events"
+	mcpsrv "github.com/hamedsj5/pandorabox/internal/mcp"
+	"github.com/hamedsj5/pandorabox/internal/project"
+	"github.com/hamedsj5/pandorabox/internal/proxy"
+	"github.com/hamedsj5/pandorabox/internal/storage"
 	"github.com/spf13/cobra"
 )
 
 func main() {
 	root := &cobra.Command{
-		Use:   "pitokmonitor",
+		Use:   "pandorabox",
 		Short: "MITM proxy with AI/MCP integration",
 	}
 

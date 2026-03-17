@@ -7,12 +7,12 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	"github.com/hamedsj5/pitokmonitor/internal/ca"
-	"github.com/hamedsj5/pitokmonitor/internal/config"
-	"github.com/hamedsj5/pitokmonitor/internal/events"
-	"github.com/hamedsj5/pitokmonitor/internal/project"
-	"github.com/hamedsj5/pitokmonitor/internal/proxy"
-	"github.com/hamedsj5/pitokmonitor/internal/storage"
+	"github.com/hamedsj5/pandorabox/internal/ca"
+	"github.com/hamedsj5/pandorabox/internal/config"
+	"github.com/hamedsj5/pandorabox/internal/events"
+	"github.com/hamedsj5/pandorabox/internal/project"
+	"github.com/hamedsj5/pandorabox/internal/proxy"
+	"github.com/hamedsj5/pandorabox/internal/storage"
 )
 
 type Server struct {

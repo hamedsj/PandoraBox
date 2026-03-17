@@ -14,8 +14,8 @@ import (
 	"net/http/httputil"
 	"strings"
 
-	"github.com/hamedsj5/pitokmonitor/internal/events"
-	"github.com/hamedsj5/pitokmonitor/internal/storage"
+	"github.com/hamedsj5/pandorabox/internal/events"
+	"github.com/hamedsj5/pandorabox/internal/storage"
 )
 
 const wsMaxCapture = 1 * 1024 * 1024 // 1 MB payload capture limit

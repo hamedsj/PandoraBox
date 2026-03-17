@@ -1,6 +1,6 @@
 # Database Schema
 
-PitokMonitor uses SQLite with WAL (Write-Ahead Logging) mode for concurrent read performance. The database file is `pitok.db` inside the project folder.
+PandoraBox uses SQLite with WAL (Write-Ahead Logging) mode for concurrent read performance. The database file is `pandora.db` inside the project folder.
 
 Driver: `modernc.org/sqlite` (pure Go, no CGo).
 
@@ -139,5 +139,5 @@ Migrations run automatically on startup in `internal/storage/db.go`. They are se
 To inspect the live schema:
 
 ```bash
-sqlite3 pitok.db .schema
+sqlite3 pandora.db .schema
 ```

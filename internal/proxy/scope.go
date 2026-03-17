@@ -6,7 +6,7 @@ import (
 	"strings"
 	"sync"
 
-	proj "github.com/hamedsj5/pitokmonitor/internal/project"
+	proj "github.com/hamedsj5/pandorabox/internal/project"
 )
 
 type ScopeChecker struct {

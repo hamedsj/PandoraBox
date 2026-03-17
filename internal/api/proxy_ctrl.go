@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/hamedsj5/pitokmonitor/internal/events"
+	"github.com/hamedsj5/pandorabox/internal/events"
 )
 
 func (s *Server) proxyStart(w http.ResponseWriter, r *http.Request) {
@@ -53,6 +53,6 @@ func (s *Server) proxyConfig(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) getCACert(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/x-pem-file")
-	w.Header().Set("Content-Disposition", `attachment; filename="pitokmonitor-ca.crt"`)
+	w.Header().Set("Content-Disposition", `attachment; filename="pandorabox-ca.crt"`)
 	w.Write(s.ca.CertBytes())
 }

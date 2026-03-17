@@ -12,10 +12,10 @@ let backendProcess = null
 // Find the Go binary - in packaged app it's in resources/, in dev it's in ../bin/
 function getBackendPath() {
   if (app.isPackaged) {
-    return path.join(process.resourcesPath, 'pitokmonitor')
+    return path.join(process.resourcesPath, 'pandorabox')
   }
-  // In dev: repo root bin/pitokmonitor
-  return path.join(__dirname, '../../bin/pitokmonitor')
+  // In dev: repo root bin/pandorabox
+  return path.join(__dirname, '../../bin/pandorabox')
 }
 
 function startBackend() {
@@ -113,11 +113,11 @@ function createTray() {
   }
 
   tray = new Tray(icon)
-  tray.setToolTip('PitokMonitor')
+  tray.setToolTip('PandoraBox')
 
   const contextMenu = Menu.buildFromTemplate([
     {
-      label: 'Show PitokMonitor',
+      label: 'Show PandoraBox',
       click: () => {
         if (mainWindow) {
           mainWindow.show()

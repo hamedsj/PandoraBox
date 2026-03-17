@@ -1,4 +1,4 @@
-# PitokMonitor
+# PandoraBox
 
 A programmable MITM proxy — intercept, inspect, replay, and script HTTP/HTTPS traffic — with a built-in MCP server for Claude Desktop integration.
 
@@ -6,7 +6,7 @@ A programmable MITM proxy — intercept, inspect, replay, and script HTTP/HTTPS 
 ┌──────────────────────────────────────────────┐
 │  Browser / System Proxy  →  :8080 (MITM)     │
 │                               ↓              │
-│             Go binary   (bin/pitokmonitor)    │
+│             Go binary   (bin/pandorabox)    │
 │  REST API + WebSocket :7777  │  MCP :9090    │
 │                ↓                             │
 │         React UI / Electron                  │
@@ -21,7 +21,7 @@ A programmable MITM proxy — intercept, inspect, replay, and script HTTP/HTTPS 
 2. [Installation](#installation)
 3. [CA Certificate Setup](#ca-certificate-setup)
 4. [Proxy Configuration](#proxy-configuration)
-5. [Running PitokMonitor](#running-pitokmonitor)
+5. [Running PandoraBox](#running-pandorabox)
 6. [UI Overview](#ui-overview)
 7. [MCP Server — Claude Desktop Integration](#mcp-server--claude-desktop-integration)
 8. [Projects](#projects)
@@ -48,7 +48,7 @@ Runs on macOS, Linux, and Windows.
 ### Option A — Run the pre-built binary
 
 ```bash
-./bin/pitokmonitor serve
+./bin/pandorabox serve
 ```
 
 Open `http://localhost:7777` in your browser.
@@ -57,9 +57,9 @@ Open `http://localhost:7777` in your browser.
 
 ```bash
 git clone <repo>
-cd PitokMonitor
+cd PandoraBox
 make build
-./bin/pitokmonitor serve
+./bin/pandorabox serve
 ```
 
 `make build` runs `npm run build` → copies the React bundle → `go build`. See [Building from Source](#building-from-source) for details.
@@ -71,28 +71,28 @@ make build
 make dev-electron
 
 # Package a distributable
-make electron-mac    # → ui/dist-electron/PitokMonitor.dmg
-make electron-win    # → ui/dist-electron/PitokMonitor Setup.exe
-make electron-linux  # → ui/dist-electron/PitokMonitor.AppImage
+make electron-mac    # → ui/dist-electron/PandoraBox.dmg
+make electron-win    # → ui/dist-electron/PandoraBox Setup.exe
+make electron-linux  # → ui/dist-electron/PandoraBox.AppImage
 ```
 
 ---
 
 ## CA Certificate Setup
 
-PitokMonitor generates a root CA at `~/.pitokmonitor/ca.crt` on first run. You must install and trust this certificate so your browser accepts the intercepted TLS connections.
+PandoraBox generates a root CA at `~/.pandorabox/ca.crt` on first run. You must install and trust this certificate so your browser accepts the intercepted TLS connections.
 
 ### macOS (Chrome / Safari)
 
 ```bash
 # Export the CA cert
-./bin/pitokmonitor ca export > pitok-ca.crt
+./bin/pandorabox ca export > pandorabox-ca.crt
 
 # Install into the System keychain (requires sudo)
 sudo security add-trusted-cert \
   -d -r trustRoot \
   -k /Library/Keychains/System.keychain \
-  pitok-ca.crt
+  pandorabox-ca.crt
 
 # Fully restart Chrome
 open -a "Google Chrome" --args --restart
@@ -106,7 +106,7 @@ open -a "Google Chrome" --args --restart
 Firefox manages its own certificate store.
 
 1. Open **Firefox → Settings → Privacy & Security → Certificates → View Certificates**
-2. Click **Import** and select `pitok-ca.crt`
+2. Click **Import** and select `pandorabox-ca.crt`
 3. Check **"Trust this CA to identify websites"** and click OK
 
 ### Linux (Chrome / Chromium)
@@ -114,10 +114,10 @@ Firefox manages its own certificate store.
 ```bash
 # Ubuntu / Debian
 sudo apt install libnss3-tools
-certutil -d sql:$HOME/.pki/nssdb -A -t "CT,," -n "PitokMonitor CA" -i pitok-ca.crt
+certutil -d sql:$HOME/.pki/nssdb -A -t "CT,," -n "PandoraBox CA" -i pandorabox-ca.crt
 
 # Arch
-sudo trust anchor --store pitok-ca.crt
+sudo trust anchor --store pandorabox-ca.crt
 ```
 
 Then restart Chrome.
@@ -126,10 +126,10 @@ Then restart Chrome.
 
 ```powershell
 # Export the cert first
-.\bin\pitokmonitor.exe ca export > pitok-ca.crt
+.\bin\pandorabox.exe ca export > pandorabox-ca.crt
 
 # Import via PowerShell (run as Administrator)
-Import-Certificate -FilePath "pitok-ca.crt" -CertStoreLocation Cert:\LocalMachine\Root
+Import-Certificate -FilePath "pandorabox-ca.crt" -CertStoreLocation Cert:\LocalMachine\Root
 ```
 
 Or double-click the `.crt` file → Install Certificate → Local Machine → Trusted Root Certification Authorities.
@@ -137,7 +137,7 @@ Or double-click the `.crt` file → Install Certificate → Local Machine → Tr
 ### Regenerating the CA
 
 ```bash
-./bin/pitokmonitor ca regenerate
+./bin/pandorabox ca regenerate
 ```
 
 This invalidates all previously signed leaf certificates. Reinstall the new CA in your browser after regenerating.
@@ -179,23 +179,23 @@ curl https://example.com
 
 ---
 
-## Running PitokMonitor
+## Running PandoraBox
 
 ```bash
 # Default: proxy :8080, API+UI :7777, MCP :9090
-./bin/pitokmonitor serve
+./bin/pandorabox serve
 
 # Custom ports
-./bin/pitokmonitor serve \
+./bin/pandorabox serve \
   --proxy-port 8888 \
   --api-port 7777 \
   --mcp-port 9090
 
 # Specify database location
-./bin/pitokmonitor serve --db /path/to/pitok.db
+./bin/pandorabox serve --db /path/to/pandora.db
 
 # Specify a project folder to open on startup
-./bin/pitokmonitor serve --project /path/to/myproject
+./bin/pandorabox serve --project /path/to/myproject
 ```
 
 The web UI is available at `http://localhost:7777` once running.
@@ -249,7 +249,7 @@ Four pattern types: `exact`, `contains`, `wildcard` (glob `*`), `regex`. Define 
 
 ## MCP Server — Claude Desktop Integration
 
-PitokMonitor exposes an MCP (Model Context Protocol) server over SSE at `http://localhost:9090/sse`. Connect Claude Desktop to it and Claude can inspect traffic, replay requests, manage scope, and control the proxy — all through natural language.
+PandoraBox exposes an MCP (Model Context Protocol) server over SSE at `http://localhost:9090/sse`. Connect Claude Desktop to it and Claude can inspect traffic, replay requests, manage scope, and control the proxy — all through natural language.
 
 ### Connecting Claude Desktop
 
@@ -258,14 +258,14 @@ Add the following to your Claude Desktop config (`~/Library/Application Support/
 ```json
 {
   "mcpServers": {
-    "pitokmonitor": {
+    "pandorabox": {
       "url": "http://localhost:9090/sse"
     }
   }
 }
 ```
 
-Restart Claude Desktop. You should see PitokMonitor listed under connected tools.
+Restart Claude Desktop. You should see PandoraBox listed under connected tools.
 
 ### Disabling MCP per project
 
@@ -273,7 +273,7 @@ In Settings → MCP, you can disable MCP access for the current project. This pr
 
 ### Available MCP Tools
 
-PitokMonitor provides 20 tools. Full parameter documentation is in [wiki/mcp.md](wiki/mcp.md).
+PandoraBox provides 20 tools. Full parameter documentation is in [wiki/mcp.md](wiki/mcp.md).
 
 **Proxy control**
 - `proxy_status` — current running state, port, request count, queue length
@@ -325,12 +325,12 @@ PitokMonitor provides 20 tools. Full parameter documentation is in [wiki/mcp.md]
 
 ## Projects
 
-PitokMonitor organizes traffic and settings into **projects**. Each project is a folder on disk containing:
+PandoraBox organizes traffic and settings into **projects**. Each project is a folder on disk containing:
 
 ```
 myproject/
 ├── project.json   # proxy port, scope rules, filters, MCP flag
-└── pitok.db       # SQLite traffic database
+└── pandora.db       # SQLite traffic database
 ```
 
 - On first launch, a temporary project is created automatically.
@@ -344,17 +344,17 @@ myproject/
 ## CLI Reference
 
 ```
-pitokmonitor serve [flags]
+pandorabox serve [flags]
   --proxy-port int   MITM proxy listen port (default 8080)
   --api-port   int   REST API + WebSocket + UI port (default 7777)
   --mcp-port   int   MCP SSE server port (default 9090)
   --db         path  SQLite database path (default: inside project folder)
   --project    path  Project folder to open on startup
 
-pitokmonitor ca export
+pandorabox ca export
   Print the CA certificate PEM to stdout.
 
-pitokmonitor ca regenerate
+pandorabox ca regenerate
   Regenerate the root CA. All previously signed leaf certs are invalidated.
   You must reinstall the new CA in your browser.
 ```
@@ -366,7 +366,7 @@ pitokmonitor ca regenerate
 ```bash
 # Full build (required after any Go or UI change)
 make build
-# = npm run build  →  cp -r ui/dist cmd/pitokmonitor/dist  →  go build -o bin/pitokmonitor
+# = npm run build  →  cp -r ui/dist cmd/pandorabox/dist  →  go build -o bin/pandorabox
 
 # Development: hot-reload UI, manually restart backend
 make dev-backend   # Go binary on :7777 (serves embedded UI)
@@ -381,7 +381,7 @@ make electron-win
 make electron-linux
 ```
 
-> **Important:** Always use `make build`, not `npm run build` alone. The Go binary embeds the React bundle from `cmd/pitokmonitor/dist/`. The Makefile copies `ui/dist` there after the npm build. Running only `npm run build` will leave the binary with a stale UI.
+> **Important:** Always use `make build`, not `npm run build` alone. The Go binary embeds the React bundle from `cmd/pandorabox/dist/`. The Makefile copies `ui/dist` there after the npm build. Running only `npm run build` will leave the binary with a stale UI.
 
 ---
 

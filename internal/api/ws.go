@@ -6,7 +6,7 @@ import (
 	"sync"
 
 	"github.com/gorilla/websocket"
-	"github.com/hamedsj5/pitokmonitor/internal/events"
+	"github.com/hamedsj5/pandorabox/internal/events"
 )
 
 var upgrader = websocket.Upgrader{

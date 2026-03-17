@@ -486,7 +486,7 @@ Creates a new project and switches to it.
 
 Downloads the root CA certificate.
 
-**Response:** Raw PEM bytes with `Content-Type: application/x-pem-file` and `Content-Disposition: attachment; filename="pitok-ca.crt"`.
+**Response:** Raw PEM bytes with `Content-Type: application/x-pem-file` and `Content-Disposition: attachment; filename="pandorabox-ca.crt"`.
 
 ---
 

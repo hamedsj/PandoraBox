@@ -61,7 +61,7 @@ export const useThemeStore = create<ThemeStore>()(
       setFontSize: (fontSize) => set({ fontSize }),
       setAccentColor: (accentColor) => set({ accentColor }),
     }),
-    { name: 'pitok-theme' }
+    { name: 'pandora-theme' }
   )
 )
 

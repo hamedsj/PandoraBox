@@ -19,8 +19,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/hamedsj5/pitokmonitor/internal/events"
-	proj "github.com/hamedsj5/pitokmonitor/internal/project"
+	"github.com/hamedsj5/pandorabox/internal/events"
+	proj "github.com/hamedsj5/pandorabox/internal/project"
 )
 
 // Ensure crypto/rand is used (writeWSFrame uses it).
@@ -231,7 +231,7 @@ func (r *MiddlewareRunner) startLocked(script string) error {
 		return fmt.Errorf("python3 not found: %w", err)
 	}
 
-	tmpFile, err := os.CreateTemp("", "pitok_mw_*.py")
+	tmpFile, err := os.CreateTemp("", "pandora_mw_*.py")
 	if err != nil {
 		return fmt.Errorf("create temp script: %w", err)
 	}

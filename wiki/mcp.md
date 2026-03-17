@@ -1,6 +1,6 @@
 # MCP Tool Reference
 
-PitokMonitor exposes 20 tools over the Model Context Protocol (MCP) using Server-Sent Events (SSE) transport.
+PandoraBox exposes 20 tools over the Model Context Protocol (MCP) using Server-Sent Events (SSE) transport.
 
 **Endpoint:** `http://localhost:9090/sse`
 

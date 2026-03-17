@@ -190,7 +190,7 @@ func TempProjectPath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".pitokmonitor", "temp"), nil
+	return filepath.Join(home, ".pandorabox", "temp"), nil
 }
 
 func IsTempPath(path string) bool {
@@ -224,7 +224,7 @@ func TempProject() (*Manager, error) {
 }
 
 func (m *Manager) DBPath() string {
-	return filepath.Join(m.path, "pitok.db")
+	return filepath.Join(m.path, "pandora.db")
 }
 
 func (m *Manager) Path() string {
@@ -252,17 +252,17 @@ func (m *Manager) SaveAs(destPath string) error {
 	if err := os.MkdirAll(destPath, 0755); err != nil {
 		return fmt.Errorf("create dest dir: %w", err)
 	}
-	if err := copyOptionalFile(m.DBPath(), filepath.Join(destPath, "pitok.db")); err != nil {
+	if err := copyOptionalFile(m.DBPath(), filepath.Join(destPath, "pandora.db")); err != nil {
 		if !os.IsNotExist(err) {
 			return fmt.Errorf("copy db: %w", err)
 		}
 	}
-	if err := copyOptionalFile(m.DBPath()+"-wal", filepath.Join(destPath, "pitok.db-wal")); err != nil {
+	if err := copyOptionalFile(m.DBPath()+"-wal", filepath.Join(destPath, "pandora.db-wal")); err != nil {
 		if !os.IsNotExist(err) {
 			return fmt.Errorf("copy wal: %w", err)
 		}
 	}
-	if err := copyOptionalFile(m.DBPath()+"-shm", filepath.Join(destPath, "pitok.db-shm")); err != nil {
+	if err := copyOptionalFile(m.DBPath()+"-shm", filepath.Join(destPath, "pandora.db-shm")); err != nil {
 		if !os.IsNotExist(err) {
 			return fmt.Errorf("copy shm: %w", err)
 		}

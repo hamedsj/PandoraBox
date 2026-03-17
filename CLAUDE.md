@@ -1,10 +1,10 @@
-# CLAUDE.md — PitokMonitor
+# CLAUDE.md — PandoraBox
 
 Context for AI assistants (Claude Code) working on this project.
 
 ## What this project is
 
-PitokMonitor is a programmable MITM proxy (like Burp Suite / Caido) with an MCP server for Claude Desktop integration. The user is the primary owner. Other engineers may be brought in to implement specific features.
+PandoraBox is a programmable MITM proxy (like Burp Suite / Caido) with an MCP server for Claude Desktop integration. The user is the primary owner. Other engineers may be brought in to implement specific features.
 
 ## Build pipeline — always use `make build`
 
@@ -12,10 +12,10 @@ After ANY change to Go or React files, the full pipeline must run:
 
 ```bash
 make build
-# = npm run build  →  cp -r ui/dist cmd/pitokmonitor/dist  →  go build -o bin/pitokmonitor
+# = npm run build  →  cp -r ui/dist cmd/pandorabox/dist  →  go build -o bin/pandorabox
 ```
 
-**Critical:** `//go:embed dist` in `cmd/pitokmonitor/embed.go` embeds `cmd/pitokmonitor/dist` (not `ui/dist`). Running only `npm run build` will NOT update the running binary. Always run `make build`.
+**Critical:** `//go:embed dist` in `cmd/pandorabox/embed.go` embeds `cmd/pandorabox/dist` (not `ui/dist`). Running only `npm run build` will NOT update the running binary. Always run `make build`.
 
 ## Development modes
 
@@ -30,7 +30,7 @@ For UI-only iteration: run `make dev-backend` in one terminal, `make dev-ui` in 
 ## Key non-obvious constraints
 
 ### Embed path restriction
-`//go:embed all:../../ui/dist` is INVALID — Go doesn't allow `..` in embed paths. The Makefile copies `ui/dist` → `cmd/pitokmonitor/dist`. Never change this pattern.
+`//go:embed all:../../ui/dist` is INVALID — Go doesn't allow `..` in embed paths. The Makefile copies `ui/dist` → `cmd/pandorabox/dist`. Never change this pattern.
 
 ### Chrome TLS trust
 Root CA and every leaf cert MUST have `SubjectKeyId` (SHA-1 of DER-encoded PKIX public key) and `AuthorityKeyId`. Missing these causes Chrome "Not Secure" even when CA is installed.

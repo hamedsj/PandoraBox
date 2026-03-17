@@ -1,6 +1,6 @@
 # Features Guide
 
-A complete reference for every feature in PitokMonitor — how it works and how to use it.
+A complete reference for every feature in PandoraBox — how it works and how to use it.
 
 ---
 
@@ -166,7 +166,7 @@ The response appears inline below the request card after the server replies.
 
 ### Auto Content-Length
 
-When enabled (Settings → Proxy → Replay Editor), PitokMonitor automatically recalculates the `Content-Length` header whenever you change the body. This prevents `400 Bad Request` errors from content-length mismatches. Toggle it per session in Settings; the preference is persisted.
+When enabled (Settings → Proxy → Replay Editor), PandoraBox automatically recalculates the `Content-Length` header whenever you change the body. This prevents `400 Bad Request` errors from content-length mismatches. Toggle it per session in Settings; the preference is persisted.
 
 ### Duplicate
 
@@ -255,16 +255,16 @@ The SiteMap supports selecting multiple requests for bulk export.
 **Exporting:**
 When one or more requests are selected, an **Export N** dropdown appears:
 
-- **Export as JSON** — PitokMonitor's own JSON format with base64-encoded bodies. Useful for scripting or archival.
+- **Export as JSON** — PandoraBox's own JSON format with base64-encoded bodies. Useful for scripting or archival.
 - **Export as HAR** — HTTP Archive 1.2 format. Import into Burp Suite, browser DevTools, or other HTTP analysis tools.
 
-The export fetches full request + response data (including bodies) for each selected ID, then triggers a file download. Filename format: `pitok-export-YYYY-MM-DDTHH-MM-SS.{json|har}`.
+The export fetches full request + response data (including bodies) for each selected ID, then triggers a file download. Filename format: `pandora-export-YYYY-MM-DDTHH-MM-SS.{json|har}`.
 
 **JSON export format:**
 ```json
 {
   "version": "1",
-  "tool": "PitokMonitor",
+  "tool": "PandoraBox",
   "exported_at": "2024-01-15T10:30:00Z",
   "count": 2,
   "entries": [
@@ -426,7 +426,7 @@ While the WebSocket connection is still open, new frames appear in real time via
 
 ### permessage-deflate
 
-PitokMonitor decompresses `permessage-deflate` compressed frames automatically, including stateful context takeover. The decoded (uncompressed) payload is stored and shown in the UI.
+PandoraBox decompresses `permessage-deflate` compressed frames automatically, including stateful context takeover. The decoded (uncompressed) payload is stored and shown in the UI.
 
 ---
 
@@ -512,7 +512,7 @@ Both content-type filters use substring matching against response headers, so pa
 
 ## Projects
 
-PitokMonitor stores all traffic and settings in **projects**. Each project is a folder on disk containing a `project.json` config file and a `pitok.db` SQLite database.
+PandoraBox stores all traffic and settings in **projects**. Each project is a folder on disk containing a `project.json` config file and a `pandora.db` SQLite database.
 
 ### Project Switcher
 
@@ -525,7 +525,7 @@ The project switcher is in the sidebar (bottom area). Click it to see:
 
 ### Default (Temp) Project
 
-On first launch, a temporary project is created automatically at `~/.pitokmonitor/temp/`. This project resets on each launch. To persist your work, use **Save As** to save it to a named location.
+On first launch, a temporary project is created automatically at `~/.pandorabox/temp/`. This project resets on each launch. To persist your work, use **Save As** to save it to a named location.
 
 ### Per-Project Settings
 
@@ -659,7 +659,7 @@ Click **Reset Defaults** to restore all bindings to their defaults.
 
 ### Downloading the CA Certificate
 
-Click **Download CA Certificate** to save `pitokmonitor-ca.crt` to disk. This is the root certificate that PitokMonitor uses to sign forged TLS certificates for intercepted HTTPS connections.
+Click **Download CA Certificate** to save `pandorabox-ca.crt` to disk. This is the root certificate that PandoraBox uses to sign forged TLS certificates for intercepted HTTPS connections.
 
 ### Installing by Browser / OS
 
@@ -674,7 +674,7 @@ The tab shows step-by-step expandable instructions for:
 
 ### Regenerating the CA
 
-Run `./bin/pitokmonitor ca regenerate` from the terminal. This creates a new CA key pair. All previously signed leaf certificates are invalidated. You must re-download and re-install the new certificate.
+Run `./bin/pandorabox ca regenerate` from the terminal. This creates a new CA key pair. All previously signed leaf certificates are invalidated. You must re-download and re-install the new certificate.
 
 ---
 
@@ -688,7 +688,7 @@ The proxy always listens on `127.0.0.1:8080` (or the configured port). The addre
 
 ### Upstream Proxy
 
-Route all outbound traffic through a parent proxy — useful when chaining PitokMonitor behind a corporate proxy or another tool.
+Route all outbound traffic through a parent proxy — useful when chaining PandoraBox behind a corporate proxy or another tool.
 
 Supported URL formats:
 ```
@@ -702,7 +702,7 @@ Leave empty to connect directly. Changes are saved per project and take effect i
 
 ### Replay Editor — Auto Content-Length
 
-Toggle whether PitokMonitor automatically recalculates the `Content-Length` header when the body is edited in the Replay editor. Default: **on**. Saved globally (not per project).
+Toggle whether PandoraBox automatically recalculates the `Content-Length` header when the body is edited in the Replay editor. Default: **on**. Saved globally (not per project).
 
 ---
 
@@ -727,7 +727,7 @@ A pre-formatted JSON block ready to paste into `claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "pitokmonitor": {
+    "pandorabox": {
       "url": "http://localhost:9090/sse"
     }
   }

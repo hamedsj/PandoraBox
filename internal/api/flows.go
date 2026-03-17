@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hamedsj5/pitokmonitor/internal/events"
+	"github.com/hamedsj5/pandorabox/internal/events"
 )
 
 type flowExecRequest struct {
@@ -44,7 +44,7 @@ func (s *Server) execFlowStep(w http.ResponseWriter, r *http.Request) {
 	script := buildFlowExecScript(req.Code)
 
 	// Write to temp file
-	tmpFile, err := os.CreateTemp("", "pitok_flow_*.py")
+	tmpFile, err := os.CreateTemp("", "pandora_flow_*.py")
 	if err != nil {
 		writeJSON(w, http.StatusOK, flowExecResult{Error: err.Error()})
 		return

@@ -1,4 +1,4 @@
-module github.com/hamedsj5/pitokmonitor
+module github.com/hamedsj5/pandorabox
 
 go 1.25.0
 

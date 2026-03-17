@@ -27,7 +27,7 @@ export function CodeViewer({
   const fontSize = useThemeStore((state) => state.fontSize)
   const fontFamily = useThemeStore((state) => state.fontFamily)
   const monaco = useMonaco()
-  const themeName = mode === 'dark' ? 'pitok-dark' : 'pitok-light'
+  const themeName = mode === 'dark' ? 'pandora-dark' : 'pandora-light'
   const resolvedTypography = getResolvedTypography(fontSize)
   const [editorHeight, setEditorHeight] = useState<number>(minHeight)
   const applyThemeDefinition = (targetMonaco: Parameters<NonNullable<BeforeMount>>[0]) => {

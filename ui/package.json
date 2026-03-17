@@ -1,13 +1,13 @@
 {
-  "name": "pitokmonitor",
+  "name": "pandorabox",
   "private": true,
   "version": "1.0.0",
   "description": "Programmable MITM proxy with MCP server for Claude Desktop integration",
   "author": {
-    "name": "PitokMonitor",
+    "name": "PandoraBox",
     "email": "hsjbb123@gmail.com"
   },
-  "homepage": "https://github.com/hamedsj5/pitokmonitor",
+  "homepage": "https://github.com/hamedsj5/pandorabox",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -64,8 +64,8 @@
     "vite": "^8.0.0"
   },
   "build": {
-    "appId": "com.pitokmonitor.app",
-    "productName": "PitokMonitor",
+    "appId": "com.pandorabox.app",
+    "productName": "PandoraBox",
     "directories": {
       "output": "dist-electron"
     },
@@ -75,8 +75,8 @@
     ],
     "extraResources": [
       {
-        "from": "../bin/pitokmonitor",
-        "to": "pitokmonitor"
+        "from": "../bin/pandorabox",
+        "to": "pandorabox"
       }
     ],
     "mac": {
