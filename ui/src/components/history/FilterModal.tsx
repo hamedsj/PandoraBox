@@ -32,10 +32,10 @@ const STATUS_OPTIONS = ['1xx', '2xx', '3xx', '4xx', '5xx'] as const
 const CONTENT_TYPE_CHIPS = [
   { label: 'JSON',     value: 'application/json' },
   { label: 'HTML',     value: 'text/html' },
-  { label: 'JS',       value: 'javascript' },
+  { label: 'JS',       value: 'text/javascript' },
   { label: 'CSS',      value: 'text/css' },
   { label: 'XML',      value: 'xml' },
-  { label: 'Form',     value: 'form-urlencoded' },
+  { label: 'Form',     value: 'application/x-www-form-urlencoded' },
   { label: 'Image',    value: 'image/' },
   { label: 'Protobuf', value: 'protobuf' },
 ] as const
@@ -401,20 +401,30 @@ function ResponseTab({
       <div>
         <FieldLabel>Content-Type</FieldLabel>
         <div className="flex flex-wrap gap-1.5 mb-3">
-          {CONTENT_TYPE_CHIPS.map(({ label, value }) => (
-            <Chip
-              key={label} label={label}
-              active={local.contentTypeShow === value && local.contentTypeShowEnabled}
-              onClick={() => {
-                const selecting = local.contentTypeShow !== value || !local.contentTypeShowEnabled
-                patch('contentTypeShow', selecting ? value : '')
-                if (selecting) {
-                  patch('contentTypeShowEnabled', true)
-                  patch('contentTypeHideEnabled', false)
-                }
-              }}
-            />
-          ))}
+          {CONTENT_TYPE_CHIPS.map(({ label, value }) => {
+            const activeValues = local.contentTypeShow
+              .split(',').map(v => v.trim()).filter(Boolean)
+            const isActive = local.contentTypeShowEnabled && activeValues.includes(value)
+            return (
+              <Chip
+                key={label} label={label}
+                active={isActive}
+                onClick={() => {
+                  const current = local.contentTypeShow
+                    .split(',').map(v => v.trim()).filter(Boolean)
+                  const has = current.includes(value)
+                  const next = has ? current.filter(v => v !== value) : [...current, value]
+                  patch('contentTypeShow', next.join(', '))
+                  if (next.length > 0) {
+                    patch('contentTypeShowEnabled', true)
+                    patch('contentTypeHideEnabled', false)
+                  } else {
+                    patch('contentTypeShowEnabled', false)
+                  }
+                }}
+              />
+            )
+          })}
         </div>
         <div className="space-y-2">
           <LabeledInput
