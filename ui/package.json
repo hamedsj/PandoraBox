@@ -84,18 +84,21 @@
         "dmg",
         "zip"
       ],
+      "icon": "build/icon.icns",
       "category": "public.app-category.developer-tools"
     },
     "win": {
       "target": [
         "nsis"
-      ]
+      ],
+      "icon": "build/icon.ico"
     },
     "linux": {
       "target": [
         "AppImage",
         "deb"
       ],
+      "icon": "build/icon.png",
       "category": "Development"
     }
   }

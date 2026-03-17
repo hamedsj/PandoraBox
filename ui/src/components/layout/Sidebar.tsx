@@ -41,7 +41,9 @@ export function Sidebar() {
       {/* Logo */}
       <div className="px-4 mb-2">
         <div className="flex items-center gap-3 bg-primary/20 rounded-lg p-3">
-          <span className="text-primary text-lg font-bold font-mono">P</span>
+          <div className="w-7 h-7 rounded-md bg-[#101318] flex items-center justify-center shrink-0">
+            <img src="/logo.png" alt="PandoraBox" className="w-5 h-5 object-contain" />
+          </div>
           <span className="text-foreground font-semibold">PandoraBox</span>
         </div>
       </div>
