@@ -431,22 +431,6 @@ export function SettingsPage() {
             </a>
           </div>
 
-          <div className="bg-amber-500/10 border border-amber-500/30 rounded-md p-3 text-xs text-amber-300 space-y-1">
-            <div className="font-medium">If Chrome still shows "Not Secure" after installing:</div>
-            <ol className="ml-3 space-y-1 list-decimal list-inside">
-              <li>Open Keychain Access → System keychain (not Login)</li>
-              <li>Find "PitokMonitor CA" → double-click</li>
-              <li>Expand "Trust" → set "When using this certificate" to <strong>Always Trust</strong></li>
-              <li>Close &amp; enter your password when prompted</li>
-              <li>Restart Chrome completely (Cmd+Q, not just close window)</li>
-            </ol>
-            <div className="mt-2 font-medium">If cert was generated before today, regenerate it:</div>
-            <code className="block bg-black/30 rounded px-2 py-1 font-mono text-xs mt-1">
-              ./pitokmonitor ca regenerate
-            </code>
-            <div className="text-xs text-muted-foreground mt-1">Then re-download and re-install new cert.</div>
-          </div>
-
           <div className="space-y-2 text-sm">
             <div className="font-medium text-muted-foreground text-xs uppercase tracking-wide">Browser Installation</div>
             <InstallStep
