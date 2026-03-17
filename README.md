@@ -389,6 +389,7 @@ make electron-linux
 
 | Document | Contents |
 |---|---|
+| [wiki/features.md](wiki/features.md) | Complete feature guide: every UI page, every option, how to use everything |
 | [wiki/architecture.md](wiki/architecture.md) | System architecture, Go package map, data flow, key technical decisions |
 | [wiki/api.md](wiki/api.md) | Complete REST API reference, request/response shapes, WebSocket events |
 | [wiki/mcp.md](wiki/mcp.md) | Full MCP tool reference with parameters, return types, and examples |
