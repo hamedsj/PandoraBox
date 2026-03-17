@@ -58,6 +58,7 @@ interface LocalFilters {
   caseInsensitive: boolean
   useRegex: boolean
   searchScope: string[]
+  inScopeOnly: boolean
 }
 
 function fromStore(f: ReturnType<typeof useProxyStore.getState>['filters']): LocalFilters {
@@ -77,6 +78,7 @@ function fromStore(f: ReturnType<typeof useProxyStore.getState>['filters']): Loc
     caseInsensitive:       f.caseInsensitive,
     useRegex:              f.useRegex,
     searchScope:           f.searchScope,
+    inScopeOnly:           f.inScopeOnly,
   }
 }
 
@@ -98,6 +100,7 @@ function resolve(l: LocalFilters) {
     caseInsensitive: l.caseInsensitive,
     useRegex:        l.useRegex,
     searchScope:     l.searchScope,
+    inScopeOnly:     l.inScopeOnly,
   }
 }
 
@@ -106,7 +109,7 @@ function countForTab(tab: Tab, f: LocalFilters): number {
     case 'search':
       return [f.search, f.searchScope.length > 0, f.negativeSearch, !f.caseInsensitive, f.useRegex].filter(Boolean).length
     case 'request':
-      return [f.host, f.extensionShowEnabled && f.extensionShow, f.extensionHideEnabled && f.extensionHide].filter(Boolean).length
+      return [f.inScopeOnly, f.host, f.extensionShowEnabled && f.extensionShow, f.extensionHideEnabled && f.extensionHide].filter(Boolean).length
     case 'response':
       return [f.statusCodes.length > 0, f.contentTypeShowEnabled && f.contentTypeShow, f.contentTypeHideEnabled && f.contentTypeHide].filter(Boolean).length
   }
@@ -340,6 +343,11 @@ function SearchTab({
 function RequestTab({ local, patch, togglePair }: { local: LocalFilters; patch: PatchFn; togglePair: TogglePairFn }) {
   return (
     <div className="flex flex-col gap-5">
+      <Toggle
+        label="Only show in-scope items"
+        checked={local.inScopeOnly}
+        onChange={v => patch('inScopeOnly', v)}
+      />
       <div>
         <FieldLabel>Host</FieldLabel>
         <TextInput placeholder="e.g. api.example.com" value={local.host} onChange={v => patch('host', v)} />

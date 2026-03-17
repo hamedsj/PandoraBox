@@ -13,6 +13,7 @@ export interface FilterConfig {
   caseInsensitive: boolean
   useRegex: boolean
   searchScope: string[]
+  inScopeOnly: boolean
 }
 
 export interface ScopeRule {

@@ -42,6 +42,7 @@ type FilterConfig struct {
 	CaseInsensitive bool     `json:"caseInsensitive"`
 	UseRegex        bool     `json:"useRegex"`
 	SearchScope     []string `json:"searchScope"`
+	InScopeOnly     bool     `json:"inScopeOnly"`
 }
 
 type MatchReplaceRule struct {
@@ -122,6 +123,7 @@ func defaultConfig(name string) Config {
 			ExtensionHide:   defaultHiddenExtensionsCSV,
 			StatusCodes:     []string{},
 			SearchScope:     []string{},
+			InScopeOnly:     true,
 		},
 		Scope: ScopeConfig{
 			IncludeRules: []ScopeRule{},

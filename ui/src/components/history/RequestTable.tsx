@@ -52,6 +52,7 @@ export function RequestTable({
   useRequests()
 
   const { requests, selectedRequestId, setSelectedRequestId, filters, setFilters, addToReplay, removeRequestFromReplay, replayQueue } = useProxyStore()
+  const scope = useProxyStore((s) => s.project?.scope)
 
   const [sortColumn, setSortColumn] = useState<SortColumn>('id')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
@@ -125,8 +126,8 @@ export function RequestTable({
   )
 
   const filteredRequests = useMemo(
-    () => filterRequests(partitionedRequests, filters),
-    [partitionedRequests, filters]
+    () => filterRequests(partitionedRequests, filters, scope),
+    [partitionedRequests, filters, scope]
   )
 
   function handleSort(column: SortColumn) {

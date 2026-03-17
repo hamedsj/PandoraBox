@@ -1,4 +1,4 @@
-import type { Request } from '@/api/client'
+import type { Request, ScopeConfig } from '@/api/client'
 import type { RequestFilters } from '@/store/proxy'
 import { decodeBodyBytes, type RawBody } from '@/lib/httpBodies'
 
@@ -53,6 +53,65 @@ function matchesSearch(value: string, filters: RequestFilters): boolean {
   return haystack.includes(needle)
 }
 
+// ── Scope matching (mirrors internal/proxy/scope.go exactly) ─────────────────
+
+function matchPattern(type: string, pattern: string, value: string): boolean {
+  switch (type) {
+    case 'exact':    return pattern === value
+    case 'contains': return value.includes(pattern)
+    case 'wildcard': return wildcardMatch(pattern, value)
+    case 'regex': {
+      try { return new RegExp(pattern).test(value) } catch { return false }
+    }
+  }
+  return false
+}
+
+function wildcardMatch(pattern: string, value: string): boolean {
+  // Translate glob pattern to regex (mirrors Go filepath.Match semantics)
+  let re = '^'
+  for (const ch of pattern) {
+    if (ch === '*') re += '.*'
+    else if (ch === '?') re += '.'
+    else re += ch.replace(/[.+^${}()|[\]\\]/g, '\\$&')
+  }
+  re += '$'
+  try { return new RegExp(re).test(value) } catch { return false }
+}
+
+export function isInScope(host: string, path: string, scope: ScopeConfig): boolean {
+  if (!scope.enabled) return true
+
+  const activeIncludes = scope.include_rules.filter((r) => r.enabled)
+  const activeExcludes = scope.exclude_rules.filter((r) => r.enabled)
+
+  const matchesInclude =
+    activeIncludes.length === 0 ||
+    activeIncludes.some(
+      (r) =>
+        matchPattern(r.pattern_type, r.host, host) &&
+        (r.path === '' || matchPattern(r.pattern_type, r.path, path)),
+    )
+
+  if (!matchesInclude) return false
+
+  const matchesExclude = activeExcludes.some(
+    (r) =>
+      matchPattern(r.pattern_type, r.host, host) &&
+      (r.path === '' || matchPattern(r.pattern_type, r.path, path)),
+  )
+
+  return !matchesExclude
+}
+
+export function isWebSocket(req: Request): boolean {
+  try {
+    return (JSON.parse(req.tags) as string[]).includes('websocket')
+  } catch {
+    return false
+  }
+}
+
 export function countActiveFilters(filters: RequestFilters): number {
   return [
     filters.search,
@@ -69,13 +128,17 @@ export function countActiveFilters(filters: RequestFilters): number {
   ].filter(Boolean).length
 }
 
-export function filterRequests(requests: Request[], filters: RequestFilters): Request[] {
+export function filterRequests(requests: Request[], filters: RequestFilters, scope?: ScopeConfig): Request[] {
   const showExtensions = splitPatterns(filters.extensionShow)
   const hideExtensions = splitPatterns(filters.extensionHide)
   const showTypes = splitPatterns(filters.contentTypeShow)
   const hideTypes = splitPatterns(filters.contentTypeHide)
 
   return requests.filter((req) => {
+    if (filters.inScopeOnly && scope) {
+      if (!isInScope(req.host, req.path, scope)) return false
+    }
+
     if (filters.method && req.method !== filters.method) return false
 
     if (filters.host && !req.host.toLowerCase().includes(filters.host.toLowerCase())) return false

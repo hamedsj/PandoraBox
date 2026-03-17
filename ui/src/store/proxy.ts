@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Request, ProxyStatus, ProjectInfo, FilterConfig } from '@/api/client'
+import type { Request, ProxyStatus, ProjectInfo, FilterConfig, WebSocketFrame } from '@/api/client'
 
 export type { FilterConfig }
 
@@ -93,6 +93,11 @@ interface ProxyStore {
   filters: RequestFilters
   setFilters: (f: Partial<RequestFilters>) => void
   resetFilters: () => void
+
+  // WebSocket frames keyed by session_id
+  wsFrames: Map<number, WebSocketFrame[]>
+  appendWsFrame: (frame: WebSocketFrame) => void
+  clearWsFrames: (sessionId: number) => void
 }
 
 export const defaultFilters: RequestFilters = {
@@ -108,6 +113,7 @@ export const defaultFilters: RequestFilters = {
   caseInsensitive: true,
   useRegex: false,
   searchScope: [],
+  inScopeOnly: true,
 }
 
 export const useProxyStore = create<ProxyStore>((set) => ({
@@ -115,7 +121,12 @@ export const useProxyStore = create<ProxyStore>((set) => ({
   setStatus: (s) => set({ status: s }),
 
   project: null,
-  setProject: (p) => set({ project: p, filters: p.filters }),
+  setProject: (p) => set((state) => ({
+    project: p,
+    // Reset filters only when switching to a different project (path changed or initial load).
+    // Same-project updates (scope rules, settings, etc.) must not wipe the user's active filters.
+    ...(state.project?.path !== p.path ? { filters: p.filters } : {}),
+  })),
 
   requests: [],
   selectedRequestId: null,
@@ -159,4 +170,19 @@ export const useProxyStore = create<ProxyStore>((set) => ({
   filters: defaultFilters,
   setFilters: (f) => set((state) => ({ filters: { ...state.filters, ...f } })),
   resetFilters: () => set({ filters: defaultFilters }),
+
+  wsFrames: new Map(),
+  appendWsFrame: (frame) =>
+    set((state) => {
+      const existing = state.wsFrames.get(frame.session_id) ?? []
+      const updated = new Map(state.wsFrames)
+      updated.set(frame.session_id, [...existing, frame])
+      return { wsFrames: updated }
+    }),
+  clearWsFrames: (sessionId) =>
+    set((state) => {
+      const updated = new Map(state.wsFrames)
+      updated.delete(sessionId)
+      return { wsFrames: updated }
+    }),
 }))
