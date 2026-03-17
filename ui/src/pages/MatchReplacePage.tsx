@@ -3,6 +3,8 @@ import { Plus, Trash2, Replace, AlertCircle } from 'lucide-react'
 import { api, type MatchReplaceRule } from '@/api/client'
 import { useProxyStore } from '@/store/proxy'
 import { cn } from '@/lib/utils'
+import { Checkbox } from '@/components/ui/Checkbox'
+import { Select } from '@/components/ui/Select'
 
 const TARGETS = [
   { value: 'req-url', label: 'Request URL' },
@@ -35,22 +37,17 @@ interface RuleRowProps {
 function RuleRow({ rule, onChange, onDelete }: RuleRowProps) {
   return (
     <div className="flex items-center gap-2 p-2 rounded-lg bg-muted/40 border border-border">
-      <input
-        type="checkbox"
+      <Checkbox
         checked={rule.enabled}
-        onChange={(e) => onChange({ ...rule, enabled: e.target.checked })}
-        className="w-4 h-4 accent-primary flex-shrink-0 cursor-pointer"
+        onChange={(checked) => onChange({ ...rule, enabled: checked })}
         title="Enable rule"
       />
-      <select
+      <Select
         value={rule.target}
-        onChange={(e) => onChange({ ...rule, target: e.target.value as MatchReplaceRule['target'] })}
-        className="bg-background border border-border rounded px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary flex-shrink-0 w-36"
-      >
-        {TARGETS.map((t) => (
-          <option key={t.value} value={t.value}>{t.label}</option>
-        ))}
-      </select>
+        onChange={(v) => onChange({ ...rule, target: v as MatchReplaceRule['target'] })}
+        options={TARGETS.map((t) => ({ value: t.value, label: t.label }))}
+        className="w-36 flex-shrink-0"
+      />
       <button
         onClick={() => onChange({ ...rule, is_regex: !rule.is_regex })}
         title="Toggle regex"

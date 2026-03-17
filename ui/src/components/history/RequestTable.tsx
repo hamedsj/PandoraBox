@@ -7,8 +7,9 @@ import { cn } from '@/lib/utils'
 import { api, type Request, type ScopeRule } from '@/api/client'
 import { Globe, Filter, RotateCcw, Trash2, ChevronUp, ChevronDown, Target } from 'lucide-react'
 import { FilterModal } from './FilterModal'
-import { countActiveFilters, filterRequests } from '@/lib/requestFilters'
+import { countActiveFilters, filterRequests, isWebSocket } from '@/lib/requestFilters'
 import { subscribeShortcutAction } from '@/lib/shortcuts'
+import { Select } from '@/components/ui/Select'
 
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -39,8 +40,15 @@ function buildExcludeRule(
 
 type SortColumn = 'id' | 'method' | 'status' | 'host' | 'path' | 'query' | 'size' | 'time'
 type SortDirection = 'asc' | 'desc' | null
+export type HistoryTab = 'http' | 'websocket'
 
-export function RequestTable() {
+export function RequestTable({
+  historyTab,
+  onTabChange,
+}: {
+  historyTab: HistoryTab
+  onTabChange: (tab: HistoryTab) => void
+}) {
   useRequests()
 
   const { requests, selectedRequestId, setSelectedRequestId, filters, setFilters, addToReplay, removeRequestFromReplay, replayQueue } = useProxyStore()
@@ -106,9 +114,19 @@ export function RequestTable() {
     })
   }, [requests, sortColumn, sortDirection])
 
+  // Tab counts (unfiltered, just partitioned by type)
+  const httpCount = useMemo(() => requests.filter((r) => !isWebSocket(r)).length, [requests])
+  const wsCount = useMemo(() => requests.filter((r) => isWebSocket(r)).length, [requests])
+
+  // Partition by active tab, then apply user filters
+  const partitionedRequests = useMemo(
+    () => sortedRequests.filter((r) => historyTab === 'websocket' ? isWebSocket(r) : !isWebSocket(r)),
+    [sortedRequests, historyTab]
+  )
+
   const filteredRequests = useMemo(
-    () => filterRequests(sortedRequests, filters),
-    [sortedRequests, filters]
+    () => filterRequests(partitionedRequests, filters),
+    [partitionedRequests, filters]
   )
 
   function handleSort(column: SortColumn) {
@@ -140,8 +158,35 @@ export function RequestTable() {
 
   return (
     <div className="flex flex-col h-full">
+      {/* Tab bar */}
+      <div className="flex border-b border-border bg-card shrink-0">
+        {([
+          { id: 'http' as HistoryTab, label: 'HTTP', count: httpCount },
+          { id: 'websocket' as HistoryTab, label: 'WebSocket', count: wsCount },
+        ]).map(({ id, label, count }) => (
+          <button
+            key={id}
+            onClick={() => onTabChange(id)}
+            className={cn(
+              'flex items-center gap-2 px-4 py-2.5 text-xs font-medium border-b-2 -mb-px transition-colors',
+              historyTab === id
+                ? 'border-primary text-foreground'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            )}
+          >
+            {label}
+            <span className={cn(
+              'px-1.5 py-0.5 rounded-full text-[10px] font-semibold',
+              historyTab === id ? 'bg-primary/20 text-primary' : 'bg-muted text-muted-foreground'
+            )}>
+              {count}
+            </span>
+          </button>
+        ))}
+      </div>
+
       {/* Toolbar */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-card">
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-card shrink-0">
         <button
           onClick={() => setFilterModalOpen(true)}
           className={cn(
@@ -158,18 +203,19 @@ export function RequestTable() {
             </span>
           )}
         </button>
-        <select
-          className="text-sm bg-input border border-border rounded-md px-2 py-1.5 text-foreground focus:outline-none"
-          value={filters.method}
-          onChange={(e) => setFilters({ method: e.target.value })}
-        >
-          <option value="">All Methods</option>
-          {['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'].map((m) => (
-            <option key={m} value={m}>{m}</option>
-          ))}
-        </select>
+        {historyTab === 'http' && (
+          <Select
+            value={filters.method}
+            onChange={(v) => setFilters({ method: v })}
+            options={[
+              { value: '', label: 'All Methods' },
+              ...['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'].map((m) => ({ value: m, label: m })),
+            ]}
+            className="text-sm py-1.5"
+          />
+        )}
         <span className="text-xs text-muted-foreground px-2">
-          {filteredRequests.length} requests
+          {filteredRequests.length} {historyTab === 'websocket' ? 'connections' : 'requests'}
         </span>
       </div>
 
@@ -263,8 +309,17 @@ export function RequestTable() {
         {filteredRequests.length === 0 && (
           <div className="flex flex-col items-center justify-center h-40 text-muted-foreground">
             <Globe className="mb-2 opacity-30" size={32} />
-            <p className="text-sm">No requests found</p>
-            <p className="text-xs mt-1">Try adjusting your filters or configure proxy on port 8080</p>
+            {historyTab === 'websocket' ? (
+              <>
+                <p className="text-sm">No WebSocket connections</p>
+                <p className="text-xs mt-1">WebSocket upgrades will appear here</p>
+              </>
+            ) : (
+              <>
+                <p className="text-sm">No requests found</p>
+                <p className="text-xs mt-1">Try adjusting your filters or configure proxy on port 8080</p>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -358,7 +413,13 @@ function RequestRow({
           <MethodBadge method={req.method} />
         </td>
         <td className="px-3 py-1.5">
-          {resp ? <StatusBadge code={resp.status_code} /> : <span className="text-muted-foreground">—</span>}
+          {isWebSocket(req) ? (
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-teal-500/20 text-teal-400 border border-teal-500/30">WS</span>
+          ) : resp ? (
+            <StatusBadge code={resp.status_code} />
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          )}
         </td>
         <td className="px-3 py-1.5 font-mono text-xs text-muted-foreground min-w-0 w-[160px] max-w-[160px]">
           <div className="truncate">{req.host}</div>
