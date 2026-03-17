@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/url"
 	"sync"
 	"sync/atomic"
 
@@ -29,6 +30,9 @@ type Proxy struct {
 
 	dbMu sync.RWMutex
 	db   *storage.DB
+
+	upstreamMu  sync.RWMutex
+	upstreamURL *url.URL // nil = no upstream proxy
 
 	requestCount atomic.Int64
 }
@@ -61,9 +65,21 @@ func (p *Proxy) SetDB(db *storage.DB) {
 	p.dbMu.Unlock()
 }
 
-func (p *Proxy) ApplyConfig(port int, interceptEnabled bool) {
+func (p *Proxy) ApplyConfig(port int, interceptEnabled bool, upstreamURL string) {
 	p.intercept.SetEnabled(interceptEnabled)
 	// Port changes require a proxy restart; port is noted but not applied live.
+
+	var parsed *url.URL
+	if upstreamURL != "" {
+		if u, err := url.Parse(upstreamURL); err == nil {
+			parsed = u
+		} else {
+			slog.Warn("Invalid upstream proxy URL, ignoring", "url", upstreamURL, "err", err)
+		}
+	}
+	p.upstreamMu.Lock()
+	p.upstreamURL = parsed
+	p.upstreamMu.Unlock()
 }
 
 func (p *Proxy) Start(ctx context.Context) error {

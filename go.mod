@@ -1,8 +1,6 @@
 module github.com/hamedsj5/pitokmonitor
 
-go 1.23.2
-
-toolchain go1.23.4
+go 1.25.0
 
 require (
 	github.com/go-chi/chi/v5 v5.1.0
@@ -23,7 +21,8 @@ require (
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
-	golang.org/x/sys v0.22.0 // indirect
+	golang.org/x/net v0.52.0 // indirect
+	golang.org/x/sys v0.42.0 // indirect
 	modernc.org/gc/v3 v3.0.0-20240107210532-573471604cb6 // indirect
 	modernc.org/libc v1.55.3 // indirect
 	modernc.org/mathutil v1.6.0 // indirect

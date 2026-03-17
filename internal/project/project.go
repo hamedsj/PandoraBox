@@ -11,8 +11,9 @@ import (
 )
 
 type ProxyConfig struct {
-	Port             int  `json:"port"`
-	InterceptEnabled bool `json:"intercept_enabled"`
+	Port             int    `json:"port"`
+	InterceptEnabled bool   `json:"intercept_enabled"`
+	UpstreamURL      string `json:"upstream_url,omitempty"` // "" = disabled
 }
 
 type ScopeRule struct {
