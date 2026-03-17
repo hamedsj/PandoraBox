@@ -65,6 +65,21 @@ export interface MiddlewareConfig {
   edges: MiddlewareEdge[]
 }
 
+export interface FlowStep {
+  id: string
+  type: 'request' | 'process'
+  name?: string
+  raw?: string  // base64-encoded raw HTTP
+  code?: string // Python code
+}
+
+export interface Flow {
+  id: string
+  name: string
+  steps: FlowStep[]
+  variables?: Record<string, string>
+}
+
 export interface ProjectInfo {
   name: string
   path: string
@@ -75,6 +90,7 @@ export interface ProjectInfo {
   mcp_disabled: boolean
   match_replace: MatchReplaceRule[]
   middleware: MiddlewareConfig
+  flows: Flow[]
 }
 
 export interface InterceptFilter {
@@ -241,11 +257,18 @@ export const api = {
   },
   project: {
     get: () => get<ProjectInfo>('/project'),
-    update: (body: { name?: string; proxy?: ProjectInfo['proxy']; filters?: FilterConfig; scope?: ScopeConfig; mcp_disabled?: boolean; match_replace?: MatchReplaceRule[]; middleware?: MiddlewareConfig }) =>
+    update: (body: { name?: string; proxy?: ProjectInfo['proxy']; filters?: FilterConfig; scope?: ScopeConfig; mcp_disabled?: boolean; match_replace?: MatchReplaceRule[]; middleware?: MiddlewareConfig; flows?: Flow[] }) =>
       put<ProjectInfo>('/project', body),
     saveAs: (path: string, name?: string) => post<ProjectInfo>('/project/save-as', { path, name }),
     recent: () => get<RecentProject[]>('/project/recent'),
     open: (path: string) => post<ProjectInfo>('/project/open', { path }),
     new: (path: string, name: string) => post<ProjectInfo>('/project/new', { path, name }),
+  },
+  flows: {
+    exec: (body: {
+      code: string
+      response: { status: number; headers: Record<string, string>; body: string }
+      variables: Record<string, string>
+    }) => post<{ variables: Record<string, string>; error: string }>('/flows/exec', body),
   },
 }

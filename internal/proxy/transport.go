@@ -251,19 +251,38 @@ func (p *Proxy) SendRequest(method, url string, headers map[string]string, body 
 }
 
 // ReplayRequest replays a stored request with optional modifications.
+// When reqID == 0 and raw is non-empty, the request is built directly from
+// the raw bytes without a DB lookup (used by the Flows feature).
 func (p *Proxy) ReplayRequest(reqID int64, modHeaders map[string]string, modBody []byte, modURL string, raw []byte) (*storage.Replay, error) {
 	db := p.getDB()
-	orig, err := db.GetRequest(reqID)
-	if err != nil || orig == nil {
-		return nil, fmt.Errorf("request not found: %d", reqID)
+
+	var req *http.Request
+	var newReqCapture *storage.Request
+	var err error
+
+	if reqID == 0 && len(raw) > 0 {
+		// Build directly from raw bytes using a stub origin with http scheme
+		stub := &storage.Request{Scheme: "http"}
+		req, newReqCapture, err = buildReplayRequestFromRaw(stub, raw)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		orig, dbErr := db.GetRequest(reqID)
+		if dbErr != nil || orig == nil {
+			return nil, fmt.Errorf("request not found: %d", reqID)
+		}
+		req, newReqCapture, err = buildReplayRequest(orig, modHeaders, modBody, modURL, raw)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	req, newReqCapture, err := buildReplayRequest(orig, modHeaders, modBody, modURL, raw)
-	if err != nil {
-		return nil, err
+	var originID *int64
+	if reqID != 0 {
+		originID = &reqID
 	}
-
-	replay := &storage.Replay{OriginRequestID: &reqID, Status: "pending"}
+	replay := &storage.Replay{OriginRequestID: originID, Status: "pending"}
 
 	newReqID, err := db.SaveRequest(newReqCapture)
 	if err != nil {

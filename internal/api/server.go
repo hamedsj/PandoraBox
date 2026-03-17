@@ -94,6 +94,7 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/requests", s.listRequests)
 		r.Get("/requests/{id}", s.getRequest)
 		r.Delete("/requests/{id}", s.deleteRequest)
+		r.Get("/requests/{id}/ws-frames", s.getWebSocketFrames)
 
 		// Intercept
 		r.Get("/intercept/queue", s.interceptQueue)
@@ -119,6 +120,9 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/project/recent", s.getRecentProjects)
 		r.Post("/project/open", s.openProject)
 		r.Post("/project/new", s.newProject)
+
+		// Flows
+		r.Post("/flows/exec", s.execFlowStep)
 	})
 
 	// Serve embedded UI for all non-API routes

@@ -40,6 +40,8 @@ export function RequestInspector({ edge = 'left' }: { edge?: 'left' | 'top' | 'n
       return
     }
 
+    setActiveTab('request')
+
     let cancelled = false
     decodeBodyForDisplay(req.body, req.headers).then((body) => {
       if (!cancelled) setRequestBody(body)

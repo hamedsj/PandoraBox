@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strings"
 )
 
 func (p *Proxy) handleCONNECT(conn net.Conn, br *bufio.Reader, req *http.Request) {
@@ -51,6 +52,11 @@ func (p *Proxy) handleCONNECT(conn net.Conn, br *bufio.Reader, req *http.Request
 		clientReq.URL.Scheme = "https"
 		if clientReq.Host == "" {
 			clientReq.Host = host
+		}
+
+		if strings.EqualFold(clientReq.Header.Get("Upgrade"), "websocket") {
+			p.handleWebSocketUpgrade(tlsConn, tlsBR, clientReq, "https")
+			return
 		}
 
 		resp, _, err := p.roundTrip(clientReq, "https")

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strings"
 )
 
 func (p *Proxy) handleConn(conn net.Conn) {
@@ -33,6 +34,11 @@ func (p *Proxy) handleHTTP(conn net.Conn, br *bufio.Reader, req *http.Request) {
 	}
 
 	slog.Debug("HTTP request", "method", req.Method, "host", req.Host, "path", req.URL.Path)
+
+	if strings.EqualFold(req.Header.Get("Upgrade"), "websocket") {
+		p.handleWebSocketUpgrade(conn, br, req, "http")
+		return
+	}
 
 	resp, _, err := p.roundTrip(req, "http")
 	if err != nil {

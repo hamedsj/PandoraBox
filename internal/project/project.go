@@ -81,6 +81,21 @@ type MiddlewareConfig struct {
 	Edges   []MiddlewareEdge `json:"edges"`
 }
 
+type FlowStep struct {
+	ID   string `json:"id"`
+	Type string `json:"type"` // "request" | "process"
+	Name string `json:"name,omitempty"`
+	Raw  string `json:"raw,omitempty"`  // base64-encoded raw HTTP
+	Code string `json:"code,omitempty"` // Python code
+}
+
+type Flow struct {
+	ID        string            `json:"id"`
+	Name      string            `json:"name"`
+	Steps     []FlowStep        `json:"steps"`
+	Variables map[string]string `json:"variables,omitempty"`
+}
+
 type Config struct {
 	Name         string             `json:"name"`
 	CreatedAt    time.Time          `json:"created_at"`
@@ -90,6 +105,7 @@ type Config struct {
 	MCPDisabled  bool               `json:"mcp_disabled"`
 	MatchReplace []MatchReplaceRule `json:"match_replace,omitempty"`
 	Middleware   MiddlewareConfig   `json:"middleware,omitempty"`
+	Flows        []Flow             `json:"flows,omitempty"`
 }
 
 type Manager struct {
@@ -162,6 +178,9 @@ func OpenProject(path string) (*Manager, error) {
 	}
 	if cfg.Middleware.Edges == nil {
 		cfg.Middleware.Edges = []MiddlewareEdge{}
+	}
+	if cfg.Flows == nil {
+		cfg.Flows = []Flow{}
 	}
 	return &Manager{path: path, cfg: cfg}, nil
 }

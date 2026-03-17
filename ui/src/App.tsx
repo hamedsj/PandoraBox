@@ -7,6 +7,7 @@ import { SettingsPage } from '@/pages/SettingsPage'
 import { ScopePage } from '@/pages/ScopePage'
 import { SitemapPage } from '@/pages/SitemapPage'
 import { MatchReplacePage } from '@/pages/MatchReplacePage'
+import { FlowsPage } from '@/pages/FlowsPage'
 import { ThemeProvider } from '@/components/ThemeProvider'
 
 export default function App() {
@@ -19,6 +20,7 @@ export default function App() {
             <Route path="/history" element={<HistoryPage />} />
             <Route path="/intercept" element={<InterceptPage />} />
             <Route path="/replay" element={<ReplayPage />} />
+            <Route path="/flows" element={<FlowsPage />} />
             <Route path="/sitemap" element={<SitemapPage />} />
             <Route path="/scope" element={<ScopePage />} />
             <Route path="/match-replace" element={<MatchReplacePage />} />

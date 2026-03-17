@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { Globe, Shield, RotateCcw, Settings, Sun, Moon, Target, Network, Replace } from 'lucide-react'
+import { Globe, Shield, RotateCcw, Settings, Sun, Moon, Target, Network, Replace, GitBranch } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useProxyStore } from '@/store/proxy'
 import { useThemeStore } from '@/store/theme'
@@ -13,6 +13,7 @@ const navItems = [
   { to: '/match-replace', label: 'Match & Replace', icon: Replace },
   { to: '/sitemap', label: 'SiteMap', icon: Network },
   { to: '/replay', label: 'Replay', icon: RotateCcw },
+  { to: '/flows', label: 'Flows', icon: GitBranch },
   { to: '/settings', label: 'Settings', icon: Settings },
 ]
 

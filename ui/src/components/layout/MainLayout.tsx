@@ -5,19 +5,24 @@ import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { useEffect, useRef } from 'react'
 import { api } from '@/api/client'
 import { useProxyStore } from '@/store/proxy'
+import { useFlowsStore } from '@/store/flows'
 
 export function MainLayout() {
   useWebSocket()
   useKeyboardShortcuts()
   const setStatus = useProxyStore((s) => s.setStatus)
   const setProject = useProxyStore((s) => s.setProject)
+  const setFlows = useFlowsStore((s) => s.setFlows)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const filtersRef = useRef(useProxyStore.getState().filters)
 
   // Load project on mount
   useEffect(() => {
-    api.project.get().then(setProject).catch(console.error)
-  }, [setProject])
+    api.project.get().then((p) => {
+      setProject(p)
+      setFlows(p.flows ?? [])
+    }).catch(console.error)
+  }, [setProject, setFlows])
 
   // Poll proxy status
   useEffect(() => {

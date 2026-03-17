@@ -13,6 +13,10 @@ const (
 	EventInterceptResolved EventType = "intercept.resolved"
 	EventProxyStatus       EventType = "proxy.status"
 	EventProjectSwitched   EventType = "project.switched"
+
+	EventWebSocketFrame         EventType = "websocket.frame"
+	EventWebSocketSessionOpened EventType = "websocket.session.opened"
+	EventWebSocketSessionClosed EventType = "websocket.session.closed"
 )
 
 type Event struct {

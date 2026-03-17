@@ -21,6 +21,7 @@ type projectInfoResponse struct {
 	MCPDisabled  bool                   `json:"mcp_disabled"`
 	MatchReplace []proj.MatchReplaceRule `json:"match_replace"`
 	Middleware   proj.MiddlewareConfig   `json:"middleware"`
+	Flows        []proj.Flow            `json:"flows"`
 }
 
 func (s *Server) getProject(w http.ResponseWriter, r *http.Request) {
@@ -44,6 +45,7 @@ func (s *Server) getProject(w http.ResponseWriter, r *http.Request) {
 		MCPDisabled:  cfg.MCPDisabled,
 		MatchReplace: cfg.MatchReplace,
 		Middleware:   cfg.Middleware,
+		Flows:        cfg.Flows,
 	})
 }
 
@@ -65,6 +67,7 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
 		MCPDisabled  *bool                    `json:"mcp_disabled"`
 		MatchReplace *[]proj.MatchReplaceRule `json:"match_replace"`
 		Middleware   *proj.MiddlewareConfig   `json:"middleware"`
+		Flows        *[]proj.Flow             `json:"flows"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -97,6 +100,9 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
 		cfg.Middleware = *body.Middleware
 		s.proxy.SetMiddleware(cfg.Middleware)
 	}
+	if body.Flows != nil {
+		cfg.Flows = *body.Flows
+	}
 
 	if err := mgr.Save(cfg); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -113,6 +119,7 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
 		MCPDisabled:  cfg.MCPDisabled,
 		MatchReplace: cfg.MatchReplace,
 		Middleware:   cfg.Middleware,
+		Flows:        cfg.Flows,
 	})
 }
 
@@ -344,5 +351,6 @@ func (s *Server) switchProject(newMgr *proj.Manager, appCfg *proj.AppConfig, w h
 		MCPDisabled:  cfg.MCPDisabled,
 		MatchReplace: cfg.MatchReplace,
 		Middleware:   cfg.Middleware,
+		Flows:        cfg.Flows,
 	})
 }

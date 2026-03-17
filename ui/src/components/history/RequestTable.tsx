@@ -1,12 +1,14 @@
 import { useState, useCallback, useEffect, useMemo } from 'react'
 import { useProxyStore } from '@/store/proxy'
+import { useFlowsStore } from '@/store/flows'
 import { useRequests } from '@/hooks/useRequests'
 import { MethodBadge } from '@/components/common/MethodBadge'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import { cn } from '@/lib/utils'
 import { api, type Request, type ScopeRule } from '@/api/client'
-import { Globe, Filter, RotateCcw, Trash2, ChevronUp, ChevronDown, Target } from 'lucide-react'
+import { Globe, Filter, RotateCcw, Trash2, ChevronUp, ChevronDown, Target, GitBranch } from 'lucide-react'
 import { FilterModal } from './FilterModal'
+import { AddToFlowModal } from '@/components/flows/AddToFlowModal'
 import { countActiveFilters, filterRequests, isWebSocket } from '@/lib/requestFilters'
 import { subscribeShortcutAction } from '@/lib/shortcuts'
 import { Select } from '@/components/ui/Select'
@@ -331,6 +333,9 @@ export function RequestTable({
   )
 }
 
+// Re-export for use by parent
+export { AddToFlowModal }
+
 function RequestRow({
   req,
   selected,
@@ -354,6 +359,7 @@ function RequestRow({
   const setProject = useProxyStore((s) => s.setProject)
   const [contextMenuOpen, setContextMenuOpen] = useState(false)
   const [contextMenuPosition, setContextMenuPosition] = useState({ x: 0, y: 0 })
+  const [addToFlowOpen, setAddToFlowOpen] = useState(false)
 
   async function addExcludeRule(kind: 'entirely' | 'host' | 'path' | 'subpath') {
     const scope = project?.scope ?? { enabled: false, include_rules: [], exclude_rules: [] }
@@ -445,6 +451,13 @@ function RequestRow({
         </td>
       </tr>
 
+      {/* Add to Flow Modal */}
+      <AddToFlowModal
+        open={addToFlowOpen}
+        request={req}
+        onClose={() => setAddToFlowOpen(false)}
+      />
+
       {/* Context Menu */}
       {contextMenuOpen && (
         <div
@@ -471,6 +484,14 @@ function RequestRow({
               Send to Replay
             </button>
           )}
+
+          <button
+            onClick={(e) => { e.stopPropagation(); setAddToFlowOpen(true); closeContextMenu() }}
+            className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted transition-colors text-left"
+          >
+            <GitBranch size={14} />
+            Send to Flow
+          </button>
 
           <div className="my-1 border-t border-border" />
 

@@ -316,7 +316,7 @@ CA files stored at: `~/.pitokmonitor/ca.crt` and `~/.pitokmonitor/ca.key`
 
 ## Planned Features (Phase 6)
 
-- [ ] Upstream proxy chaining
-- [ ] WebSocket traffic support
+- [x] Upstream proxy chaining
+- [x] WebSocket traffic support
 - [x] MCP parity + per-project MCP toggle
-- [ ] Auto-update via electron-updater
+- ~~Auto-update via electron-updater~~

@@ -44,6 +44,25 @@ type Replay struct {
 	Response *Response `json:"response,omitempty"`
 }
 
+type WebSocketSession struct {
+	ID        int64      `json:"id"`
+	RequestID int64      `json:"request_id"`
+	CreatedAt time.Time  `json:"created_at"`
+	ClosedAt  *time.Time `json:"closed_at"`
+}
+
+type WebSocketFrame struct {
+	ID        int64     `json:"id"`
+	SessionID int64     `json:"session_id"`
+	Direction string    `json:"direction"` // "c2s" | "s2c"
+	Opcode    int       `json:"opcode"`
+	Fin       int       `json:"fin"`
+	Payload   []byte    `json:"payload"`
+	Length    int       `json:"length"`
+	Truncated bool      `json:"truncated"`
+	Timestamp time.Time `json:"timestamp"`
+}
+
 type InterceptEntry struct {
 	ID          int64      `json:"id"`
 	RequestID   int64      `json:"request_id"`

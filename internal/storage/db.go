@@ -86,6 +86,27 @@ CREATE TABLE IF NOT EXISTS intercept_queue (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     resolved_at DATETIME
 );
+
+CREATE TABLE IF NOT EXISTS websocket_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    request_id INTEGER NOT NULL REFERENCES requests(id),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    closed_at DATETIME
+);
+CREATE INDEX IF NOT EXISTS idx_ws_sessions_req ON websocket_sessions(request_id);
+
+CREATE TABLE IF NOT EXISTS websocket_frames (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL REFERENCES websocket_sessions(id),
+    direction TEXT NOT NULL,
+    opcode INTEGER NOT NULL,
+    fin INTEGER NOT NULL DEFAULT 1,
+    payload BLOB,
+    length INTEGER NOT NULL,
+    truncated INTEGER NOT NULL DEFAULT 0,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ws_frames_session ON websocket_frames(session_id);
 `
 	_, err := db.Exec(schema)
 	return err
