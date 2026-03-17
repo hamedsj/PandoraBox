@@ -107,8 +107,9 @@ function createTray() {
   try {
     icon = nativeImage.createFromPath(iconPath)
     if (icon.isEmpty()) throw new Error('empty')
+    // Template image: macOS automatically inverts for dark/light menu bar
+    icon.setTemplateImage(true)
   } catch {
-    // Fallback: create a tiny programmatic icon
     icon = nativeImage.createEmpty()
   }
 
