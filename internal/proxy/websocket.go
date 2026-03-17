@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"compress/flate"
+	"crypto/rand"
 	"encoding/binary"
 	"encoding/json"
 	"io"
@@ -151,10 +152,10 @@ func (p *Proxy) handleWebSocketUpgrade(
 	// Relay frames in both directions concurrently.
 	errCh := make(chan error, 2)
 	go func() {
-		errCh <- copyWebSocketFrames(upstreamConn, clientBR, "c2s", sessionID, db, p.bus, deflate)
+		errCh <- copyWebSocketFrames(upstreamConn, clientBR, "c2s", sessionID, db, p.bus, deflate, p)
 	}()
 	go func() {
-		errCh <- copyWebSocketFrames(clientConn, upstreamBR, "s2c", sessionID, db, p.bus, deflate)
+		errCh <- copyWebSocketFrames(clientConn, upstreamBR, "s2c", sessionID, db, p.bus, deflate, p)
 	}()
 
 	// Wait for either direction to finish (connection closed or error).
@@ -169,8 +170,9 @@ func (p *Proxy) handleWebSocketUpgrade(
 	return nil
 }
 
-// copyWebSocketFrames reads WebSocket frames from src, writes them verbatim to
-// dst, captures up to 1 MB of each payload for storage, and publishes events.
+// copyWebSocketFrames reads WebSocket frames from src, applies middleware to
+// data frames, writes them to dst, captures up to 1 MB for storage, and
+// publishes events.
 // If deflate is true (permessage-deflate was negotiated), compressed frames
 // (RSV1=1) are decompressed before storage so payloads are human-readable.
 func copyWebSocketFrames(
@@ -181,11 +183,15 @@ func copyWebSocketFrames(
 	db *storage.DB,
 	bus *events.Bus,
 	deflate bool,
+	proxy *Proxy,
 ) error {
 	var decomp *wsDecompressor
 	if deflate {
 		decomp = &wsDecompressor{}
 	}
+
+	// Middleware direction key: c2s -> ws_c2s, s2c -> ws_s2c
+	mwDir := "ws_" + direction
 
 	for {
 		// ── Read the 2-byte fixed header ────────────────────────────────────
@@ -201,17 +207,16 @@ func copyWebSocketFrames(
 		baseLen := int64(hdr[1] & 0x7F)
 
 		// ── Read extended payload length ─────────────────────────────────────
-		var extBytes []byte
 		var payloadLen int64
 		switch baseLen {
 		case 126:
-			extBytes = make([]byte, 2)
+			extBytes := make([]byte, 2)
 			if _, err := io.ReadFull(src, extBytes); err != nil {
 				return err
 			}
 			payloadLen = int64(binary.BigEndian.Uint16(extBytes))
 		case 127:
-			extBytes = make([]byte, 8)
+			extBytes := make([]byte, 8)
 			if _, err := io.ReadFull(src, extBytes); err != nil {
 				return err
 			}
@@ -229,47 +234,18 @@ func copyWebSocketFrames(
 			}
 		}
 
-		// ── Write header bytes to dst immediately ────────────────────────────
-		if _, err := dst.Write(hdr[:]); err != nil {
-			return err
-		}
-		if len(extBytes) > 0 {
-			if _, err := dst.Write(extBytes); err != nil {
-				return err
-			}
-		}
-		if len(maskKey) > 0 {
-			if _, err := dst.Write(maskKey); err != nil {
-				return err
-			}
-		}
-
-		// ── Stream payload: capture first 1 MB, forward the rest ─────────────
-		var captureBuf bytes.Buffer
-		truncated := false
-
+		// ── Read full payload into memory ────────────────────────────────────
+		var rawPayload []byte
 		if payloadLen > 0 {
-			captureN := payloadLen
-			if captureN > wsMaxCapture {
-				captureN = wsMaxCapture
-				truncated = true
-			}
-
-			// Forward-and-capture the first captureN bytes.
-			if _, err := io.CopyN(io.MultiWriter(dst, &captureBuf), src, captureN); err != nil {
+			rawPayload = make([]byte, payloadLen)
+			if _, err := io.ReadFull(src, rawPayload); err != nil {
 				return err
-			}
-
-			// Forward the remainder without capturing.
-			if truncated {
-				if _, err := io.CopyN(dst, src, payloadLen-wsMaxCapture); err != nil {
-					return err
-				}
 			}
 		}
 
-		// ── Unmask captured payload ──────────────────────────────────────────
-		payload := captureBuf.Bytes()
+		// ── Unmask payload ───────────────────────────────────────────────────
+		payload := make([]byte, len(rawPayload))
+		copy(payload, rawPayload)
 		if masked == 1 && len(maskKey) == 4 {
 			for i := range payload {
 				payload[i] ^= maskKey[i%4]
@@ -277,12 +253,42 @@ func copyWebSocketFrames(
 		}
 
 		// ── Decompress if permessage-deflate and RSV1 is set ─────────────────
+		storedPayload := payload
 		if decomp != nil && rsv1 == 1 && len(payload) > 0 {
 			if dec, err := decomp.decompress(payload); err == nil {
-				payload = dec
+				storedPayload = dec
 			} else {
 				slog.Warn("WS inflate failed", "dir", direction, "opcode", opcode, "payloadLen", len(payload), "err", err)
 			}
+		}
+
+		// ── Apply middleware to data frames (text=1, binary=2) ───────────────
+		outPayload := payload
+		if proxy != nil && (opcode == 1 || opcode == 2) {
+			if mw := proxy.getMiddlewareRunner(); mw != nil {
+				if modified, err := mw.ProcessWSFrame(mwDir, opcode, storedPayload); err != nil {
+					slog.Warn("WS middleware error", "dir", direction, "err", err)
+				} else {
+					outPayload = modified
+					storedPayload = modified
+				}
+			}
+		}
+
+		// ── Write frame to dst (re-encode with proper masking) ───────────────
+		// c2s frames going to the upstream server must be masked
+		// s2c frames going to the browser must NOT be masked
+		needsMask := direction == "c2s"
+		if err := writeWSFrame(dst, byte(opcode), fin == 1, outPayload, needsMask); err != nil {
+			return err
+		}
+
+		// ── Truncate captured payload for storage ────────────────────────────
+		capturePayload := storedPayload
+		truncated := false
+		if int64(len(capturePayload)) > wsMaxCapture {
+			capturePayload = capturePayload[:wsMaxCapture]
+			truncated = true
 		}
 
 		// ── Persist and publish ──────────────────────────────────────────────
@@ -291,7 +297,7 @@ func copyWebSocketFrames(
 			Direction: direction,
 			Opcode:    opcode,
 			Fin:       fin,
-			Payload:   payload,
+			Payload:   capturePayload,
 			Length:    int(payloadLen),
 			Truncated: truncated,
 		}
@@ -303,6 +309,61 @@ func copyWebSocketFrames(
 			return nil
 		}
 	}
+}
+
+// writeWSFrame encodes and writes a single WebSocket frame to w.
+// If mask is true, the payload is masked with a random 4-byte key (required
+// for client-to-server frames per RFC 6455 §5.3).
+func writeWSFrame(w io.Writer, opcode byte, fin bool, payload []byte, mask bool) error {
+	b0 := opcode
+	if fin {
+		b0 |= 0x80
+	}
+
+	payLen := len(payload)
+
+	var b1 byte
+	if mask {
+		b1 = 0x80
+	}
+
+	var header []byte
+	switch {
+	case payLen <= 125:
+		header = []byte{b0, b1 | byte(payLen)}
+	case payLen <= 0xFFFF:
+		header = []byte{b0, b1 | 126, byte(payLen >> 8), byte(payLen)}
+	default:
+		header = make([]byte, 10)
+		header[0] = b0
+		header[1] = b1 | 127
+		for i := 0; i < 8; i++ {
+			header[9-i] = byte(payLen >> (8 * i))
+		}
+	}
+
+	if _, err := w.Write(header); err != nil {
+		return err
+	}
+
+	if mask {
+		maskKey := make([]byte, 4)
+		if _, err := io.ReadFull(rand.Reader, maskKey); err != nil {
+			return err
+		}
+		if _, err := w.Write(maskKey); err != nil {
+			return err
+		}
+		masked := make([]byte, len(payload))
+		for i, b := range payload {
+			masked[i] = b ^ maskKey[i%4]
+		}
+		_, err := w.Write(masked)
+		return err
+	}
+
+	_, err := w.Write(payload)
+	return err
 }
 
 // wsDecompressor maintains DEFLATE decompressor state across WebSocket messages.

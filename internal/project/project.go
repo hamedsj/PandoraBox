@@ -54,6 +54,32 @@ type MatchReplaceRule struct {
 	Replace string `json:"replace"`
 }
 
+type MiddlewareNodePos struct {
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
+}
+
+type MiddlewareNode struct {
+	ID       string            `json:"id"`
+	Type     string            `json:"type"`     // "request"|"response"|"ws_c2s"|"ws_s2c"
+	Name     string            `json:"name"`
+	Enabled  bool              `json:"enabled"`
+	Code     string            `json:"code"`     // full Python function: "def process(packet):..."
+	Position MiddlewareNodePos `json:"position"`
+}
+
+type MiddlewareEdge struct {
+	ID     string `json:"id"`
+	Source string `json:"source"`
+	Target string `json:"target"`
+}
+
+type MiddlewareConfig struct {
+	Enabled bool             `json:"enabled"`
+	Nodes   []MiddlewareNode `json:"nodes"`
+	Edges   []MiddlewareEdge `json:"edges"`
+}
+
 type Config struct {
 	Name         string             `json:"name"`
 	CreatedAt    time.Time          `json:"created_at"`
@@ -62,6 +88,7 @@ type Config struct {
 	Scope        ScopeConfig        `json:"scope"`
 	MCPDisabled  bool               `json:"mcp_disabled"`
 	MatchReplace []MatchReplaceRule `json:"match_replace,omitempty"`
+	Middleware   MiddlewareConfig   `json:"middleware,omitempty"`
 }
 
 type Manager struct {
@@ -127,6 +154,12 @@ func OpenProject(path string) (*Manager, error) {
 	}
 	if cfg.MatchReplace == nil {
 		cfg.MatchReplace = defaultMatchReplaceRules()
+	}
+	if cfg.Middleware.Nodes == nil {
+		cfg.Middleware.Nodes = []MiddlewareNode{}
+	}
+	if cfg.Middleware.Edges == nil {
+		cfg.Middleware.Edges = []MiddlewareEdge{}
 	}
 	return &Manager{path: path, cfg: cfg}, nil
 }

@@ -37,6 +37,9 @@ type Proxy struct {
 	mrMu    sync.RWMutex
 	mrRules []proj.MatchReplaceRule
 
+	mwMu     sync.RWMutex
+	mwRunner *MiddlewareRunner
+
 	requestCount atomic.Int64
 }
 
@@ -49,6 +52,7 @@ func New(cfg *config.Config, db *storage.DB, authority *ca.CA, bus *events.Bus, 
 		bus:       bus,
 		intercept: intercept,
 		scope:     &ScopeChecker{},
+		mwRunner:  NewMiddlewareRunner(),
 	}
 }
 
@@ -150,4 +154,17 @@ func (p *Proxy) Stop() {
 		p.listener.Close()
 		p.running = false
 	}
+	p.mwRunner.Stop()
+}
+
+func (p *Proxy) SetMiddleware(cfg proj.MiddlewareConfig) {
+	p.mwMu.Lock()
+	p.mwRunner.SetConfig(cfg)
+	p.mwMu.Unlock()
+}
+
+func (p *Proxy) getMiddlewareRunner() *MiddlewareRunner {
+	p.mwMu.RLock()
+	defer p.mwMu.RUnlock()
+	return p.mwRunner
 }

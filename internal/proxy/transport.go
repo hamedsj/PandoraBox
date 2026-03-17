@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httputil"
+	"net/url"
 	"strings"
 	"time"
 
@@ -123,6 +124,26 @@ func (p *Proxy) roundTrip(req *http.Request, scheme string) (*http.Response, *st
 		captured.Body = bodyBytes
 	}
 
+	// Apply Python middleware to request
+	if mw := p.getMiddlewareRunner(); mw != nil {
+		newMethod, newURL, newHeaders, newBody, err := mw.ProcessRequest(
+			req.Method, req.URL.String(), req.Header.Clone(), bodyBytes,
+		)
+		if err != nil {
+			slog.Warn("Request middleware error", "err", err)
+		} else {
+			req.Method = newMethod
+			if u, e := url.Parse(newURL); e == nil {
+				req.URL = u
+			}
+			req.Header = newHeaders
+			bodyBytes = newBody
+			req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+			req.ContentLength = int64(len(bodyBytes))
+			captured.Body = bodyBytes
+		}
+	}
+
 	// Prepare request for upstream:
 	// - clear RequestURI so http.Transport uses req.URL
 	// - strip all hop-by-hop headers (Connection, Keep-Alive, TE, Upgrade, etc.)
@@ -145,6 +166,21 @@ func (p *Proxy) roundTrip(req *http.Request, scheme string) (*http.Response, *st
 	// Apply match-and-replace rules to response
 	if len(rules) > 0 {
 		respBodyBytes = applyToResponse(rules, resp, respBodyBytes)
+	}
+
+	// Apply Python middleware to response
+	if mw := p.getMiddlewareRunner(); mw != nil {
+		newCode, newText, newHeaders, newBody, err := mw.ProcessResponse(
+			resp.StatusCode, resp.Status, resp.Header.Clone(), respBodyBytes,
+		)
+		if err != nil {
+			slog.Warn("Response middleware error", "err", err)
+		} else {
+			resp.StatusCode = newCode
+			resp.Status = newText
+			resp.Header = newHeaders
+			respBodyBytes = newBody
+		}
 	}
 
 	resp.Body = io.NopCloser(bytes.NewReader(respBodyBytes))

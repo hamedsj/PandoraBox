@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback } from 'react'
+import * as Tabs from '@radix-ui/react-tabs'
 import { Plus, Trash2, Replace, AlertCircle } from 'lucide-react'
 import { api, type MatchReplaceRule } from '@/api/client'
 import { useProxyStore } from '@/store/proxy'
 import { cn } from '@/lib/utils'
 import { Checkbox } from '@/components/ui/Checkbox'
 import { Select } from '@/components/ui/Select'
+import { MiddlewareTab } from '@/components/middleware/MiddlewareTab'
 
 const TARGETS = [
   { value: 'req-url', label: 'Request URL' },
@@ -93,7 +95,7 @@ function RuleRow({ rule, onChange, onDelete }: RuleRowProps) {
   )
 }
 
-export function MatchReplacePage() {
+function MatchReplaceRules() {
   const project = useProxyStore((s) => s.project)
   const setProject = useProxyStore((s) => s.setProject)
 
@@ -152,17 +154,6 @@ export function MatchReplacePage() {
 
   return (
     <div className="flex flex-col h-full overflow-auto p-6 max-w-5xl mx-auto w-full gap-6">
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <Replace size={20} className="text-primary" />
-        <h1 className="text-lg font-semibold text-foreground">Match &amp; Replace</h1>
-        {isDirty && (
-          <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-500 font-medium">
-            Unsaved changes
-          </span>
-        )}
-      </div>
-
       {/* Rules section */}
       <div className="rounded-xl border border-border bg-card p-4 space-y-3">
         <div className="flex items-center justify-between">
@@ -221,5 +212,49 @@ export function MatchReplacePage() {
         </div>
       )}
     </div>
+  )
+}
+
+export function MatchReplacePage() {
+  return (
+    <Tabs.Root defaultValue="rules" className="flex flex-col h-full overflow-hidden">
+      {/* Page header with tabs */}
+      <div className="flex items-center gap-4 px-6 pt-5 pb-0 border-b border-border flex-shrink-0">
+        <div className="flex items-center gap-2">
+          <Replace size={18} className="text-primary" />
+          <h1 className="text-base font-semibold text-foreground">Match &amp; Replace</h1>
+        </div>
+        <Tabs.List className="flex gap-0.5 ml-4">
+          <Tabs.Trigger
+            value="rules"
+            className={cn(
+              'px-4 py-2 text-xs font-medium border-b-2 -mb-px transition-colors',
+              'data-[state=active]:border-primary data-[state=active]:text-primary',
+              'data-[state=inactive]:border-transparent data-[state=inactive]:text-muted-foreground data-[state=inactive]:hover:text-foreground'
+            )}
+          >
+            Rules
+          </Tabs.Trigger>
+          <Tabs.Trigger
+            value="middleware"
+            className={cn(
+              'px-4 py-2 text-xs font-medium border-b-2 -mb-px transition-colors',
+              'data-[state=active]:border-primary data-[state=active]:text-primary',
+              'data-[state=inactive]:border-transparent data-[state=inactive]:text-muted-foreground data-[state=inactive]:hover:text-foreground'
+            )}
+          >
+            Middleware
+          </Tabs.Trigger>
+        </Tabs.List>
+      </div>
+
+      <Tabs.Content value="rules" className="flex-1 overflow-hidden">
+        <MatchReplaceRules />
+      </Tabs.Content>
+
+      <Tabs.Content value="middleware" className="flex-1 overflow-hidden">
+        <MiddlewareTab />
+      </Tabs.Content>
+    </Tabs.Root>
   )
 }
