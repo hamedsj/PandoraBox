@@ -36,6 +36,7 @@ type Server struct {
 }
 
 func NewServer(cfg *config.Config, db *storage.DB, bus *events.Bus, p *proxy.Proxy, intercept *proxy.InterceptQueue, authority *ca.CA) *Server {
+	p.SetMiddlewareBus(bus)
 	return &Server{
 		cfg:       cfg,
 		db:        db,

@@ -17,7 +17,15 @@ const (
 	EventWebSocketFrame         EventType = "websocket.frame"
 	EventWebSocketSessionOpened EventType = "websocket.session.opened"
 	EventWebSocketSessionClosed EventType = "websocket.session.closed"
+
+	EventConsoleOutput EventType = "console.output"
 )
+
+type ConsoleOutputData struct {
+	Source    string `json:"source"`    // "middleware" | "flow"
+	Text      string `json:"text"`
+	Timestamp string `json:"timestamp"` // RFC3339Nano UTC
+}
 
 type Event struct {
 	Type EventType   `json:"type"`

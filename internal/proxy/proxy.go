@@ -163,6 +163,12 @@ func (p *Proxy) SetMiddleware(cfg proj.MiddlewareConfig) {
 	p.mwMu.Unlock()
 }
 
+func (p *Proxy) SetMiddlewareBus(bus *events.Bus) {
+	p.mwMu.Lock()
+	p.mwRunner.SetBus(bus)
+	p.mwMu.Unlock()
+}
+
 func (p *Proxy) getMiddlewareRunner() *MiddlewareRunner {
 	p.mwMu.RLock()
 	defer p.mwMu.RUnlock()

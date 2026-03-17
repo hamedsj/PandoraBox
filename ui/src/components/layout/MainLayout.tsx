@@ -1,11 +1,13 @@
 import { Outlet } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
+import { ConsolePanel } from '@/components/console/ConsolePanel'
 import { useWebSocket } from '@/hooks/useWebSocket'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { useEffect, useRef } from 'react'
 import { api } from '@/api/client'
 import { useProxyStore } from '@/store/proxy'
 import { useFlowsStore } from '@/store/flows'
+import { useConsoleStore } from '@/store/console'
 
 export function MainLayout() {
   useWebSocket()
@@ -13,6 +15,7 @@ export function MainLayout() {
   const setStatus = useProxyStore((s) => s.setStatus)
   const setProject = useProxyStore((s) => s.setProject)
   const setFlows = useFlowsStore((s) => s.setFlows)
+  const toggleConsole = useConsoleStore((s) => s.toggle)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const filtersRef = useRef(useProxyStore.getState().filters)
 
@@ -50,12 +53,26 @@ export function MainLayout() {
     }
   }, [])
 
+  // Backtick toggles console
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === '`' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const tag = (e.target as HTMLElement).tagName
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement).isContentEditable) return
+        toggleConsole()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [toggleConsole])
+
   return (
     <div className="flex h-screen bg-background text-foreground overflow-hidden">
       <Sidebar />
       <main className="flex-1 overflow-hidden">
         <Outlet />
       </main>
+      <ConsolePanel />
     </div>
   )
 }

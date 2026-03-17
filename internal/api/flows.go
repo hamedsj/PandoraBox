@@ -1,14 +1,19 @@
 package api
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
+	"sync"
 	"time"
+
+	"github.com/hamedsj5/pitokmonitor/internal/events"
 )
 
 type flowExecRequest struct {
@@ -74,13 +79,50 @@ func (s *Server) execFlowStep(w http.ResponseWriter, r *http.Request) {
 
 	cmd := exec.CommandContext(ctx, py3, tmpFile.Name())
 	cmd.Stdin = bytes.NewReader(inputJSON)
-	out, err := cmd.Output()
+
+	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
-		errMsg := err.Error()
-		if exitErr, ok := err.(*exec.ExitError); ok && len(exitErr.Stderr) > 0 {
-			errMsg = string(exitErr.Stderr)
+		writeJSON(w, http.StatusOK, flowExecResult{Error: err.Error()})
+		return
+	}
+	stderrPipe, err := cmd.StderrPipe()
+	if err != nil {
+		writeJSON(w, http.StatusOK, flowExecResult{Error: err.Error()})
+		return
+	}
+
+	if err := cmd.Start(); err != nil {
+		writeJSON(w, http.StatusOK, flowExecResult{Error: err.Error()})
+		return
+	}
+
+	// Collect stderr lines and publish as console events
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		scanner := bufio.NewScanner(stderrPipe)
+		for scanner.Scan() {
+			line := scanner.Text()
+			s.bus.Publish(events.Event{
+				Type: events.EventConsoleOutput,
+				Data: events.ConsoleOutputData{
+					Source:    "flow",
+					Text:      line,
+					Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
+				},
+			})
 		}
-		writeJSON(w, http.StatusOK, flowExecResult{Error: errMsg})
+	}()
+
+	out, err := io.ReadAll(stdoutPipe)
+	wg.Wait()
+
+	if err2 := cmd.Wait(); err2 != nil && err == nil {
+		err = err2
+	}
+	if err != nil {
+		writeJSON(w, http.StatusOK, flowExecResult{Error: err.Error()})
 		return
 	}
 
@@ -94,6 +136,8 @@ func (s *Server) execFlowStep(w http.ResponseWriter, r *http.Request) {
 
 func buildFlowExecScript(userCode string) string {
 	return fmt.Sprintf(`import sys, json
+_stdout = sys.stdout
+sys.stdout = sys.stderr  # user prints -> stderr (captured for Console)
 
 %s
 
@@ -119,9 +163,11 @@ try:
     result = process(ctx)
     if result is None:
         result = {}
-    print(json.dumps({"variables": result.get("variables", {}), "error": ""}))
+    _stdout.write(json.dumps({"variables": result.get("variables", {}), "error": ""}) + "\n")
+    _stdout.flush()
 except Exception as e:
     import traceback
-    print(json.dumps({"variables": {}, "error": str(e) + "\n" + traceback.format_exc()}))
+    _stdout.write(json.dumps({"variables": {}, "error": str(e) + "\n" + traceback.format_exc()}) + "\n")
+    _stdout.flush()
 `, userCode)
 }

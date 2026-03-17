@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/hamedsj5/pitokmonitor/internal/events"
 	proj "github.com/hamedsj5/pitokmonitor/internal/project"
 )
 
@@ -47,6 +48,13 @@ type MiddlewareRunner struct {
 	callCh     chan middlewareCall
 	stopCh     chan struct{}
 	started    bool
+	bus        *events.Bus
+}
+
+func (r *MiddlewareRunner) SetBus(b *events.Bus) {
+	r.mu.Lock()
+	r.bus = b
+	r.mu.Unlock()
 }
 
 func NewMiddlewareRunner() *MiddlewareRunner {
@@ -242,7 +250,10 @@ func (r *MiddlewareRunner) startLocked(script string) error {
 	if err != nil {
 		return err
 	}
-	cmd.Stderr = os.Stderr
+	stderrPipe, err := cmd.StderrPipe()
+	if err != nil {
+		return err
+	}
 
 	if err := cmd.Start(); err != nil {
 		return err
@@ -255,7 +266,31 @@ func (r *MiddlewareRunner) startLocked(script string) error {
 	r.started = true
 
 	go r.dispatch()
+	go r.readStderr(stderrPipe)
 	return nil
+}
+
+func (r *MiddlewareRunner) readStderr(rc io.ReadCloser) {
+	defer rc.Close()
+	scanner := bufio.NewScanner(rc)
+	for scanner.Scan() {
+		line := scanner.Text()
+		r.mu.Lock()
+		bus := r.bus
+		r.mu.Unlock()
+		if bus != nil {
+			bus.Publish(events.Event{
+				Type: events.EventConsoleOutput,
+				Data: events.ConsoleOutputData{
+					Source:    "middleware",
+					Text:      line,
+					Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
+				},
+			})
+		} else {
+			slog.Debug("Middleware stderr", "line", line)
+		}
+	}
 }
 
 func (r *MiddlewareRunner) dispatch() {

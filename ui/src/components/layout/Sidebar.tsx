@@ -1,8 +1,9 @@
 import { NavLink } from 'react-router-dom'
-import { Globe, Shield, RotateCcw, Settings, Sun, Moon, Target, Network, Replace, GitBranch } from 'lucide-react'
+import { Globe, Shield, RotateCcw, Settings, Sun, Moon, Target, Network, Replace, GitBranch, Terminal } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useProxyStore } from '@/store/proxy'
 import { useThemeStore } from '@/store/theme'
+import { useConsoleStore } from '@/store/console'
 import { ProjectSwitcher } from './ProjectSwitcher'
 import { useEffect, useState } from 'react'
 
@@ -21,6 +22,7 @@ export function Sidebar() {
   const status = useProxyStore((s) => s.status)
   const replayAttentionTick = useProxyStore((s) => s.replayAttentionTick)
   const { mode, setMode } = useThemeStore()
+  const { toggle: toggleConsole, unread, isOpen: consoleOpen } = useConsoleStore()
   const [blinkReplay, setBlinkReplay] = useState(false)
 
   useEffect(() => {
@@ -79,6 +81,26 @@ export function Sidebar() {
         >
           {mode === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
           <span>{mode === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
+        </button>
+
+        {/* Console Toggle */}
+        <button
+          onClick={toggleConsole}
+          title="Console (`)"
+          className={cn(
+            'relative flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all text-sm',
+            consoleOpen
+              ? 'bg-primary/20 text-primary'
+              : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+          )}
+        >
+          <Terminal size={18} />
+          <span>Console</span>
+          {unread > 0 && (
+            <span className="absolute top-1 right-1 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center leading-none">
+              {unread > 99 ? '99+' : unread}
+            </span>
+          )}
         </button>
 
         {/* Proxy Status Indicator */}

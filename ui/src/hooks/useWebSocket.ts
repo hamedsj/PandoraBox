@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react'
 import { useProxyStore } from '@/store/proxy'
 import { useFlowsStore } from '@/store/flows'
+import { useConsoleStore } from '@/store/console'
 import { api } from '@/api/client'
 import type { Request, ProxyStatus, WebSocketFrame } from '@/api/client'
 
@@ -58,6 +59,8 @@ export function useWebSocket() {
       }).catch(console.error)
     } else if (evt.type === 'websocket.frame') {
       appendWsFrame(evt.data as WebSocketFrame)
+    } else if (evt.type === 'console.output') {
+      useConsoleStore.getState().append(evt.data as { source: 'middleware' | 'flow'; text: string; timestamp: string })
     }
   }
 
