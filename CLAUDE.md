@@ -74,32 +74,14 @@ When an upstream request fails inside the MITM loop, use `continue` (not `return
 - Radix UI (accessible primitives)
 - Electron 36 + electron-builder 26
 
-## Database schema
-
-Tables in `pitok.db` (SQLite):
-- `projects` — named workspaces (currently unused in UI)
-- `requests` — captured HTTP requests (method, host, path, headers, body, timestamp)
-- `responses` — captured HTTP responses (status, headers, body, linked to request)
-- `replays` — replay queue entries and results
-- `intercept_queue` — held requests (resolved on forward/drop)
-
 ## MCP server notes
 
 `github.com/mark3labs/mcp-go v0.8.0` API: use positional `server.NewSSEServer(s.mcp, baseURLString)` — there is no `server.WithBaseURL(...)` option in this version.
 
-## What's complete (as of 2026-03-16)
+## Docs
 
-- Go MITM proxy (HTTP + HTTPS interception)
-- REST API with full CRUD for requests, intercept, replay
-- SQLite storage with WAL mode
-- WebSocket real-time event streaming
-- MCP server with 13 tools
-- React UI: History, Intercept, Replay, Settings pages
-- Electron desktop app (macOS DMG, Windows NSIS, Linux AppImage/deb)
-- Theming: dark/light modes, 5 variants each, 9 fonts, 10 accent colors
-- Sortable/filterable request table with FilterModal
-- CA cert management (export, regenerate)
-
-## What's next (Phase 6)
-
-See the bottom of README.md for the full list. Nothing has been started yet.
+- `wiki/architecture.md` — system architecture, Go package map, data flow, key technical decisions
+- `wiki/api.md` — complete REST API + WebSocket event reference
+- `wiki/mcp.md` — full MCP tool reference with parameters and examples
+- `wiki/development.md` — dev workflow, project structure, Zustand stores
+- `wiki/database.md` — SQLite schema reference
