@@ -1,7 +1,13 @@
 {
-  "name": "ui",
+  "name": "pitokmonitor",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "description": "Programmable MITM proxy with MCP server for Claude Desktop integration",
+  "author": {
+    "name": "PitokMonitor",
+    "email": "hsjbb123@gmail.com"
+  },
+  "homepage": "https://github.com/hamedsj5/pitokmonitor",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
