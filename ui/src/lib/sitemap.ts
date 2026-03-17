@@ -1,5 +1,10 @@
 import type { Request } from '@/api/client'
 
+function is2xx(req: Request): boolean {
+  const status = req.response?.status_code
+  return status != null && status >= 200 && status < 300
+}
+
 export interface SitemapBranchNode {
   id: string
   kind: 'host' | 'segment'
@@ -102,7 +107,12 @@ export function buildSitemapTree(requests: Request[]): SitemapBranchNode[] {
     if (existingLeaf) {
       existingLeaf.occurrenceCount += 1
       if (request.response) existingLeaf.responseCount += 1
-      if (request.id > existingLeaf.request.id) {
+      const existingIs2xx = is2xx(existingLeaf.request)
+      const newIs2xx = is2xx(request)
+      const shouldReplace =
+        (!existingIs2xx && newIs2xx) ||
+        (existingIs2xx === newIs2xx && request.id > existingLeaf.request.id)
+      if (shouldReplace) {
         existingLeaf.request = request
         existingLeaf.id = `request:${request.id}`
       }
