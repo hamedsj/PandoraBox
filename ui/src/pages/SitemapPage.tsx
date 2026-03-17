@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Activity, Filter, Globe, Network, Waypoints } from 'lucide-react'
+import { Activity, ChevronDown, Filter, Globe, Network, Waypoints } from 'lucide-react'
 import { useRequests } from '@/hooks/useRequests'
 import { useProxyStore } from '@/store/proxy'
 import { FilterModal } from '@/components/history/FilterModal'
@@ -8,9 +8,11 @@ import { RequestWorkspaceLayout } from '@/components/layout/RequestWorkspaceLayo
 import { SitemapTree } from '@/components/sitemap/SitemapTree'
 import { buildSitemapTree, collectBranchIds, countUniqueRoutes, getDefaultExpanded } from '@/lib/sitemap'
 import { countActiveFilters, filterRequests } from '@/lib/requestFilters'
+import { exportSelected } from '@/lib/sitemapExport'
 import { cn } from '@/lib/utils'
 import { subscribeShortcutAction } from '@/lib/shortcuts'
 import { useWorkspaceStore } from '@/store/workspace'
+import { api } from '@/api/client'
 
 function StatCard({
   label,
@@ -52,6 +54,8 @@ export function SitemapPage() {
   const [filterModalOpen, setFilterModalOpen] = useState(false)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const expansionInitialized = useRef(false)
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  const [exportMenuOpen, setExportMenuOpen] = useState(false)
 
   const filteredRequests = useMemo(() => filterRequests(requests, filters), [requests, filters])
   const tree = useMemo(() => buildSitemapTree(filteredRequests), [filteredRequests])
@@ -60,6 +64,18 @@ export function SitemapPage() {
   const routeCount = useMemo(() => countUniqueRoutes(filteredRequests), [filteredRequests])
   const responseCount = filteredRequests.filter((request) => request.response).length
   const splitPct = inspectorPosition === 'bottom' ? sitemapBottomSplit : sitemapRightSplit
+
+  // Prune selected IDs when filtered requests change
+  useEffect(() => {
+    const visibleIds = new Set(filteredRequests.map((r) => r.id))
+    setSelectedIds((prev) => {
+      const next = new Set<number>()
+      for (const id of prev) {
+        if (visibleIds.has(id)) next.add(id)
+      }
+      return next.size === prev.size ? prev : next
+    })
+  }, [filteredRequests])
 
   useEffect(() => {
     const validIds = collectBranchIds(tree)
@@ -89,9 +105,18 @@ export function SitemapPage() {
         setFilterModalOpen(true)
       } else if (actionId === 'common.closeCurrent' || actionId === 'common.escape') {
         setFilterModalOpen(false)
+        setExportMenuOpen(false)
       }
     })
   }, [])
+
+  // Close export menu on outside click
+  useEffect(() => {
+    if (!exportMenuOpen) return
+    function handle() { setExportMenuOpen(false) }
+    document.addEventListener('click', handle)
+    return () => document.removeEventListener('click', handle)
+  }, [exportMenuOpen])
 
   function toggleExpanded(id: string) {
     setExpanded((current) => {
@@ -108,6 +133,30 @@ export function SitemapPage() {
 
   function collapseAll() {
     setExpanded(new Set())
+  }
+
+  function onToggleSelect(ids: number[], forceValue?: boolean) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      for (const id of ids) {
+        const doSet = forceValue ?? !prev.has(id)
+        doSet ? next.add(id) : next.delete(id)
+      }
+      return next
+    })
+  }
+
+  function selectAll() {
+    setSelectedIds(new Set(filteredRequests.map((r) => r.id)))
+  }
+
+  function clearSelection() {
+    setSelectedIds(new Set())
+  }
+
+  async function doExport(format: 'json' | 'har') {
+    setExportMenuOpen(false)
+    await exportSelected(Array.from(selectedIds), format, api.requests.get)
   }
 
   return (
@@ -191,8 +240,54 @@ export function SitemapPage() {
                     <div>
                       <div className="text-sm font-semibold text-foreground">Tree View</div>
                     </div>
-                    <div className="whitespace-nowrap rounded-full border border-border bg-background px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                      In Scope
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={selectAll}
+                        className="rounded-lg border border-border bg-background/80 px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+                      >
+                        Select All
+                      </button>
+                      {selectedIds.size > 0 && (
+                        <button
+                          onClick={clearSelection}
+                          className="rounded-lg border border-border bg-background/80 px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+                        >
+                          Clear
+                        </button>
+                      )}
+                      {selectedIds.size > 0 && (
+                        <div className="relative">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setExportMenuOpen((v) => !v) }}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-primary/40 bg-primary/12 px-3 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/20"
+                          >
+                            Export {selectedIds.size}
+                            <ChevronDown size={12} />
+                          </button>
+                          {exportMenuOpen && (
+                            <div
+                              className="absolute right-0 top-full z-50 mt-1 w-44 overflow-hidden rounded-xl border border-border bg-popover shadow-lg"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <button
+                                onClick={() => doExport('json')}
+                                className="flex w-full items-center px-4 py-2.5 text-left text-sm text-foreground transition-colors hover:bg-muted"
+                              >
+                                Export as JSON
+                              </button>
+                              <button
+                                onClick={() => doExport('har')}
+                                className="flex w-full items-center px-4 py-2.5 text-left text-sm text-foreground transition-colors hover:bg-muted"
+                              >
+                                Export as HAR
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      <div className="whitespace-nowrap rounded-full border border-border bg-background px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                        In Scope
+                      </div>
                     </div>
                   </div>
                   <div className="h-[calc(100%-77px)] overflow-auto p-4">
@@ -202,6 +297,8 @@ export function SitemapPage() {
                       selectedRequestId={selectedRequestId}
                       onToggle={toggleExpanded}
                       onSelectRequest={setSelectedRequestId}
+                      selectedIds={selectedIds}
+                      onToggleSelect={onToggleSelect}
                     />
                   </div>
                 </div>

@@ -148,6 +148,21 @@ export function getDefaultExpanded(tree: SitemapBranchNode[]): string[] {
   return tree.map((node) => node.id)
 }
 
+export function collectRequestIdsUnder(nodes: SitemapNode[]): number[] {
+  const ids: number[] = []
+
+  function visit(node: SitemapNode) {
+    if (node.kind === 'request') {
+      ids.push(node.request.id)
+    } else {
+      for (const child of node.children) visit(child)
+    }
+  }
+
+  for (const node of nodes) visit(node)
+  return ids
+}
+
 export function collectBranchIds(nodes: SitemapBranchNode[]): Set<string> {
   const ids = new Set<string>()
 
