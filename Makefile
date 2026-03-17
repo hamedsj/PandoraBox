@@ -15,9 +15,8 @@ dev-backend:
 dev-ui:
 	cd ui && npm run dev
 
-# Dev: launch Electron wrapping the Go backend
-dev-electron:
-	go build -o bin/pandorabox ./cmd/pandorabox
+# Dev: launch Electron wrapping the Go backend (full build so launcher has dist/index.html)
+dev-electron: build
 	cd ui && npx electron .
 
 # Package Electron app for current platform

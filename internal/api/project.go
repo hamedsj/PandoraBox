@@ -19,6 +19,7 @@ type projectInfoResponse struct {
 	Filters      proj.FilterConfig      `json:"filters"`
 	Scope        proj.ScopeConfig       `json:"scope"`
 	MCPDisabled  bool                   `json:"mcp_disabled"`
+	MCPPort      int                    `json:"mcp_port,omitempty"`
 	MatchReplace []proj.MatchReplaceRule `json:"match_replace"`
 	Middleware   proj.MiddlewareConfig   `json:"middleware"`
 	Flows        []proj.Flow            `json:"flows"`
@@ -43,6 +44,7 @@ func (s *Server) getProject(w http.ResponseWriter, r *http.Request) {
 		Filters:      cfg.Filters,
 		Scope:        cfg.Scope,
 		MCPDisabled:  cfg.MCPDisabled,
+		MCPPort:      cfg.MCPPort,
 		MatchReplace: cfg.MatchReplace,
 		Middleware:   cfg.Middleware,
 		Flows:        cfg.Flows,
@@ -65,6 +67,7 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
 		Filters      *proj.FilterConfig       `json:"filters"`
 		Scope        *proj.ScopeConfig        `json:"scope"`
 		MCPDisabled  *bool                    `json:"mcp_disabled"`
+		MCPPort      *int                     `json:"mcp_port"`
 		MatchReplace *[]proj.MatchReplaceRule `json:"match_replace"`
 		Middleware   *proj.MiddlewareConfig   `json:"middleware"`
 		Flows        *[]proj.Flow             `json:"flows"`
@@ -75,6 +78,9 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cfg := mgr.Config()
+	oldProxyPort := cfg.Proxy.Port
+	oldMCPPort := cfg.MCPPort
+
 	if body.Name != nil {
 		cfg.Name = *body.Name
 	}
@@ -91,6 +97,9 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.MCPDisabled != nil {
 		cfg.MCPDisabled = *body.MCPDisabled
+	}
+	if body.MCPPort != nil {
+		cfg.MCPPort = *body.MCPPort
 	}
 	if body.MatchReplace != nil {
 		cfg.MatchReplace = *body.MatchReplace
@@ -109,6 +118,28 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Hot-reload proxy port if changed
+	if body.Proxy != nil && cfg.Proxy.Port != oldProxyPort && cfg.Proxy.Port > 0 {
+		if err := s.proxy.ChangePort(cfg.Proxy.Port); err != nil {
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "proxy port in use: " + err.Error()})
+			return
+		}
+	}
+
+	// Hot-reload MCP port if changed
+	if body.MCPPort != nil && cfg.MCPPort != oldMCPPort && cfg.MCPPort > 0 {
+		ctx := s.ctx
+		if ctx == nil {
+			ctx = r.Context()
+		}
+		if s.mcpServer != nil {
+			if err := s.mcpServer.ChangePort(ctx, cfg.MCPPort); err != nil {
+				writeJSON(w, http.StatusConflict, map[string]string{"error": "mcp port in use: " + err.Error()})
+				return
+			}
+		}
+	}
+
 	writeJSON(w, http.StatusOK, projectInfoResponse{
 		Name:         cfg.Name,
 		Path:         mgr.Path(),
@@ -117,6 +148,7 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
 		Filters:      cfg.Filters,
 		Scope:        cfg.Scope,
 		MCPDisabled:  cfg.MCPDisabled,
+		MCPPort:      cfg.MCPPort,
 		MatchReplace: cfg.MatchReplace,
 		Middleware:   cfg.Middleware,
 		Flows:        cfg.Flows,
@@ -349,6 +381,7 @@ func (s *Server) switchProject(newMgr *proj.Manager, appCfg *proj.AppConfig, w h
 		Filters:      cfg.Filters,
 		Scope:        cfg.Scope,
 		MCPDisabled:  cfg.MCPDisabled,
+		MCPPort:      cfg.MCPPort,
 		MatchReplace: cfg.MatchReplace,
 		Middleware:   cfg.Middleware,
 		Flows:        cfg.Flows,

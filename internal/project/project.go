@@ -103,6 +103,7 @@ type Config struct {
 	Filters      FilterConfig       `json:"filters"`
 	Scope        ScopeConfig        `json:"scope"`
 	MCPDisabled  bool               `json:"mcp_disabled"`
+	MCPPort      int                `json:"mcp_port,omitempty"`
 	MatchReplace []MatchReplaceRule `json:"match_replace,omitempty"`
 	Middleware   MiddlewareConfig   `json:"middleware,omitempty"`
 	Flows        []Flow             `json:"flows,omitempty"`

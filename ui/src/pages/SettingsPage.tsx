@@ -79,10 +79,24 @@ export function SettingsPage() {
   const [upstreamURL, setUpstreamURL] = useState(project?.proxy?.upstream_url ?? '')
   const [upstreamSaving, setUpstreamSaving] = useState(false)
   const [upstreamError, setUpstreamError] = useState<string | null>(null)
+  const [proxyPort, setProxyPort] = useState(String(project?.proxy?.port ?? 8080))
+  const [proxyPortSaving, setProxyPortSaving] = useState(false)
+  const [proxyPortMsg, setProxyPortMsg] = useState<{ ok?: string; err?: string } | null>(null)
+  const [mcpPort, setMcpPort] = useState(String(project?.mcp_port ?? 9090))
+  const [mcpPortSaving, setMcpPortSaving] = useState(false)
+  const [mcpPortMsg, setMcpPortMsg] = useState<{ ok?: string; err?: string } | null>(null)
 
   useEffect(() => {
     setUpstreamURL(project?.proxy?.upstream_url ?? '')
   }, [project?.proxy?.upstream_url])
+
+  useEffect(() => {
+    setProxyPort(String(project?.proxy?.port ?? 8080))
+  }, [project?.proxy?.port])
+
+  useEffect(() => {
+    setMcpPort(String(project?.mcp_port ?? 9090))
+  }, [project?.mcp_port])
   const availableVariants = getAvailableVariants(mode)
   const [fontSizeValue, setFontSizeValue] = useState(fontSize.toString())
 
@@ -110,6 +124,46 @@ export function SettingsPage() {
       setUpstreamError(e instanceof Error ? e.message : 'Save failed')
     } finally {
       setUpstreamSaving(false)
+    }
+  }
+
+  async function saveProxyPort() {
+    if (!project) return
+    const port = parseInt(proxyPort, 10)
+    if (!port || port < 1 || port > 65535) {
+      setProxyPortMsg({ err: 'Invalid port number.' })
+      return
+    }
+    setProxyPortSaving(true)
+    setProxyPortMsg(null)
+    try {
+      const updated = await api.project.update({ proxy: { ...project.proxy, port } })
+      setProject(updated)
+      setProxyPortMsg({ ok: 'Port changed.' })
+    } catch (e: unknown) {
+      setProxyPortMsg({ err: e instanceof Error ? e.message : 'Save failed' })
+    } finally {
+      setProxyPortSaving(false)
+    }
+  }
+
+  async function saveMcpPort() {
+    if (!project) return
+    const port = parseInt(mcpPort, 10)
+    if (!port || port < 1 || port > 65535) {
+      setMcpPortMsg({ err: 'Invalid port number.' })
+      return
+    }
+    setMcpPortSaving(true)
+    setMcpPortMsg(null)
+    try {
+      const updated = await api.project.update({ mcp_port: port })
+      setProject(updated)
+      setMcpPortMsg({ ok: 'Port changed.' })
+    } catch (e: unknown) {
+      setMcpPortMsg({ err: e instanceof Error ? e.message : 'Save failed' })
+    } finally {
+      setMcpPortSaving(false)
     }
   }
 
@@ -483,24 +537,49 @@ export function SettingsPage() {
           </div>
 
           <div className="space-y-4">
-            <div className="bg-muted/50 rounded-lg p-4 border border-border">
-              <div className="flex items-center gap-2 mb-2">
+            <div className="bg-muted/50 rounded-lg p-4 border border-border space-y-3">
+              <div className="flex items-center gap-2">
                 <Globe className="w-4 h-4 text-primary" />
                 <div className="text-sm font-medium">HTTP/HTTPS Proxy</div>
               </div>
-              <p className="text-sm text-muted-foreground mb-3">
-                Configure your browser or system to use this proxy.
+              <p className="text-sm text-muted-foreground">
+                Configure your browser or system to use this proxy. Changes take effect immediately.
               </p>
-              <div className="flex items-center gap-2">
-                <code className="font-mono text-primary bg-background px-3 py-1.5 rounded-md text-sm">
-                  127.0.0.1:8080
-                </code>
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">Proxy Port</label>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground font-mono">127.0.0.1:</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={65535}
+                    value={proxyPort}
+                    onChange={(e) => setProxyPort(e.target.value)}
+                    className="w-24 bg-background border border-border rounded-md px-3 py-1.5 text-sm font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                  <button
+                    onClick={() => navigator.clipboard.writeText(`127.0.0.1:${proxyPort}`)}
+                    className="text-xs text-muted-foreground hover:text-foreground"
+                    title="Copy to clipboard"
+                  >
+                    Copy
+                  </button>
+                </div>
+                {proxyPortMsg?.ok && <p className="text-xs text-green-400">{proxyPortMsg.ok}</p>}
+                {proxyPortMsg?.err && <p className="text-xs text-red-400">{proxyPortMsg.err}</p>}
+              </div>
+              <div className="flex justify-end">
                 <button
-                  onClick={() => navigator.clipboard.writeText('127.0.0.1:8080')}
-                  className="text-xs text-muted-foreground hover:text-foreground"
-                  title="Copy to clipboard"
+                  onClick={saveProxyPort}
+                  disabled={proxyPortSaving || !project}
+                  className={cn(
+                    'inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-medium transition-all',
+                    proxyPortSaving
+                      ? 'opacity-50 cursor-not-allowed border-border text-muted-foreground'
+                      : 'border-primary/40 bg-primary/12 text-primary hover:bg-primary/20'
+                  )}
                 >
-                  Copy
+                  {proxyPortSaving ? 'Saving…' : 'Save'}
                 </button>
               </div>
             </div>
@@ -616,24 +695,51 @@ export function SettingsPage() {
             </div>
 
             {/* SSE endpoint */}
-            <div className="bg-muted/50 rounded-lg p-4 border border-border">
-              <div className="flex items-center gap-2 mb-2">
+            <div className="bg-muted/50 rounded-lg p-4 border border-border space-y-3">
+              <div className="flex items-center gap-2">
                 <LayoutDashboard className="w-4 h-4 text-primary" />
                 <div className="text-sm font-medium">SSE Endpoint</div>
               </div>
-              <p className="text-sm text-muted-foreground mb-3">
-                Connect Claude Desktop or any MCP client to this URL.
+              <p className="text-sm text-muted-foreground">
+                Connect Claude Desktop or any MCP client to this URL. Port changes take effect immediately.
               </p>
               <div className="flex items-center gap-2">
                 <code className="font-mono text-primary bg-background px-3 py-1.5 rounded-md text-sm">
-                  http://localhost:9090/sse
+                  http://localhost:{mcpPort}/sse
                 </code>
                 <button
-                  onClick={() => navigator.clipboard.writeText('http://localhost:9090/sse')}
+                  onClick={() => navigator.clipboard.writeText(`http://localhost:${mcpPort}/sse`)}
                   className="text-xs text-muted-foreground hover:text-foreground"
                   title="Copy to clipboard"
                 >
                   Copy
+                </button>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">MCP Port</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={65535}
+                  value={mcpPort}
+                  onChange={(e) => setMcpPort(e.target.value)}
+                  className="w-24 bg-background border border-border rounded-md px-3 py-1.5 text-sm font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+                {mcpPortMsg?.ok && <p className="text-xs text-green-400">{mcpPortMsg.ok}</p>}
+                {mcpPortMsg?.err && <p className="text-xs text-red-400">{mcpPortMsg.err}</p>}
+              </div>
+              <div className="flex justify-end">
+                <button
+                  onClick={saveMcpPort}
+                  disabled={mcpPortSaving || !project}
+                  className={cn(
+                    'inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-medium transition-all',
+                    mcpPortSaving
+                      ? 'opacity-50 cursor-not-allowed border-border text-muted-foreground'
+                      : 'border-primary/40 bg-primary/12 text-primary hover:bg-primary/20'
+                  )}
+                >
+                  {mcpPortSaving ? 'Saving…' : 'Save'}
                 </button>
               </div>
             </div>
@@ -649,13 +755,13 @@ export function SettingsPage() {
 {`{
   "mcpServers": {
     "pandorabox": {
-      "url": "http://localhost:9090/sse"
+      "url": "http://localhost:${mcpPort}/sse"
     }
   }
 }`}
                 </pre>
                 <button
-                  onClick={() => navigator.clipboard.writeText('{\n  "mcpServers": {\n    "pandorabox": {\n      "url": "http://localhost:9090/sse"\n    }\n  }\n}')}
+                  onClick={() => navigator.clipboard.writeText(`{\n  "mcpServers": {\n    "pandorabox": {\n      "url": "http://localhost:${mcpPort}/sse"\n    }\n  }\n}`)}
                   className="absolute top-2 right-2 text-xs text-muted-foreground hover:text-foreground"
                   title="Copy to clipboard"
                 >

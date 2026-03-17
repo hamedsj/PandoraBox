@@ -9,8 +9,20 @@ import { SitemapPage } from '@/pages/SitemapPage'
 import { MatchReplacePage } from '@/pages/MatchReplacePage'
 import { FlowsPage } from '@/pages/FlowsPage'
 import { ThemeProvider } from '@/components/ThemeProvider'
+import { LauncherPage } from '@/pages/LauncherPage'
+
+// Detect launcher window by presence of the preload bridge (set before any page JS runs)
+const isLauncherMode = typeof (window as any).launcher !== 'undefined'
 
 export default function App() {
+  if (isLauncherMode) {
+    return (
+      <ThemeProvider>
+        <LauncherPage />
+      </ThemeProvider>
+    )
+  }
+
   return (
     <ThemeProvider>
       <BrowserRouter>

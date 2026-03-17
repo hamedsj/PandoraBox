@@ -88,6 +88,7 @@ export interface ProjectInfo {
   filters: FilterConfig
   scope: ScopeConfig
   mcp_disabled: boolean
+  mcp_port?: number
   match_replace: MatchReplaceRule[]
   middleware: MiddlewareConfig
   flows: Flow[]
@@ -257,7 +258,7 @@ export const api = {
   },
   project: {
     get: () => get<ProjectInfo>('/project'),
-    update: (body: { name?: string; proxy?: ProjectInfo['proxy']; filters?: FilterConfig; scope?: ScopeConfig; mcp_disabled?: boolean; match_replace?: MatchReplaceRule[]; middleware?: MiddlewareConfig; flows?: Flow[] }) =>
+    update: (body: { name?: string; proxy?: ProjectInfo['proxy']; filters?: FilterConfig; scope?: ScopeConfig; mcp_disabled?: boolean; mcp_port?: number; match_replace?: MatchReplaceRule[]; middleware?: MiddlewareConfig; flows?: Flow[] }) =>
       put<ProjectInfo>('/project', body),
     saveAs: (path: string, name?: string) => post<ProjectInfo>('/project/save-as', { path, name }),
     recent: () => get<RecentProject[]>('/project/recent'),

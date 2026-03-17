@@ -126,6 +126,9 @@ func runServe(cmd *cobra.Command, args []string) error {
 	if projCfg.Proxy.Port > 0 {
 		cfg.ProxyPort = projCfg.Proxy.Port
 	}
+	if projCfg.MCPPort > 0 {
+		cfg.MCPPort = projCfg.MCPPort
+	}
 
 	// Update recent projects
 	appCfg.AddRecent(projectMgr.Path())
@@ -170,6 +173,8 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+
+	apiServer.SetContext(ctx)
 
 	// Start API server
 	go func() {

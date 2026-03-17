@@ -3,9 +3,11 @@ const { spawn } = require('child_process')
 const path = require('path')
 const http = require('http')
 const fs = require('fs')
+const os = require('os')
 const zlib = require('zlib')
 
 let mainWindow = null
+let launcherWindow = null
 let tray = null
 let backendProcess = null
 
@@ -18,7 +20,7 @@ function getBackendPath() {
   return path.join(__dirname, '../../bin/pandorabox')
 }
 
-function startBackend() {
+function startBackend({ projectPath, proxyPort, mcpPort } = {}) {
   const binaryPath = getBackendPath()
 
   // Check if binary exists
@@ -27,7 +29,12 @@ function startBackend() {
     return
   }
 
-  backendProcess = spawn(binaryPath, ['serve'], {
+  const args = ['serve']
+  if (projectPath) args.push('--project', projectPath)
+  if (proxyPort)   args.push('--proxy-port', String(proxyPort))
+  if (mcpPort)     args.push('--mcp-port',   String(mcpPort))
+
+  backendProcess = spawn(binaryPath, args, {
     stdio: ['ignore', 'pipe', 'pipe'],
   })
 
@@ -40,6 +47,28 @@ function startBackend() {
   backendProcess.on('exit', (code) => {
     console.log('[backend] exited with code', code)
   })
+}
+
+function createLauncher() {
+  // Load the built React app from disk (backend not started yet)
+  const distIndex = path.join(__dirname, '..', 'dist', 'index.html')
+
+  launcherWindow = new BrowserWindow({
+    width: 560,
+    height: 480,
+    resizable: false,
+    frame: false,
+    backgroundColor: '#111318',
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      preload: path.join(__dirname, 'launcher-preload.cjs'),
+    },
+    show: false,
+  })
+  launcherWindow.loadFile(distIndex, { query: { launcher: '1' } })
+  launcherWindow.once('ready-to-show', () => launcherWindow.show())
+  launcherWindow.on('closed', () => { launcherWindow = null })
 }
 
 function waitForBackend(retries = 30) {
@@ -152,6 +181,75 @@ function createTray() {
   })
 }
 
+// Launcher IPC handlers
+ipcMain.handle('launcher:get-recent-projects', async () => {
+  const configPath = path.join(os.homedir(), '.pandorabox', 'config.json')
+  const tempPath = path.join(os.homedir(), '.pandorabox', 'temp')
+
+  let appCfg = { recent_projects: [], last_project: '' }
+  try { appCfg = JSON.parse(fs.readFileSync(configPath, 'utf8')) } catch {}
+
+  // Build project names map
+  const projectNames = {}
+  for (const p of (appCfg.recent_projects || [])) {
+    try {
+      const projJson = JSON.parse(fs.readFileSync(path.join(p, 'project.json'), 'utf8'))
+      if (projJson.name) projectNames[p] = projJson.name
+    } catch {}
+  }
+
+  // Resolve logo as a file:// URL in the main process (preload cannot use Node built-ins)
+  const { pathToFileURL } = require('url')
+  const logoSrc = pathToFileURL(path.join(__dirname, '..', 'dist', 'logo-trimmed.png')).href
+
+  return {
+    logoSrc,
+    tempPath,
+    recentProjects: appCfg.recent_projects || [],
+    lastProject: appCfg.last_project || '',
+    projectNames,
+  }
+})
+
+ipcMain.handle('launcher:read-project-config', async (_e, projectPath) => {
+  try {
+    const cfg = JSON.parse(fs.readFileSync(path.join(projectPath, 'project.json'), 'utf8'))
+    return {
+      name: cfg.name,
+      proxyPort: cfg.proxy?.port || 8080,
+      mcpPort: cfg.mcp_port || 9090,
+    }
+  } catch {
+    return { name: path.basename(projectPath), proxyPort: 8080, mcpPort: 9090 }
+  }
+})
+
+ipcMain.handle('launcher:check-port', (_e, port) => new Promise((resolve) => {
+  const srv = require('net').createServer()
+  srv.once('error', () => resolve(false))
+  srv.once('listening', () => { srv.close(); resolve(true) })
+  srv.listen(port)
+}))
+
+ipcMain.handle('launcher:close', () => {
+  launcherWindow?.close()
+})
+
+ipcMain.handle('launcher:launch', async (_e, { projectPath, proxyPort, mcpPort }) => {
+  startBackend({ projectPath, proxyPort, mcpPort })
+  try {
+    await waitForBackend()
+  } catch (e) {
+    if (backendProcess) { backendProcess.kill(); backendProcess = null }
+    return { error: 'Backend failed to start. Check that the selected ports are free.' }
+  }
+  launcherWindow?.close()
+  launcherWindow = null
+  createTray()
+  createWindow()
+  return { ok: true }
+})
+
 // IPC handlers for native folder dialogs
 ipcMain.handle('dialog:openFolder', async () => {
   const result = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] })
@@ -216,21 +314,12 @@ ipcMain.handle('body:decode', async (_event, payload) => {
   }
 })
 
-app.whenReady().then(async () => {
-  startBackend()
-
-  try {
-    await waitForBackend()
-  } catch (e) {
-    console.error('Backend failed to start:', e)
-  }
-
-  createTray()
-  createWindow()
+app.whenReady().then(() => {
+  createLauncher()
 
   app.on('activate', () => {
-    if (mainWindow === null) createWindow()
-    else mainWindow.show()
+    if (mainWindow) mainWindow.show()
+    else if (!launcherWindow) createLauncher()
   })
 })
 

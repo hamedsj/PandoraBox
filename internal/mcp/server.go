@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
 	"sync"
 
 	"github.com/hamedsj5/pandorabox/internal/ca"
@@ -22,6 +23,10 @@ type Server struct {
 	intercept *proxy.InterceptQueue
 	ca        *ca.CA
 	mcp       *server.MCPServer
+
+	cancelMu sync.Mutex
+	cancel   context.CancelFunc
+	mcpPort  int
 
 	projectMu       sync.RWMutex
 	project         *proj.Manager
@@ -95,11 +100,21 @@ func NewServer(cfg *config.Config, db *storage.DB, p *proxy.Proxy, intercept *pr
 }
 
 func (s *Server) Start(ctx context.Context) error {
-	addr := fmt.Sprintf(":%d", s.cfg.MCPPort)
+	s.cancelMu.Lock()
+	s.mcpPort = s.cfg.MCPPort
+	innerCtx, cancel := context.WithCancel(ctx)
+	s.cancel = cancel
+	s.cancelMu.Unlock()
+
+	return s.startOn(innerCtx, s.cfg.MCPPort)
+}
+
+func (s *Server) startOn(ctx context.Context, port int) error {
+	addr := fmt.Sprintf(":%d", port)
 	slog.Info("MCP SSE server starting", "addr", addr)
 
 	sseServer := server.NewSSEServer(s.mcp,
-		fmt.Sprintf("http://localhost:%d", s.cfg.MCPPort),
+		fmt.Sprintf("http://localhost:%d", port),
 	)
 
 	go func() {
@@ -107,6 +122,29 @@ func (s *Server) Start(ctx context.Context) error {
 	}()
 
 	return sseServer.Start(addr)
+}
+
+func (s *Server) ChangePort(ctx context.Context, newPort int) error {
+	// Verify port is free before switching
+	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", newPort))
+	if err != nil {
+		return err
+	}
+	ln.Close()
+
+	s.cancelMu.Lock()
+	if s.cancel != nil {
+		s.cancel()
+	}
+	innerCtx, cancel := context.WithCancel(ctx)
+	s.cancel = cancel
+	s.mcpPort = newPort
+	s.cancelMu.Unlock()
+
+	s.cfg.MCPPort = newPort
+	go s.startOn(innerCtx, newPort) //nolint:errcheck
+	slog.Info("MCP port changed", "port", newPort)
+	return nil
 }
 
 // StartStdio starts MCP over stdio (for Claude Desktop)

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"io/fs"
 	"net/http"
 	"sync"
@@ -17,6 +18,7 @@ import (
 
 type Server struct {
 	cfg       *config.Config
+	ctx       context.Context
 	dbMu      sync.RWMutex
 	db        *storage.DB
 	bus       *events.Bus
@@ -28,6 +30,7 @@ type Server struct {
 	mcpServer interface {
 		SetDB(*storage.DB)
 		SetProject(*project.Manager, *project.AppConfig)
+		ChangePort(context.Context, int) error
 	}
 
 	projectMu sync.RWMutex
@@ -48,6 +51,10 @@ func NewServer(cfg *config.Config, db *storage.DB, bus *events.Bus, p *proxy.Pro
 	}
 }
 
+func (s *Server) SetContext(ctx context.Context) {
+	s.ctx = ctx
+}
+
 func (s *Server) SetProject(mgr *project.Manager, appCfg *project.AppConfig) {
 	s.projectMu.Lock()
 	s.project = mgr
@@ -58,6 +65,7 @@ func (s *Server) SetProject(mgr *project.Manager, appCfg *project.AppConfig) {
 func (s *Server) SetMCPServer(mcp interface {
 	SetDB(*storage.DB)
 	SetProject(*project.Manager, *project.AppConfig)
+	ChangePort(context.Context, int) error
 }) {
 	s.mcpServer = mcp
 }

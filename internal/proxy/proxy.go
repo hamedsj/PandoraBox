@@ -116,12 +116,25 @@ func (p *Proxy) Start(ctx context.Context) error {
 
 	go func() {
 		<-ctx.Done()
-		ln.Close()
+		p.mu.Lock()
+		cur := p.listener
+		p.mu.Unlock()
+		if cur != nil {
+			cur.Close()
+		}
 	}()
 
+	activeLn := ln
 	for {
-		conn, err := ln.Accept()
+		conn, err := activeLn.Accept()
 		if err != nil {
+			p.mu.Lock()
+			newLn := p.listener
+			p.mu.Unlock()
+			if newLn != activeLn {
+				activeLn = newLn
+				continue
+			}
 			select {
 			case <-ctx.Done():
 				p.mu.Lock()
@@ -135,6 +148,23 @@ func (p *Proxy) Start(ctx context.Context) error {
 		}
 		go p.handleConn(conn)
 	}
+}
+
+func (p *Proxy) ChangePort(newPort int) error {
+	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", newPort))
+	if err != nil {
+		return err
+	}
+	p.mu.Lock()
+	old := p.listener
+	p.listener = ln
+	p.cfg.ProxyPort = newPort
+	p.mu.Unlock()
+	if old != nil {
+		old.Close()
+	}
+	slog.Info("Proxy port changed", "port", newPort)
+	return nil
 }
 
 func (p *Proxy) IsRunning() bool {
