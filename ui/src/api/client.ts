@@ -28,6 +28,16 @@ export interface ScopeConfig {
   exclude_rules: ScopeRule[]
 }
 
+export interface MatchReplaceRule {
+  id: number
+  enabled: boolean
+  name?: string
+  target: 'req-url' | 'req-header' | 'req-body' | 'res-header' | 'res-body'
+  is_regex: boolean
+  match: string
+  replace: string
+}
+
 export interface ProjectInfo {
   name: string
   path: string
@@ -36,6 +46,7 @@ export interface ProjectInfo {
   filters: FilterConfig
   scope: ScopeConfig
   mcp_disabled: boolean
+  match_replace: MatchReplaceRule[]
 }
 
 export interface InterceptFilter {
@@ -202,7 +213,7 @@ export const api = {
   },
   project: {
     get: () => get<ProjectInfo>('/project'),
-    update: (body: { name?: string; proxy?: ProjectInfo['proxy']; filters?: FilterConfig; scope?: ScopeConfig; mcp_disabled?: boolean }) =>
+    update: (body: { name?: string; proxy?: ProjectInfo['proxy']; filters?: FilterConfig; scope?: ScopeConfig; mcp_disabled?: boolean; match_replace?: MatchReplaceRule[] }) =>
       put<ProjectInfo>('/project', body),
     saveAs: (path: string, name?: string) => post<ProjectInfo>('/project/save-as', { path, name }),
     recent: () => get<RecentProject[]>('/project/recent'),

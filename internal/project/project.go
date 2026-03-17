@@ -44,13 +44,24 @@ type FilterConfig struct {
 	SearchScope     []string `json:"searchScope"`
 }
 
+type MatchReplaceRule struct {
+	ID      int    `json:"id"`
+	Enabled bool   `json:"enabled"`
+	Name    string `json:"name,omitempty"`
+	Target  string `json:"target"`  // "req-url" | "req-header" | "req-body" | "res-header" | "res-body"
+	IsRegex bool   `json:"is_regex"`
+	Match   string `json:"match"`
+	Replace string `json:"replace"`
+}
+
 type Config struct {
-	Name        string       `json:"name"`
-	CreatedAt   time.Time    `json:"created_at"`
-	Proxy       ProxyConfig  `json:"proxy"`
-	Filters     FilterConfig `json:"filters"`
-	Scope       ScopeConfig  `json:"scope"`
-	MCPDisabled bool         `json:"mcp_disabled"`
+	Name         string             `json:"name"`
+	CreatedAt    time.Time          `json:"created_at"`
+	Proxy        ProxyConfig        `json:"proxy"`
+	Filters      FilterConfig       `json:"filters"`
+	Scope        ScopeConfig        `json:"scope"`
+	MCPDisabled  bool               `json:"mcp_disabled"`
+	MatchReplace []MatchReplaceRule `json:"match_replace,omitempty"`
 }
 
 type Manager struct {
@@ -60,6 +71,16 @@ type Manager struct {
 }
 
 const defaultHiddenExtensionsCSV = "js, gif, jpg, png, css, woff, woff2, svg, json, map, fnt, ogg, jpeg, img, exe, mp4, flv, pdf, doc, ogv, webm, wmv, webp, mov, mp3, m4a, m4p, ppt, pptx, scss, tif, tiff, ttf, otf, bmp, ico, eot, htc, swf, rtf, image, rf, txt, ml, ip"
+
+func defaultMatchReplaceRules() []MatchReplaceRule {
+	return []MatchReplaceRule{
+		{ID: 1, Enabled: false, Name: "Require non-cached response", Target: "req-header", IsRegex: true, Match: `^If-Modified-Since.*$`, Replace: ""},
+		{ID: 2, Enabled: false, Name: "Require non-cached response", Target: "req-header", IsRegex: true, Match: `^If-None-Match.*$`, Replace: ""},
+		{ID: 3, Enabled: false, Name: "Emulate Firefox User-Agent", Target: "req-header", IsRegex: true, Match: `^User-Agent.*$`, Replace: "User-Agent: Mozilla/5.0 (Windows NT 10.0; rv:128.0) Gecko/20100101 Firefox/128.0"},
+		{ID: 4, Enabled: false, Name: "Ignore Cookies", Target: "res-header", IsRegex: true, Match: `^Set-Cookie.*$`, Replace: ""},
+		{ID: 5, Enabled: false, Name: "Hide Referer header", Target: "req-header", IsRegex: true, Match: `^Referer.*$`, Replace: ""},
+	}
+}
 
 func defaultConfig(name string) Config {
 	return Config{
@@ -79,6 +100,7 @@ func defaultConfig(name string) Config {
 			IncludeRules: []ScopeRule{},
 			ExcludeRules: []ScopeRule{},
 		},
+		MatchReplace: defaultMatchReplaceRules(),
 	}
 }
 
@@ -102,6 +124,9 @@ func OpenProject(path string) (*Manager, error) {
 	}
 	if cfg.Scope.ExcludeRules == nil {
 		cfg.Scope.ExcludeRules = []ScopeRule{}
+	}
+	if cfg.MatchReplace == nil {
+		cfg.MatchReplace = defaultMatchReplaceRules()
 	}
 	return &Manager{path: path, cfg: cfg}, nil
 }

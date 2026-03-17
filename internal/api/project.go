@@ -12,13 +12,14 @@ import (
 )
 
 type projectInfoResponse struct {
-	Name        string            `json:"name"`
-	Path        string            `json:"path"`
-	IsTemp      bool              `json:"is_temp"`
-	Proxy       proj.ProxyConfig  `json:"proxy"`
-	Filters     proj.FilterConfig `json:"filters"`
-	Scope       proj.ScopeConfig  `json:"scope"`
-	MCPDisabled bool              `json:"mcp_disabled"`
+	Name         string                 `json:"name"`
+	Path         string                 `json:"path"`
+	IsTemp       bool                   `json:"is_temp"`
+	Proxy        proj.ProxyConfig       `json:"proxy"`
+	Filters      proj.FilterConfig      `json:"filters"`
+	Scope        proj.ScopeConfig       `json:"scope"`
+	MCPDisabled  bool                   `json:"mcp_disabled"`
+	MatchReplace []proj.MatchReplaceRule `json:"match_replace"`
 }
 
 func (s *Server) getProject(w http.ResponseWriter, r *http.Request) {
@@ -33,13 +34,14 @@ func (s *Server) getProject(w http.ResponseWriter, r *http.Request) {
 
 	cfg := mgr.Config()
 	writeJSON(w, http.StatusOK, projectInfoResponse{
-		Name:        cfg.Name,
-		Path:        mgr.Path(),
-		IsTemp:      mgr.IsTemp(),
-		Proxy:       cfg.Proxy,
-		Filters:     cfg.Filters,
-		Scope:       cfg.Scope,
-		MCPDisabled: cfg.MCPDisabled,
+		Name:         cfg.Name,
+		Path:         mgr.Path(),
+		IsTemp:       mgr.IsTemp(),
+		Proxy:        cfg.Proxy,
+		Filters:      cfg.Filters,
+		Scope:        cfg.Scope,
+		MCPDisabled:  cfg.MCPDisabled,
+		MatchReplace: cfg.MatchReplace,
 	})
 }
 
@@ -54,11 +56,12 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		Name        *string            `json:"name"`
-		Proxy       *proj.ProxyConfig  `json:"proxy"`
-		Filters     *proj.FilterConfig `json:"filters"`
-		Scope       *proj.ScopeConfig  `json:"scope"`
-		MCPDisabled *bool              `json:"mcp_disabled"`
+		Name         *string                  `json:"name"`
+		Proxy        *proj.ProxyConfig        `json:"proxy"`
+		Filters      *proj.FilterConfig       `json:"filters"`
+		Scope        *proj.ScopeConfig        `json:"scope"`
+		MCPDisabled  *bool                    `json:"mcp_disabled"`
+		MatchReplace *[]proj.MatchReplaceRule `json:"match_replace"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -83,6 +86,10 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
 	if body.MCPDisabled != nil {
 		cfg.MCPDisabled = *body.MCPDisabled
 	}
+	if body.MatchReplace != nil {
+		cfg.MatchReplace = *body.MatchReplace
+		s.proxy.SetMatchReplace(cfg.MatchReplace)
+	}
 
 	if err := mgr.Save(cfg); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -90,13 +97,14 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, projectInfoResponse{
-		Name:        cfg.Name,
-		Path:        mgr.Path(),
-		IsTemp:      mgr.IsTemp(),
-		Proxy:       cfg.Proxy,
-		Filters:     cfg.Filters,
-		Scope:       cfg.Scope,
-		MCPDisabled: cfg.MCPDisabled,
+		Name:         cfg.Name,
+		Path:         mgr.Path(),
+		IsTemp:       mgr.IsTemp(),
+		Proxy:        cfg.Proxy,
+		Filters:      cfg.Filters,
+		Scope:        cfg.Scope,
+		MCPDisabled:  cfg.MCPDisabled,
+		MatchReplace: cfg.MatchReplace,
 	})
 }
 
@@ -288,6 +296,7 @@ func (s *Server) SwitchProject(newMgr *proj.Manager) error {
 	cfg := newMgr.Config()
 	s.proxy.ApplyConfig(cfg.Proxy.Port, cfg.Proxy.InterceptEnabled, cfg.Proxy.UpstreamURL)
 	s.proxy.SetScope(cfg.Scope)
+	s.proxy.SetMatchReplace(cfg.MatchReplace)
 
 	// Update recent projects
 	if appCfg != nil {
@@ -317,12 +326,13 @@ func (s *Server) switchProject(newMgr *proj.Manager, appCfg *proj.AppConfig, w h
 
 	cfg := newMgr.Config()
 	writeJSON(w, http.StatusOK, projectInfoResponse{
-		Name:        cfg.Name,
-		Path:        newMgr.Path(),
-		IsTemp:      newMgr.IsTemp(),
-		Proxy:       cfg.Proxy,
-		Filters:     cfg.Filters,
-		Scope:       cfg.Scope,
-		MCPDisabled: cfg.MCPDisabled,
+		Name:         cfg.Name,
+		Path:         newMgr.Path(),
+		IsTemp:       newMgr.IsTemp(),
+		Proxy:        cfg.Proxy,
+		Filters:      cfg.Filters,
+		Scope:        cfg.Scope,
+		MCPDisabled:  cfg.MCPDisabled,
+		MatchReplace: cfg.MatchReplace,
 	})
 }
