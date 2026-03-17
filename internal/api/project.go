@@ -20,6 +20,7 @@ type projectInfoResponse struct {
 	Scope        proj.ScopeConfig       `json:"scope"`
 	MCPDisabled  bool                   `json:"mcp_disabled"`
 	MatchReplace []proj.MatchReplaceRule `json:"match_replace"`
+	Middleware   proj.MiddlewareConfig   `json:"middleware"`
 }
 
 func (s *Server) getProject(w http.ResponseWriter, r *http.Request) {
@@ -42,6 +43,7 @@ func (s *Server) getProject(w http.ResponseWriter, r *http.Request) {
 		Scope:        cfg.Scope,
 		MCPDisabled:  cfg.MCPDisabled,
 		MatchReplace: cfg.MatchReplace,
+		Middleware:   cfg.Middleware,
 	})
 }
 
@@ -62,6 +64,7 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
 		Scope        *proj.ScopeConfig        `json:"scope"`
 		MCPDisabled  *bool                    `json:"mcp_disabled"`
 		MatchReplace *[]proj.MatchReplaceRule `json:"match_replace"`
+		Middleware   *proj.MiddlewareConfig   `json:"middleware"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -90,6 +93,10 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
 		cfg.MatchReplace = *body.MatchReplace
 		s.proxy.SetMatchReplace(cfg.MatchReplace)
 	}
+	if body.Middleware != nil {
+		cfg.Middleware = *body.Middleware
+		s.proxy.SetMiddleware(cfg.Middleware)
+	}
 
 	if err := mgr.Save(cfg); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -105,6 +112,7 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
 		Scope:        cfg.Scope,
 		MCPDisabled:  cfg.MCPDisabled,
 		MatchReplace: cfg.MatchReplace,
+		Middleware:   cfg.Middleware,
 	})
 }
 
@@ -297,6 +305,7 @@ func (s *Server) SwitchProject(newMgr *proj.Manager) error {
 	s.proxy.ApplyConfig(cfg.Proxy.Port, cfg.Proxy.InterceptEnabled, cfg.Proxy.UpstreamURL)
 	s.proxy.SetScope(cfg.Scope)
 	s.proxy.SetMatchReplace(cfg.MatchReplace)
+	s.proxy.SetMiddleware(cfg.Middleware)
 
 	// Update recent projects
 	if appCfg != nil {
@@ -334,5 +343,6 @@ func (s *Server) switchProject(newMgr *proj.Manager, appCfg *proj.AppConfig, w h
 		Scope:        cfg.Scope,
 		MCPDisabled:  cfg.MCPDisabled,
 		MatchReplace: cfg.MatchReplace,
+		Middleware:   cfg.Middleware,
 	})
 }

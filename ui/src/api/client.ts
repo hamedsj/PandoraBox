@@ -38,6 +38,32 @@ export interface MatchReplaceRule {
   replace: string
 }
 
+export interface MiddlewareNodePos {
+  x: number
+  y: number
+}
+
+export interface MiddlewareNode {
+  id: string
+  type: 'request' | 'response' | 'ws_c2s' | 'ws_s2c'
+  name: string
+  enabled: boolean
+  code: string
+  position: MiddlewareNodePos
+}
+
+export interface MiddlewareEdge {
+  id: string
+  source: string
+  target: string
+}
+
+export interface MiddlewareConfig {
+  enabled: boolean
+  nodes: MiddlewareNode[]
+  edges: MiddlewareEdge[]
+}
+
 export interface ProjectInfo {
   name: string
   path: string
@@ -47,6 +73,7 @@ export interface ProjectInfo {
   scope: ScopeConfig
   mcp_disabled: boolean
   match_replace: MatchReplaceRule[]
+  middleware: MiddlewareConfig
 }
 
 export interface InterceptFilter {
@@ -213,7 +240,7 @@ export const api = {
   },
   project: {
     get: () => get<ProjectInfo>('/project'),
-    update: (body: { name?: string; proxy?: ProjectInfo['proxy']; filters?: FilterConfig; scope?: ScopeConfig; mcp_disabled?: boolean; match_replace?: MatchReplaceRule[] }) =>
+    update: (body: { name?: string; proxy?: ProjectInfo['proxy']; filters?: FilterConfig; scope?: ScopeConfig; mcp_disabled?: boolean; match_replace?: MatchReplaceRule[]; middleware?: MiddlewareConfig }) =>
       put<ProjectInfo>('/project', body),
     saveAs: (path: string, name?: string) => post<ProjectInfo>('/project/save-as', { path, name }),
     recent: () => get<RecentProject[]>('/project/recent'),
