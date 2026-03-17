@@ -6,6 +6,7 @@ import { ReplayPage } from '@/pages/ReplayPage'
 import { SettingsPage } from '@/pages/SettingsPage'
 import { ScopePage } from '@/pages/ScopePage'
 import { SitemapPage } from '@/pages/SitemapPage'
+import { MatchReplacePage } from '@/pages/MatchReplacePage'
 import { ThemeProvider } from '@/components/ThemeProvider'
 
 export default function App() {
@@ -20,6 +21,7 @@ export default function App() {
             <Route path="/replay" element={<ReplayPage />} />
             <Route path="/sitemap" element={<SitemapPage />} />
             <Route path="/scope" element={<ScopePage />} />
+            <Route path="/match-replace" element={<MatchReplacePage />} />
             <Route path="/settings" element={<SettingsPage />} />
           </Route>
         </Routes>

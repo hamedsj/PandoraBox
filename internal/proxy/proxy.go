@@ -34,6 +34,9 @@ type Proxy struct {
 	upstreamMu  sync.RWMutex
 	upstreamURL *url.URL // nil = no upstream proxy
 
+	mrMu    sync.RWMutex
+	mrRules []proj.MatchReplaceRule
+
 	requestCount atomic.Int64
 }
 
@@ -51,6 +54,18 @@ func New(cfg *config.Config, db *storage.DB, authority *ca.CA, bus *events.Bus, 
 
 func (p *Proxy) SetScope(cfg proj.ScopeConfig) {
 	p.scope.SetConfig(cfg)
+}
+
+func (p *Proxy) SetMatchReplace(rules []proj.MatchReplaceRule) {
+	p.mrMu.Lock()
+	p.mrRules = rules
+	p.mrMu.Unlock()
+}
+
+func (p *Proxy) getMatchReplace() []proj.MatchReplaceRule {
+	p.mrMu.RLock()
+	defer p.mrMu.RUnlock()
+	return p.mrRules
 }
 
 func (p *Proxy) getDB() *storage.DB {

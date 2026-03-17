@@ -114,6 +114,15 @@ func (p *Proxy) roundTrip(req *http.Request, scheme string) (*http.Response, *st
 		})
 	}
 
+	// Apply match-and-replace rules to request
+	rules := p.getMatchReplace()
+	if len(rules) > 0 {
+		bodyBytes = applyToRequest(rules, req, bodyBytes)
+		req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+		req.ContentLength = int64(len(bodyBytes))
+		captured.Body = bodyBytes
+	}
+
 	// Prepare request for upstream:
 	// - clear RequestURI so http.Transport uses req.URL
 	// - strip all hop-by-hop headers (Connection, Keep-Alive, TE, Upgrade, etc.)
@@ -132,6 +141,12 @@ func (p *Proxy) roundTrip(req *http.Request, scheme string) (*http.Response, *st
 	// Read and buffer the response body so we can both store it and replay it.
 	respBodyBytes, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
+
+	// Apply match-and-replace rules to response
+	if len(rules) > 0 {
+		respBodyBytes = applyToResponse(rules, resp, respBodyBytes)
+	}
+
 	resp.Body = io.NopCloser(bytes.NewReader(respBodyBytes))
 
 	// Strip hop-by-hop headers from the response before forwarding to the browser.
