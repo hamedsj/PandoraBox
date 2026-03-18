@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
-	"time"
 )
 
 type RequestFilter struct {
@@ -160,7 +159,7 @@ func (db *DB) ListRequests(f RequestFilter) ([]*Request, int, error) {
 		if err != nil {
 			return nil, 0, err
 		}
-		r.Timestamp, _ = time.Parse("2006-01-02T15:04:05Z", ts)
+		r.Timestamp = parseDBTime(ts)
 		if respID.Valid {
 			r.Response = &Response{
 				ID:         respID.Int64,

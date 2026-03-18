@@ -1,45 +1,99 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
+import { Check, ChevronDown, Copy } from 'lucide-react'
 import { useProxyStore } from '@/store/proxy'
 import type { WebSocketFrame, WebSocketSession } from '@/api/client'
 import { cn } from '@/lib/utils'
-import { ChevronDown } from 'lucide-react'
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+type PayloadTab = 'string' | 'hex' | 'base64' | 'raw'
 
-function base64ToBytes(b64: string): Uint8Array {
-  return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))
+type PayloadStringView = {
+  available: boolean
+  value: string
+  label: string
 }
 
-// Returns { text, isHex } where isHex=true means we fell back to a hex dump.
-function decodeWsPayload(frame: WebSocketFrame): { text: string; isHex: boolean } {
-  if (!frame.payload) return { text: '', isHex: false }
+type PayloadViews = {
+  bytes: Uint8Array
+  hex: string
+  base64: string
+  raw: string
+  string: PayloadStringView
+}
+
+function payloadToBytes(payload: WebSocketFrame['payload']): Uint8Array {
+  if (!payload) return new Uint8Array()
+  if (Array.isArray(payload)) return Uint8Array.from(payload)
+  return Uint8Array.from(atob(payload), (c) => c.charCodeAt(0))
+}
+
+function encodeBase64(bytes: Uint8Array): string {
+  if (bytes.length === 0) return ''
+
+  const chunkSize = 0x8000
+  let binary = ''
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.slice(i, i + chunkSize)
+    binary += String.fromCharCode(...chunk)
+  }
+  return btoa(binary)
+}
+
+function decodeUtf8(bytes: Uint8Array, fatal = false): string | null {
   try {
-    const bytes = base64ToBytes(frame.payload)
-    if (bytes.length === 0) return { text: '', isHex: false }
-
-    // Text frames (opcode 1): decode as UTF-8, replace invalid bytes with ?.
-    if (frame.opcode === 1) {
-      return { text: new TextDecoder('utf-8').decode(bytes), isHex: false }
-    }
-
-    // Binary frames (opcode 2 or continuation 0): try UTF-8 first.
-    // If the result is ≥50% replacement characters (non-printable / invalid),
-    // fall back to a hex dump so the raw bytes are actually readable.
-    const utf8 = new TextDecoder('utf-8').decode(bytes)
-    const replacements = (utf8.match(/\uFFFD/g) ?? []).length
-    if (replacements / utf8.length < 0.5) {
-      return { text: utf8, isHex: false }
-    }
-
-    // Hex dump: "xxd"-style — 16 bytes per row, hex + ASCII side-by-side.
-    return { text: hexDump(bytes), isHex: true }
+    return new TextDecoder('utf-8', { fatal }).decode(bytes)
   } catch {
-    return { text: '[decode error]', isHex: false }
+    return null
+  }
+}
+
+function decodeClosePayload(bytes: Uint8Array): string {
+  if (bytes.length === 0) return '[no close payload]'
+  if (bytes.length < 2) return '[invalid close payload]'
+
+  const code = (bytes[0] << 8) | bytes[1]
+  const reasonBytes = bytes.slice(2)
+  const reason = decodeUtf8(reasonBytes, true)
+
+  if (reason === null) return `code=${code} reason=[invalid utf-8]`
+  return reason ? `code=${code} reason=${reason}` : `code=${code}`
+}
+
+function buildStringView(frame: WebSocketFrame, bytes: Uint8Array): PayloadStringView {
+  if (bytes.length === 0) {
+    return {
+      available: true,
+      value: '',
+      label: 'Empty payload',
+    }
+  }
+
+  if (frame.opcode === 8) {
+    return {
+      available: true,
+      value: decodeClosePayload(bytes),
+      label: 'WebSocket close payload',
+    }
+  }
+
+  const utf8 = decodeUtf8(bytes, true)
+  if (utf8 !== null) {
+    return {
+      available: true,
+      value: utf8,
+      label: 'Strict UTF-8',
+    }
+  }
+
+  return {
+    available: false,
+    value: '',
+    label: 'Payload is not strict UTF-8 text',
   }
 }
 
 function hexDump(bytes: Uint8Array): string {
   const rows: string[] = []
+
   for (let i = 0; i < bytes.length; i += 16) {
     const chunk = bytes.slice(i, i + 16)
     const offset = i.toString(16).padStart(4, '0')
@@ -52,16 +106,62 @@ function hexDump(bytes: Uint8Array): string {
       .join('')
     rows.push(`${offset}  ${hex}  |${ascii}|`)
   }
+
   return rows.join('\n')
 }
 
-function tryPrettifyJson(text: string, isHex: boolean): string {
-  if (isHex) return text // hex dumps are already formatted
-  try {
-    return JSON.stringify(JSON.parse(text), null, 2)
-  } catch {
-    return text
+function rawBytesView(bytes: Uint8Array): string {
+  return JSON.stringify(Array.from(bytes))
+}
+
+function getPayloadViews(frame: WebSocketFrame): PayloadViews {
+  const bytes = payloadToBytes(frame.payload)
+
+  return {
+    bytes,
+    hex: hexDump(bytes),
+    base64: encodeBase64(bytes),
+    raw: rawBytesView(bytes),
+    string: buildStringView(frame, bytes),
   }
+}
+
+function buildSearchableText(frame: WebSocketFrame, views: PayloadViews): string {
+  const parts = [
+    views.hex,
+    views.base64,
+    views.raw,
+    opcodeName(frame.opcode),
+    frame.direction,
+  ]
+
+  if (views.string.available) {
+    parts.push(views.string.value)
+  }
+
+  return parts.join('\n').toLowerCase()
+}
+
+function buildPreview(frame: WebSocketFrame, views: PayloadViews): string {
+  if (frame.opcode === 8) {
+    return views.string.value
+  }
+
+  if (frame.opcode === 1 && views.string.available) {
+    const singleLine = views.string.value.replace(/\s+/g, ' ').trim()
+    return singleLine || 'Empty text payload'
+  }
+
+  if (views.bytes.length === 0) {
+    return 'Empty payload'
+  }
+
+  return `Binary payload · ${formatBytes(views.bytes.length)}`
+}
+
+function defaultTabForFrame(frame: WebSocketFrame, views: PayloadViews): PayloadTab {
+  if ((frame.opcode === 1 || frame.opcode === 8) && views.string.available) return 'string'
+  return 'hex'
 }
 
 function formatBytes(n: number): string {
@@ -72,6 +172,7 @@ function formatBytes(n: number): string {
 
 function formatTime(ts: string): string {
   const d = new Date(ts)
+  if (Number.isNaN(d.getTime())) return 'unknown'
   return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}:${d.getSeconds().toString().padStart(2, '0')}.${d.getMilliseconds().toString().padStart(3, '0')}`
 }
 
@@ -89,12 +190,12 @@ function opcodeName(op: number): string {
 
 function opcodeClass(op: number): string {
   switch (op) {
-    case 1: return 'bg-muted/60 text-muted-foreground border-border'
-    case 2: return 'bg-amber-500/20 text-amber-400 border-amber-500/30'
-    case 8: return 'bg-red-500/20 text-red-400 border-red-500/30'
+    case 1: return 'bg-primary/10 text-primary border-primary/20'
+    case 2: return 'bg-amber-500/12 text-amber-400 border-amber-500/25'
+    case 8: return 'bg-red-500/12 text-red-400 border-red-500/25'
     case 9:
-    case 10: return 'bg-muted/40 text-muted-foreground/70 border-border'
-    case 0: return 'bg-purple-500/20 text-purple-400 border-purple-500/30'
+    case 10: return 'bg-sky-500/10 text-sky-400 border-sky-500/20'
+    case 0: return 'bg-violet-500/10 text-violet-400 border-violet-500/20'
     default: return 'bg-muted/60 text-muted-foreground border-border'
   }
 }
@@ -103,8 +204,6 @@ function isControl(op: number): boolean {
   return op === 8 || op === 9 || op === 10
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
-
 export function WSFramesPanel({
   session,
   initialFrames: initialFramesProp,
@@ -112,7 +211,6 @@ export function WSFramesPanel({
   session: WebSocketSession | null
   initialFrames: WebSocketFrame[] | null
 }) {
-  // Go nil slices marshal to JSON null — normalize to empty array.
   const initialFrames: WebSocketFrame[] = initialFramesProp ?? []
 
   const liveFrames = useProxyStore((s) => s.wsFrames.get(session?.id ?? -1) ?? [])
@@ -146,131 +244,133 @@ export function WSFramesPanel({
     setShowScrollBtn(!atBottom)
   }, [])
 
-  // Auto-scroll when new frames arrive and user is at bottom.
   useEffect(() => {
     if (isAtBottom) scrollToBottom()
   }, [allFrames.length, isAtBottom, scrollToBottom])
 
   const filteredFrames = useMemo(() => {
-    return allFrames.filter((f) => {
-      if (dirFilter !== 'all' && f.direction !== dirFilter) return false
-      if (typeFilter === 'text' && f.opcode !== 1) return false
-      if (typeFilter === 'binary' && f.opcode !== 2) return false
-      if (typeFilter === 'control' && !isControl(f.opcode)) return false
-      if (search) {
-        const { text } = decodeWsPayload(f)
-        if (!text.toLowerCase().includes(search.toLowerCase())) return false
+    return allFrames.filter((frame) => {
+      if (dirFilter !== 'all' && frame.direction !== dirFilter) return false
+      if (typeFilter === 'text' && frame.opcode !== 1) return false
+      if (typeFilter === 'binary' && frame.opcode !== 2) return false
+      if (typeFilter === 'control' && !isControl(frame.opcode)) return false
+
+      if (search.trim()) {
+        const views = getPayloadViews(frame)
+        if (!buildSearchableText(frame, views).includes(search.toLowerCase())) {
+          return false
+        }
       }
+
       return true
     })
   }, [allFrames, dirFilter, typeFilter, search])
 
-  const totalBytes = allFrames.reduce((s, f) => s + f.length, 0)
+  const totalBytes = allFrames.reduce((sum, frame) => sum + frame.length, 0)
   const isOpen = session ? session.closed_at === null : true
 
   return (
-    <div className="flex flex-col h-full relative">
-      {/* Session status bar */}
-      <div className="px-3 py-2 border-b border-border bg-muted/20 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-        <span className="text-muted-foreground">
-          {session ? `Session #${session.id}` : 'No session'} · {allFrames.length} frames · {formatBytes(totalBytes)}
-        </span>
-        {session && (
-          isOpen ? (
-            <span className="flex items-center gap-1 text-emerald-400 font-medium">
-              <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              live
-            </span>
-          ) : (
-            <span className="text-muted-foreground">
-              closed {session.closed_at ? formatTime(session.closed_at) : ''}
-            </span>
-          )
-        )}
+    <div className="flex h-full flex-col relative bg-card">
+      <div className="border-b border-border bg-gradient-to-b from-muted/30 to-card px-3 py-2">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+          <span className="text-muted-foreground">
+            {session ? `Session #${session.id}` : 'No session'} · {allFrames.length} frames · {formatBytes(totalBytes)}
+          </span>
+          {session && (
+            isOpen ? (
+              <span className="flex items-center gap-1 text-emerald-400 font-medium">
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                live
+              </span>
+            ) : (
+              <span className="text-muted-foreground">
+                closed {session.closed_at ? formatTime(session.closed_at) : ''}
+              </span>
+            )
+          )}
+        </div>
 
-        {/* Filters */}
-        <div className="ml-auto flex items-center gap-1.5 flex-wrap">
-          {/* Direction */}
-          {(['all', 'c2s', 's2c'] as const).map((d) => (
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          {(['all', 'c2s', 's2c'] as const).map((dir) => (
             <button
-              key={d}
-              onClick={() => setDirFilter(d)}
+              key={dir}
+              onClick={() => setDirFilter(dir)}
               className={cn(
-                'px-2 py-0.5 rounded text-[10px] font-medium border transition-colors',
-                dirFilter === d
-                  ? 'bg-primary/20 border-primary text-primary'
-                  : 'border-border text-muted-foreground hover:text-foreground',
+                'rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] transition-colors',
+                dirFilter === dir
+                  ? 'border-primary/30 bg-primary/12 text-primary'
+                  : 'border-border bg-background/70 text-muted-foreground hover:text-foreground',
               )}
             >
-              {d === 'all' ? 'All ↕' : d === 'c2s' ? '→ Sent' : '← Recv'}
+              {dir === 'all' ? 'All' : dir === 'c2s' ? 'Sent' : 'Recv'}
             </button>
           ))}
-          <div className="w-px h-4 bg-border mx-0.5" />
-          {/* Type */}
-          {(['all', 'text', 'binary', 'control'] as const).map((t) => (
+
+          <div className="mx-1 h-4 w-px bg-border" />
+
+          {(['all', 'text', 'binary', 'control'] as const).map((type) => (
             <button
-              key={t}
-              onClick={() => setTypeFilter(t)}
+              key={type}
+              onClick={() => setTypeFilter(type)}
               className={cn(
-                'px-2 py-0.5 rounded text-[10px] font-medium border transition-colors capitalize',
-                typeFilter === t
-                  ? 'bg-primary/20 border-primary text-primary'
-                  : 'border-border text-muted-foreground hover:text-foreground',
+                'rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] transition-colors',
+                typeFilter === type
+                  ? 'border-primary/30 bg-primary/12 text-primary'
+                  : 'border-border bg-background/70 text-muted-foreground hover:text-foreground',
               )}
             >
-              {t === 'all' ? 'All' : t.toUpperCase()}
+              {type}
             </button>
           ))}
-          <div className="w-px h-4 bg-border mx-0.5" />
-          {/* Search */}
+
+          <div className="mx-1 h-4 w-px bg-border" />
+
           <input
             type="text"
-            placeholder="Search payload…"
+            placeholder="Search hex, base64, or text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="text-[10px] px-2 py-0.5 rounded border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary w-28"
+            className="h-8 min-w-[190px] flex-1 rounded-full border border-border bg-background/80 px-3 text-[11px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
           />
         </div>
       </div>
 
-      {/* Frame list */}
       <div
         ref={listRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto py-2 space-y-1 relative"
+        className="flex-1 overflow-y-auto py-2"
       >
         {filteredFrames.length === 0 ? (
-          <div className="flex items-center justify-center h-20 text-muted-foreground text-xs">
+          <div className="flex h-24 items-center justify-center text-xs text-muted-foreground">
             No frames
           </div>
         ) : (
-          filteredFrames.map((frame) => (
-            <FrameRow
-              key={frame.id}
-              frame={frame}
-              expanded={expandedId === frame.id}
-              onToggle={() => setExpandedId(expandedId === frame.id ? null : frame.id)}
-            />
-          ))
+          <div className="space-y-2 px-2">
+            {filteredFrames.map((frame) => (
+              <FrameRow
+                key={frame.id}
+                frame={frame}
+                expanded={expandedId === frame.id}
+                onToggle={() => setExpandedId(expandedId === frame.id ? null : frame.id)}
+              />
+            ))}
+          </div>
         )}
         <div ref={bottomRef} />
       </div>
 
-      {/* Scroll-to-bottom button */}
       {showScrollBtn && (
         <button
           onClick={scrollToBottom}
-          className="absolute bottom-4 right-4 flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-primary text-primary-foreground text-xs font-medium shadow-lg hover:bg-primary/90 transition-colors"
+          className="absolute bottom-4 right-4 flex items-center gap-1 rounded-full bg-primary px-3 py-2 text-xs font-medium text-primary-foreground shadow-lg transition-colors hover:bg-primary/90"
         >
           <ChevronDown size={12} />
-          scroll to latest
+          Latest
         </button>
       )}
     </div>
   )
 }
-
-// ── Frame row ─────────────────────────────────────────────────────────────────
 
 function FrameRow({
   frame,
@@ -281,74 +381,219 @@ function FrameRow({
   expanded: boolean
   onToggle: () => void
 }) {
+  const [activeTab, setActiveTab] = useState<PayloadTab>('hex')
+  const [copied, setCopied] = useState(false)
+  const [wrap, setWrap] = useState(true)
+
   const isSent = frame.direction === 'c2s'
-  const { text: decoded, isHex } = decodeWsPayload(frame)
-  const preview = decoded.slice(0, 120)
-  const fullText = tryPrettifyJson(decoded, isHex)
+  const views = useMemo(() => getPayloadViews(frame), [frame])
+  const preview = buildPreview(frame, views)
+
+  useEffect(() => {
+    if (expanded) {
+      setActiveTab(defaultTabForFrame(frame, views))
+    }
+  }, [expanded, frame, views])
+
+  const tabMeta = useMemo(() => {
+    const items: Array<{
+      id: PayloadTab
+      label: string
+      disabled?: boolean
+      hint?: string
+    }> = [
+      { id: 'string', label: 'String', disabled: !views.string.available, hint: views.string.label },
+      { id: 'hex', label: 'Hex' },
+      { id: 'base64', label: 'Base64' },
+      { id: 'raw', label: 'Raw' },
+    ]
+    return items
+  }, [views.string.available, views.string.label])
+
+  const activePayload = getPayloadValue(activeTab, views)
+  const activeLanguage = getPayloadLanguage(activeTab)
+
+  const handleCopy = useCallback(() => {
+    navigator.clipboard.writeText(activePayload).then(() => {
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1500)
+    }).catch(console.error)
+  }, [activePayload])
 
   return (
     <div
       className={cn(
-        'mx-2 rounded cursor-pointer transition-colors hover:bg-muted/30',
-        isSent
-          ? 'border-r-2 border-primary pl-2 pr-3'
-          : 'border-l-2 border-emerald-500 pl-3 pr-2',
+        'overflow-hidden rounded-2xl border bg-gradient-to-b from-card to-card/90 transition-colors',
+        expanded ? 'border-primary/25 shadow-[0_12px_30px_-18px_rgba(0,0,0,0.45)]' : 'border-border hover:border-primary/20',
       )}
-      onClick={onToggle}
     >
-      {/* Row header */}
-      <div
+      <button
+        type="button"
+        onClick={onToggle}
         className={cn(
-          'flex items-center gap-2 py-1.5 text-xs',
-          isSent ? 'flex-row-reverse' : 'flex-row',
+          'flex w-full flex-col gap-2 px-3 py-3 text-left',
+          isSent ? 'items-end' : 'items-start',
         )}
       >
-        <span className={cn('font-bold', isSent ? 'text-primary' : 'text-emerald-400')}>
-          {isSent ? '→' : '←'}
-        </span>
-        <span
-          className={cn(
-            'text-[10px] font-bold px-1.5 py-0.5 rounded border',
-            opcodeClass(frame.opcode),
-          )}
-        >
-          {opcodeName(frame.opcode)}
-        </span>
-        <span className="text-muted-foreground">{formatBytes(frame.length)}</span>
-        {frame.truncated && (
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
-            1MB cap
+        <div className="flex w-full items-center gap-2">
+          {isSent ? <div className="flex-1" /> : null}
+          <span className={cn('font-bold text-sm', isSent ? 'text-primary' : 'text-emerald-400')}>
+            {isSent ? '→' : '←'}
           </span>
-        )}
-        <span className="text-muted-foreground/60 ml-auto font-mono">{formatTime(frame.timestamp)}</span>
-      </div>
-
-      {/* Payload preview */}
-      {decoded && !expanded && (
-        <div
-          className={cn(
-            'font-mono text-[11px] text-muted-foreground pb-1.5 truncate',
-            isSent ? 'text-right' : 'text-left',
+          <span
+            className={cn(
+              'rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.18em]',
+              opcodeClass(frame.opcode),
+            )}
+          >
+            {opcodeName(frame.opcode)}
+          </span>
+          <span className="rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+            {formatBytes(frame.length)}
+          </span>
+          {frame.truncated && (
+            <span className="rounded-full border border-amber-500/25 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-400">
+              truncated
+            </span>
           )}
-        >
-          {preview}
-          {decoded.length > 120 && '…'}
+          <span className="ml-auto font-mono text-[10px] text-muted-foreground">
+            {formatTime(frame.timestamp)}
+          </span>
         </div>
-      )}
 
-      {/* Expanded payload */}
-      {expanded && fullText && (
-        <div className="pb-2" onClick={(e) => e.stopPropagation()}>
-          {isHex && (
-            <div className="mb-1 text-[10px] text-amber-400/80 font-mono uppercase tracking-wide">
-              hex dump
+        <div className={cn(
+          'w-full rounded-xl border border-border/80 bg-muted/20 px-3 py-2 font-mono text-[11px] text-muted-foreground',
+          isSent ? 'text-right' : 'text-left',
+        )}>
+          <span className="block max-h-9 overflow-hidden break-all">{preview}</span>
+        </div>
+      </button>
+
+      {expanded && (
+        <div className="border-t border-border/80 px-3 pb-3 pt-3">
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <FrameMetaPill label="Direction" value={isSent ? 'Client → Server' : 'Server → Client'} />
+            <FrameMetaPill label="Payload" value={formatBytes(views.bytes.length)} />
+            <FrameMetaPill label="Encoding" value={views.string.available ? views.string.label : 'Binary only'} />
+            <div className="ml-auto flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setWrap((value) => !value)}
+                className={cn(
+                  'rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] transition-colors',
+                  wrap
+                    ? 'border-primary/30 bg-primary/12 text-primary'
+                    : 'border-border bg-background text-muted-foreground hover:text-foreground',
+                )}
+              >
+                Wrap
+              </button>
+              <button
+                type="button"
+                onClick={handleCopy}
+                className="flex items-center gap-1 rounded-full border border-border bg-background px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground transition-colors hover:text-foreground"
+              >
+                {copied ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
+                {copied ? 'Copied' : 'Copy'}
+              </button>
             </div>
-          )}
-          <pre className="font-mono text-[11px] text-foreground whitespace-pre bg-muted/30 rounded p-2 max-h-60 overflow-auto">
-            {fullText}
-          </pre>
+          </div>
+
+          <div className="rounded-2xl border border-border bg-muted/10">
+            <div className="flex flex-wrap items-center gap-1 border-b border-border px-2 py-2">
+              {tabMeta.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  disabled={tab.disabled}
+                  onClick={() => setActiveTab(tab.id)}
+                  title={tab.hint}
+                  className={cn(
+                    'rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] transition-colors',
+                    activeTab === tab.id
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground',
+                    tab.disabled && 'cursor-not-allowed opacity-50 hover:bg-transparent hover:text-muted-foreground',
+                  )}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {activeTab === 'string' && !views.string.available ? (
+              <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+                {views.string.label}
+              </div>
+            ) : (
+              <div className="px-3 py-3">
+                <div className="mb-2 flex items-center justify-between gap-2 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                  <span>{tabTitle(activeTab, views)}</span>
+                  <span className="font-mono normal-case tracking-normal text-muted-foreground/80">
+                    {activeLanguage}
+                  </span>
+                </div>
+                <pre
+                  className={cn(
+                    'max-h-[24rem] overflow-auto rounded-xl border border-border/80 bg-card px-3 py-3 font-mono text-[11px] text-foreground',
+                    wrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre',
+                  )}
+                >
+                  {activePayload || '[empty payload]'}
+                </pre>
+              </div>
+            )}
+          </div>
         </div>
       )}
+    </div>
+  )
+}
+
+function getPayloadValue(tab: PayloadTab, views: PayloadViews): string {
+  switch (tab) {
+    case 'string':
+      return views.string.value
+    case 'hex':
+      return views.hex
+    case 'base64':
+      return views.base64
+    case 'raw':
+      return views.raw
+  }
+}
+
+function getPayloadLanguage(tab: PayloadTab): string {
+  switch (tab) {
+    case 'string':
+      return 'utf-8'
+    case 'hex':
+      return 'hex'
+    case 'base64':
+      return 'base64'
+    case 'raw':
+      return 'byte-array'
+  }
+}
+
+function tabTitle(tab: PayloadTab, views: PayloadViews): string {
+  switch (tab) {
+    case 'string':
+      return views.string.label
+    case 'hex':
+      return 'Exact payload bytes as hex'
+    case 'base64':
+      return 'Exact payload bytes as base64'
+    case 'raw':
+      return 'Exact payload bytes as array'
+  }
+}
+
+function FrameMetaPill({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-full border border-border bg-background/80 px-2.5 py-1 text-[10px] text-muted-foreground">
+      <span className="mr-1 uppercase tracking-[0.18em]">{label}</span>
+      <span className="font-medium text-foreground">{value}</span>
     </div>
   )
 }

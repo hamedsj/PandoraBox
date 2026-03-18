@@ -1,9 +1,6 @@
 package storage
 
-import (
-	"database/sql"
-	"time"
-)
+import "database/sql"
 
 func (db *DB) SaveWebSocketSession(requestID int64) (int64, error) {
 	res, err := db.Exec(
@@ -38,9 +35,9 @@ func (db *DB) GetWebSocketSession(requestID int64) (*WebSocketSession, error) {
 	if err != nil {
 		return nil, err
 	}
-	s.CreatedAt, _ = time.Parse("2006-01-02T15:04:05Z", createdAt)
+	s.CreatedAt = parseDBTime(createdAt)
 	if closedAt.Valid {
-		t, _ := time.Parse("2006-01-02T15:04:05Z", closedAt.String)
+		t := parseDBTime(closedAt.String)
 		s.ClosedAt = &t
 	}
 	return s, nil
@@ -82,7 +79,7 @@ func (db *DB) ListWebSocketFrames(sessionID int64) ([]*WebSocketFrame, error) {
 			return nil, err
 		}
 		f.Truncated = truncated != 0
-		f.Timestamp, _ = time.Parse("2006-01-02T15:04:05Z", ts)
+		f.Timestamp = parseDBTime(ts)
 		frames = append(frames, f)
 	}
 	return frames, rows.Err()

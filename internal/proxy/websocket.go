@@ -144,18 +144,15 @@ func (p *Proxy) handleWebSocketUpgrade(
 	})
 
 	// Detect permessage-deflate compression extension.
-	deflate := strings.Contains(
-		strings.ToLower(resp.Header.Get("Sec-WebSocket-Extensions")),
-		"permessage-deflate",
-	)
+	wsCompression := parseWSCompression(resp.Header.Get("Sec-WebSocket-Extensions"))
 
 	// Relay frames in both directions concurrently.
 	errCh := make(chan error, 2)
 	go func() {
-		errCh <- copyWebSocketFrames(upstreamConn, clientBR, "c2s", sessionID, db, p.bus, deflate, p)
+		errCh <- copyWebSocketFrames(upstreamConn, clientBR, "c2s", sessionID, db, p.bus, wsCompression.ClientCompressed(), p)
 	}()
 	go func() {
-		errCh <- copyWebSocketFrames(clientConn, upstreamBR, "s2c", sessionID, db, p.bus, deflate, p)
+		errCh <- copyWebSocketFrames(clientConn, upstreamBR, "s2c", sessionID, db, p.bus, wsCompression.ServerCompressed(), p)
 	}()
 
 	// Wait for either direction to finish (connection closed or error).
@@ -173,8 +170,8 @@ func (p *Proxy) handleWebSocketUpgrade(
 // copyWebSocketFrames reads WebSocket frames from src, applies middleware to
 // data frames, writes them to dst, captures up to 1 MB for storage, and
 // publishes events.
-// If deflate is true (permessage-deflate was negotiated), compressed frames
-// (RSV1=1) are decompressed before storage so payloads are human-readable.
+// If deflate is true (permessage-deflate was negotiated), compressed messages
+// are decompressed before storage so payloads are human-readable.
 func copyWebSocketFrames(
 	dst io.Writer,
 	src io.Reader,
@@ -182,13 +179,14 @@ func copyWebSocketFrames(
 	sessionID int64,
 	db *storage.DB,
 	bus *events.Bus,
-	deflate bool,
+	deflate wsDirectionCompression,
 	proxy *Proxy,
 ) error {
 	var decomp *wsDecompressor
-	if deflate {
-		decomp = &wsDecompressor{}
+	if deflate.Enabled {
+		decomp = &wsDecompressor{noContextTakeover: deflate.NoContextTakeover}
 	}
+	var assembler wsMessageAssembler
 
 	// Middleware direction key: c2s -> ws_c2s, s2c -> ws_s2c
 	mwDir := "ws_" + direction
@@ -207,16 +205,17 @@ func copyWebSocketFrames(
 		baseLen := int64(hdr[1] & 0x7F)
 
 		// ── Read extended payload length ─────────────────────────────────────
+		var extBytes []byte
 		var payloadLen int64
 		switch baseLen {
 		case 126:
-			extBytes := make([]byte, 2)
+			extBytes = make([]byte, 2)
 			if _, err := io.ReadFull(src, extBytes); err != nil {
 				return err
 			}
 			payloadLen = int64(binary.BigEndian.Uint16(extBytes))
 		case 127:
-			extBytes := make([]byte, 8)
+			extBytes = make([]byte, 8)
 			if _, err := io.ReadFull(src, extBytes); err != nil {
 				return err
 			}
@@ -252,63 +251,213 @@ func copyWebSocketFrames(
 			}
 		}
 
-		// ── Decompress if permessage-deflate and RSV1 is set ─────────────────
-		storedPayload := payload
-		if decomp != nil && rsv1 == 1 && len(payload) > 0 {
-			if dec, err := decomp.decompress(payload); err == nil {
-				storedPayload = dec
-			} else {
-				slog.Warn("WS inflate failed", "dir", direction, "opcode", opcode, "payloadLen", len(payload), "err", err)
-			}
-		}
+		wireFrame := make([]byte, 0, 2+len(extBytes)+len(maskKey)+len(rawPayload))
+		wireFrame = append(wireFrame, hdr[:]...)
+		wireFrame = append(wireFrame, extBytes...)
+		wireFrame = append(wireFrame, maskKey...)
+		wireFrame = append(wireFrame, rawPayload...)
 
-		// ── Apply middleware to data frames (text=1, binary=2) ───────────────
+		// Apply middleware only to standalone, uncompressed data messages.
+		// Rewriting compressed or fragmented frames would corrupt the wire format.
 		outPayload := payload
-		if proxy != nil && (opcode == 1 || opcode == 2) {
+		canRewrite := fin == 1 && rsv1 == 0 && (opcode == 1 || opcode == 2)
+		if proxy != nil && canRewrite {
 			if mw := proxy.getMiddlewareRunner(); mw != nil {
-				if modified, err := mw.ProcessWSFrame(mwDir, opcode, storedPayload); err != nil {
+				if modified, err := mw.ProcessWSFrame(mwDir, opcode, payload); err != nil {
 					slog.Warn("WS middleware error", "dir", direction, "err", err)
 				} else {
 					outPayload = modified
-					storedPayload = modified
 				}
 			}
 		}
 
-		// ── Write frame to dst (re-encode with proper masking) ───────────────
-		// c2s frames going to the upstream server must be masked
-		// s2c frames going to the browser must NOT be masked
-		needsMask := direction == "c2s"
-		if err := writeWSFrame(dst, byte(opcode), fin == 1, outPayload, needsMask); err != nil {
-			return err
+		if bytes.Equal(outPayload, payload) {
+			if _, err := dst.Write(wireFrame); err != nil {
+				return err
+			}
+		} else {
+			needsMask := direction == "c2s"
+			if err := writeWSFrame(dst, byte(opcode), fin == 1, outPayload, needsMask); err != nil {
+				return err
+			}
 		}
 
-		// ── Truncate captured payload for storage ────────────────────────────
-		capturePayload := storedPayload
-		truncated := false
-		if int64(len(capturePayload)) > wsMaxCapture {
-			capturePayload = capturePayload[:wsMaxCapture]
-			truncated = true
+		messagePayload := payload
+		if !bytes.Equal(outPayload, payload) {
+			messagePayload = outPayload
 		}
 
-		// ── Persist and publish ──────────────────────────────────────────────
-		frame := &storage.WebSocketFrame{
-			SessionID: sessionID,
-			Direction: direction,
-			Opcode:    opcode,
-			Fin:       fin,
-			Payload:   capturePayload,
-			Length:    int(payloadLen),
-			Truncated: truncated,
+		if isControlFrame(opcode) {
+			persistWSMessage(sessionID, direction, opcode, fin, messagePayload, db, bus)
+		} else if msg := assembler.Push(opcode, fin == 1, rsv1 == 1, messagePayload); msg != nil {
+			storedPayload := msg.Payload
+			if decomp != nil && msg.Compressed && len(msg.Payload) > 0 {
+				if dec, err := decomp.decompress(msg.Payload); err == nil {
+					storedPayload = dec
+				} else {
+					slog.Debug("WS inflate failed; storing raw payload", "dir", direction, "opcode", msg.Opcode, "payloadLen", len(msg.Payload), "err", err)
+				}
+			}
+			persistWSMessage(sessionID, direction, msg.Opcode, 1, storedPayload, db, bus)
 		}
-		db.SaveWebSocketFrame(frame)
-		bus.Publish(events.Event{Type: events.EventWebSocketFrame, Data: frame})
 
 		// Close frame signals end of connection.
 		if opcode == 0x8 {
 			return nil
 		}
 	}
+}
+
+type wsCompletedMessage struct {
+	Opcode     int
+	Payload    []byte
+	Compressed bool
+}
+
+type wsMessageAssembler struct {
+	active     bool
+	opcode     int
+	compressed bool
+	payload    bytes.Buffer
+}
+
+func (a *wsMessageAssembler) reset() {
+	a.active = false
+	a.opcode = 0
+	a.compressed = false
+	a.payload.Reset()
+}
+
+func (a *wsMessageAssembler) Push(opcode int, fin bool, compressed bool, payload []byte) *wsCompletedMessage {
+	switch opcode {
+	case 1, 2:
+		if a.active {
+			a.reset()
+		}
+		a.active = true
+		a.opcode = opcode
+		a.compressed = compressed
+		a.payload.Reset()
+		a.payload.Write(payload)
+		if fin {
+			msg := &wsCompletedMessage{
+				Opcode:     a.opcode,
+				Payload:    append([]byte(nil), a.payload.Bytes()...),
+				Compressed: a.compressed,
+			}
+			a.reset()
+			return msg
+		}
+	case 0:
+		if !a.active {
+			if fin {
+				return &wsCompletedMessage{Opcode: 0, Payload: append([]byte(nil), payload...)}
+			}
+			a.active = true
+			a.payload.Reset()
+			a.payload.Write(payload)
+			return nil
+		}
+		a.payload.Write(payload)
+		if fin {
+			msg := &wsCompletedMessage{
+				Opcode:     a.opcode,
+				Payload:    append([]byte(nil), a.payload.Bytes()...),
+				Compressed: a.compressed,
+			}
+			a.reset()
+			return msg
+		}
+	default:
+		a.reset()
+	}
+
+	return nil
+}
+
+func persistWSMessage(
+	sessionID int64,
+	direction string,
+	opcode int,
+	fin int,
+	payload []byte,
+	db *storage.DB,
+	bus *events.Bus,
+) {
+	capturePayload := payload
+	truncated := false
+	if len(capturePayload) > wsMaxCapture {
+		capturePayload = capturePayload[:wsMaxCapture]
+		truncated = true
+	}
+
+	frame := &storage.WebSocketFrame{
+		SessionID: sessionID,
+		Direction: direction,
+		Opcode:    opcode,
+		Fin:       fin,
+		Payload:   capturePayload,
+		Length:    len(payload),
+		Truncated: truncated,
+	}
+	if err := db.SaveWebSocketFrame(frame); err != nil {
+		slog.Warn("Failed to save websocket frame", "session_id", sessionID, "direction", direction, "opcode", opcode, "err", err)
+		return
+	}
+	bus.Publish(events.Event{Type: events.EventWebSocketFrame, Data: frame})
+}
+
+func isControlFrame(opcode int) bool {
+	return opcode == 0x8 || opcode == 0x9 || opcode == 0xA
+}
+
+type wsDirectionCompression struct {
+	Enabled           bool
+	NoContextTakeover bool
+}
+
+type wsCompressionConfig struct {
+	enabled                 bool
+	clientNoContextTakeover bool
+	serverNoContextTakeover bool
+}
+
+func (c wsCompressionConfig) ClientCompressed() wsDirectionCompression {
+	return wsDirectionCompression{
+		Enabled:           c.enabled,
+		NoContextTakeover: c.clientNoContextTakeover,
+	}
+}
+
+func (c wsCompressionConfig) ServerCompressed() wsDirectionCompression {
+	return wsDirectionCompression{
+		Enabled:           c.enabled,
+		NoContextTakeover: c.serverNoContextTakeover,
+	}
+}
+
+func parseWSCompression(value string) wsCompressionConfig {
+	cfg := wsCompressionConfig{}
+	for _, ext := range strings.Split(strings.ToLower(value), ",") {
+		parts := strings.Split(ext, ";")
+		if len(parts) == 0 {
+			continue
+		}
+		if strings.TrimSpace(parts[0]) != "permessage-deflate" {
+			continue
+		}
+		cfg.enabled = true
+		for _, part := range parts[1:] {
+			switch strings.TrimSpace(part) {
+			case "client_no_context_takeover":
+				cfg.clientNoContextTakeover = true
+			case "server_no_context_takeover":
+				cfg.serverNoContextTakeover = true
+			}
+		}
+		break
+	}
+	return cfg
 }
 
 // writeWSFrame encodes and writes a single WebSocket frame to w.
@@ -378,13 +527,34 @@ func writeWSFrame(w io.Writer, opcode byte, fin bool, payload []byte, mask bool)
 // each Reset call. This correctly handles both context-takeover and stateless
 // (no_context_takeover) sessions.
 type wsDecompressor struct {
-	dict []byte       // last ≤32 KB of decompressed output (the LZ77 window)
-	fr   io.ReadCloser // persistent flate reader; nil until first use
+	dict              []byte        // last ≤32 KB of decompressed output (the LZ77 window)
+	fr                io.ReadCloser // persistent flate reader; nil until first use
+	noContextTakeover bool
 }
 
 var syncFlushTail = []byte{0x00, 0x00, 0xff, 0xff}
 
 func (d *wsDecompressor) decompress(compressed []byte) ([]byte, error) {
+	output, err := d.decompressWithState(compressed)
+	if err == nil {
+		return output, nil
+	}
+
+	// Some peers reset deflate context even without explicitly negotiating
+	// no_context_takeover. Retry once from a clean state before giving up.
+	if !d.noContextTakeover {
+		d.resetState()
+		return d.decompressWithState(compressed)
+	}
+
+	d.resetState()
+	return nil, err
+}
+
+func (d *wsDecompressor) decompressWithState(compressed []byte) ([]byte, error) {
+	if d.noContextTakeover {
+		d.dict = d.dict[:0]
+	}
 	src := io.MultiReader(
 		bytes.NewReader(compressed),
 		bytes.NewReader(syncFlushTail),
@@ -404,6 +574,7 @@ func (d *wsDecompressor) decompress(compressed []byte) ([]byte, error) {
 		err = nil
 	}
 	if err != nil {
+		d.resetReader()
 		return nil, err
 	}
 
@@ -414,6 +585,18 @@ func (d *wsDecompressor) decompress(compressed []byte) ([]byte, error) {
 		d.dict = append(d.dict[:0], output...)
 	}
 	return output, nil
+}
+
+func (d *wsDecompressor) resetReader() {
+	if d.fr != nil {
+		d.fr.Close()
+		d.fr = nil
+	}
+}
+
+func (d *wsDecompressor) resetState() {
+	d.resetReader()
+	d.dict = d.dict[:0]
 }
 
 // proxyWebSocketRaw passes through a WebSocket upgrade for out-of-scope hosts

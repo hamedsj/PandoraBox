@@ -7,6 +7,8 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+const sqliteBusyTimeoutMS = 5000
+
 type DB struct {
 	*sql.DB
 }
@@ -21,9 +23,20 @@ func Open(path string) (*DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
+	// SQLite performs best here with a single shared connection. The default
+	// database/sql pool may open multiple writer connections, which turns normal
+	// concurrent capture bursts into SQLITE_BUSY lock errors.
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
 
 	// WAL mode for concurrent access
 	if _, err := db.Exec(`PRAGMA journal_mode=WAL`); err != nil {
+		return nil, err
+	}
+	if _, err := db.Exec(fmt.Sprintf(`PRAGMA busy_timeout=%d`, sqliteBusyTimeoutMS)); err != nil {
+		return nil, err
+	}
+	if _, err := db.Exec(`PRAGMA synchronous=NORMAL`); err != nil {
 		return nil, err
 	}
 	if _, err := db.Exec(`PRAGMA foreign_keys=ON`); err != nil {

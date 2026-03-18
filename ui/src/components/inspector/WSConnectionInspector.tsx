@@ -10,14 +10,31 @@ export function WSConnectionInspector() {
     session: WebSocketSession | null
     frames: WebSocketFrame[] | null
   } | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!selectedRequestId) {
       setWsData(null)
+      setError(null)
       return
     }
+    let cancelled = false
     setWsData(null)
-    api.requests.wsFrames(selectedRequestId).then(setWsData).catch(console.error)
+    setError(null)
+    api.requests.wsFrames(selectedRequestId)
+      .then((data) => {
+        if (!cancelled) {
+          setWsData(data)
+        }
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Failed to load WebSocket frames')
+        }
+      })
+    return () => {
+      cancelled = true
+    }
   }, [selectedRequestId])
 
   if (!selectedRequestId) {
@@ -29,6 +46,13 @@ export function WSConnectionInspector() {
   }
 
   if (!wsData) {
+    if (error) {
+      return (
+        <div className="flex items-center justify-center h-full text-muted-foreground text-xs px-4 text-center">
+          {error}
+        </div>
+      )
+    }
     return (
       <div className="flex items-center justify-center h-full text-muted-foreground text-xs">
         Loading frames…

@@ -1,9 +1,6 @@
 package storage
 
-import (
-	"database/sql"
-	"time"
-)
+import "database/sql"
 
 func (db *DB) SaveReplay(r *Replay) (int64, error) {
 	res, err := db.Exec(
@@ -37,7 +34,7 @@ func (db *DB) GetReplay(id int64) (*Replay, error) {
 	if err != nil {
 		return nil, err
 	}
-	r.CreatedAt, _ = time.Parse("2006-01-02T15:04:05Z", ts)
+	r.CreatedAt = parseDBTime(ts)
 
 	req, _ := db.GetRequest(r.RequestID)
 	r.Request = req
