@@ -1,4 +1,5 @@
-.PHONY: build dev dev-backend dev-ui electron electron-mac electron-win electron-linux test lint clean
+.PHONY: build dev dev-backend dev-ui electron electron-mac electron-win electron-linux electron-all test lint clean \
+        go-build-mac go-build-win go-build-linux
 
 # Build the Go binary + embed the React UI (web mode)
 build:
@@ -19,19 +20,48 @@ dev-ui:
 dev-electron: build
 	cd ui && npx electron .
 
-# Package Electron app for current platform
+# ---------------------------------------------------------------------------
+# Cross-compiled Go binaries (pure Go / no CGo — modernc.org/sqlite)
+# ---------------------------------------------------------------------------
+
+go-build-mac:
+	GOOS=darwin  GOARCH=arm64 go build -o bin/pandorabox-mac-arm64 ./cmd/pandorabox
+	GOOS=darwin  GOARCH=amd64 go build -o bin/pandorabox-mac-x64   ./cmd/pandorabox
+
+go-build-win:
+	GOOS=windows GOARCH=amd64 go build -o bin/pandorabox-win.exe   ./cmd/pandorabox
+
+go-build-linux:
+	GOOS=linux   GOARCH=amd64 go build -o bin/pandorabox-linux      ./cmd/pandorabox
+
+# ---------------------------------------------------------------------------
+# Electron packaging (each target cross-compiles Go first, then builds UI)
+# ---------------------------------------------------------------------------
+
+# Build React UI once (shared by all platform targets)
+_ui-build:
+	cd ui && npm run build
+	rm -rf cmd/pandorabox/dist
+	cp -r ui/dist cmd/pandorabox/dist
+
+electron-mac: go-build-mac _ui-build
+	cd ui && npx electron-builder --mac
+
+electron-win: go-build-win _ui-build
+	cd ui && npx electron-builder --win
+
+electron-linux: go-build-linux _ui-build
+	cd ui && npx electron-builder --linux
+
+# Build for all platforms in one go
+electron-all: go-build-mac go-build-win go-build-linux _ui-build
+	cd ui && npx electron-builder --mac --win --linux
+
+# Package Electron app for the current host platform (dev convenience)
 electron: build
 	cd ui && npm run electron:build
 
-# Platform-specific Electron packages
-electron-mac: build
-	cd ui && npm run electron:build:mac
-
-electron-win: build
-	cd ui && npm run electron:build:win
-
-electron-linux: build
-	cd ui && npm run electron:build:linux
+# ---------------------------------------------------------------------------
 
 test:
 	go test ./...

@@ -13,8 +13,9 @@ let backendProcess = null
 
 // Find the Go binary - in packaged app it's in resources/, in dev it's in ../bin/
 function getBackendPath() {
+  const binaryName = process.platform === 'win32' ? 'pandorabox.exe' : 'pandorabox'
   if (app.isPackaged) {
-    return path.join(process.resourcesPath, 'pandorabox')
+    return path.join(process.resourcesPath, binaryName)
   }
   // In dev: repo root bin/pandorabox
   return path.join(__dirname, '../../bin/pandorabox')
