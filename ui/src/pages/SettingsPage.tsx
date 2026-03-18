@@ -1,4 +1,4 @@
-import { api } from '@/api/client'
+import { api, type MCPStatus } from '@/api/client'
 import { useThemeStore, fontFamilyMap, accentColorMap, getAvailableVariants, darkThemeColors, lightThemeColors, type ThemeMode, type FontFamily, type AccentColor, type ThemeVariant, DarkTheme, LightTheme } from '@/store/theme'
 import { useShortcutStore } from '@/store/shortcuts'
 import { useReplayStore } from '@/store/replay'
@@ -85,6 +85,7 @@ export function SettingsPage() {
   const [mcpPort, setMcpPort] = useState(String(project?.mcp_port ?? 9090))
   const [mcpPortSaving, setMcpPortSaving] = useState(false)
   const [mcpPortMsg, setMcpPortMsg] = useState<{ ok?: string; err?: string } | null>(null)
+  const [mcpStatus, setMcpStatus] = useState<MCPStatus | null>(project?.mcp_status ?? null)
 
   useEffect(() => {
     setUpstreamURL(project?.proxy?.upstream_url ?? '')
@@ -97,6 +98,36 @@ export function SettingsPage() {
   useEffect(() => {
     setMcpPort(String(project?.mcp_port ?? 9090))
   }, [project?.mcp_port])
+
+  useEffect(() => {
+    setMcpStatus(project?.mcp_status ?? null)
+  }, [project?.mcp_status])
+
+  useEffect(() => {
+    let cancelled = false
+    let timer: ReturnType<typeof setInterval> | null = null
+
+    const load = async () => {
+      try {
+        const status = await api.mcp.status()
+        if (!cancelled) setMcpStatus(status)
+      } catch {
+        if (!cancelled) {
+          setMcpStatus((current) => current ? { ...current, running: false, last_error: 'Failed to load MCP status' } : null)
+        }
+      }
+    }
+
+    void load()
+    timer = setInterval(() => {
+      void load()
+    }, 5000)
+
+    return () => {
+      cancelled = true
+      if (timer) clearInterval(timer)
+    }
+  }, [project?.mcp_port, project?.mcp_disabled])
   const availableVariants = getAvailableVariants(mode)
   const [fontSizeValue, setFontSizeValue] = useState(fontSize.toString())
 
@@ -159,6 +190,7 @@ export function SettingsPage() {
     try {
       const updated = await api.project.update({ mcp_port: port })
       setProject(updated)
+      setMcpStatus(updated.mcp_status)
       setMcpPortMsg({ ok: 'Port changed.' })
     } catch (e: unknown) {
       setMcpPortMsg({ err: e instanceof Error ? e.message : 'Save failed' })
@@ -166,6 +198,19 @@ export function SettingsPage() {
       setMcpPortSaving(false)
     }
   }
+
+  const mcpHealthTone = !mcpStatus?.running
+    ? 'border-red-500/30 bg-red-500/10 text-red-300'
+    : !mcpStatus.access_enabled
+      ? 'border-amber-500/30 bg-amber-500/10 text-amber-200'
+      : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+  const mcpHealthLabel = !mcpStatus?.running
+    ? 'Offline'
+    : !mcpStatus.access_enabled
+      ? 'Listening, access disabled'
+      : 'Ready'
+  const mcpEndpoint = mcpStatus?.endpoint || `http://localhost:${mcpPort}/mcp`
+  const legacySSEEndpoint = mcpStatus?.legacy_sse_endpoint || `http://localhost:${mcpPort}/sse`
 
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6 overflow-auto h-full">
@@ -659,13 +704,13 @@ export function SettingsPage() {
           </div>
 
           <div className="space-y-4">
-            {/* Enable toggle */}
+            {/* Access toggle */}
             <div className="bg-muted/50 rounded-lg p-4 border border-border">
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <div className="text-sm font-medium">Enable MCP Access</div>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    When disabled, Claude cannot read or control this project via MCP tools.
+                    This controls whether MCP clients may use the project tools after they connect.
                   </p>
                 </div>
                 <button
@@ -694,27 +739,67 @@ export function SettingsPage() {
               </div>
             </div>
 
-            {/* SSE endpoint */}
-            <div className="bg-muted/50 rounded-lg p-4 border border-border space-y-3">
-              <div className="flex items-center gap-2">
-                <LayoutDashboard className="w-4 h-4 text-primary" />
-                <div className="text-sm font-medium">SSE Endpoint</div>
+            {/* MCP health */}
+            <div className="bg-muted/50 rounded-lg p-4 border border-border space-y-4">
+              <div className="flex items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <LayoutDashboard className="w-4 h-4 text-primary" />
+                    <div className="text-sm font-medium">Connection Status</div>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    The server now listens on Streamable HTTP and also keeps the older SSE transport for compatibility.
+                  </p>
+                </div>
+                <div className={cn('rounded-full border px-3 py-1 text-xs font-medium', mcpHealthTone)}>
+                  {mcpHealthLabel}
+                </div>
               </div>
-              <p className="text-sm text-muted-foreground">
-                Connect Claude Desktop or any MCP client to this URL. Port changes take effect immediately.
-              </p>
-              <div className="flex items-center gap-2">
-                <code className="font-mono text-primary bg-background px-3 py-1.5 rounded-md text-sm">
-                  http://localhost:{mcpPort}/sse
-                </code>
-                <button
-                  onClick={() => navigator.clipboard.writeText(`http://localhost:${mcpPort}/sse`)}
-                  className="text-xs text-muted-foreground hover:text-foreground"
-                  title="Copy to clipboard"
-                >
-                  Copy
-                </button>
+
+              <div className="grid gap-3 md:grid-cols-3">
+                <div className="rounded-xl border border-border bg-background/70 p-3">
+                  <div className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">Transport</div>
+                  <div className="mt-2 text-sm font-medium text-foreground">
+                    {mcpStatus?.transport || 'streamable-http+legacy-sse'}
+                  </div>
+                </div>
+                <div className="rounded-xl border border-border bg-background/70 p-3">
+                  <div className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">Port</div>
+                  <div className="mt-2 font-mono text-sm text-foreground">{mcpStatus?.port || mcpPort}</div>
+                </div>
+                <div className="rounded-xl border border-border bg-background/70 p-3">
+                  <div className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">Access</div>
+                  <div className="mt-2 text-sm text-foreground">
+                    {mcpStatus?.access_enabled ? 'Allowed for this project' : 'Blocked by project setting'}
+                  </div>
+                </div>
               </div>
+
+              {mcpStatus?.last_error && (
+                <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+                  {mcpStatus.last_error}
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Primary MCP Endpoint</div>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 overflow-x-auto font-mono text-primary bg-background px-3 py-2 rounded-md text-sm">
+                    {mcpEndpoint}
+                  </code>
+                  <button
+                    onClick={() => navigator.clipboard.writeText(mcpEndpoint)}
+                    className="text-xs text-muted-foreground hover:text-foreground"
+                    title="Copy to clipboard"
+                  >
+                    Copy
+                  </button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Use this URL for modern MCP clients. The legacy compatibility endpoint remains available at <code className="font-mono">{legacySSEEndpoint}</code>.
+                </p>
+              </div>
+
               <div className="space-y-1">
                 <label className="text-xs text-muted-foreground">MCP Port</label>
                 <input
@@ -746,22 +831,22 @@ export function SettingsPage() {
 
             {/* Claude Desktop config snippet */}
             <div className="bg-muted/50 rounded-lg p-4 border border-border space-y-2">
-              <div className="text-sm font-medium">Claude Desktop Config</div>
+              <div className="text-sm font-medium">MCP Client Config</div>
               <p className="text-xs text-muted-foreground">
-                Add this to your <code className="font-mono">claude_desktop_config.json</code> to connect Claude Desktop.
+                Use the Streamable HTTP endpoint in any MCP client that supports remote HTTP servers.
               </p>
               <div className="relative">
                 <pre className="bg-background rounded-md border border-border p-3 text-xs font-mono text-foreground overflow-x-auto leading-relaxed">
 {`{
   "mcpServers": {
     "pandorabox": {
-      "url": "http://localhost:${mcpPort}/sse"
+      "url": "${mcpEndpoint}"
     }
   }
 }`}
                 </pre>
                 <button
-                  onClick={() => navigator.clipboard.writeText(`{\n  "mcpServers": {\n    "pandorabox": {\n      "url": "http://localhost:${mcpPort}/sse"\n    }\n  }\n}`)}
+                  onClick={() => navigator.clipboard.writeText(`{\n  "mcpServers": {\n    "pandorabox": {\n      "url": "${mcpEndpoint}"\n    }\n  }\n}`)}
                   className="absolute top-2 right-2 text-xs text-muted-foreground hover:text-foreground"
                   title="Copy to clipboard"
                 >
