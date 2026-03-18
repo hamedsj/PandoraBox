@@ -24,14 +24,14 @@ dev-electron: build
 # Cross-compiled Go binaries (pure Go / no CGo — modernc.org/sqlite)
 # ---------------------------------------------------------------------------
 
-go-build-mac:
+go-build-mac: _ui-build
 	GOOS=darwin  GOARCH=arm64 go build -o bin/pandorabox-mac-arm64 ./cmd/pandorabox
 	GOOS=darwin  GOARCH=amd64 go build -o bin/pandorabox-mac-x64   ./cmd/pandorabox
 
-go-build-win:
+go-build-win: _ui-build
 	GOOS=windows GOARCH=amd64 go build -o bin/pandorabox-win.exe   ./cmd/pandorabox
 
-go-build-linux:
+go-build-linux: _ui-build
 	GOOS=linux   GOARCH=amd64 go build -o bin/pandorabox-linux      ./cmd/pandorabox
 
 # ---------------------------------------------------------------------------
@@ -44,17 +44,17 @@ _ui-build:
 	rm -rf cmd/pandorabox/dist
 	cp -r ui/dist cmd/pandorabox/dist
 
-electron-mac: go-build-mac _ui-build
+electron-mac: go-build-mac
 	cd ui && npx electron-builder --mac
 
-electron-win: go-build-win _ui-build
+electron-win: go-build-win
 	cd ui && npx electron-builder --win
 
-electron-linux: go-build-linux _ui-build
+electron-linux: go-build-linux
 	cd ui && npx electron-builder --linux
 
 # Build for all platforms in one go
-electron-all: go-build-mac go-build-win go-build-linux _ui-build
+electron-all: go-build-mac go-build-win go-build-linux
 	cd ui && npx electron-builder --mac --win --linux
 
 # Package Electron app for the current host platform (dev convenience)
