@@ -89,9 +89,20 @@ export interface ProjectInfo {
   scope: ScopeConfig
   mcp_disabled: boolean
   mcp_port?: number
+  mcp_status: MCPStatus
   match_replace: MatchReplaceRule[]
   middleware: MiddlewareConfig
   flows: Flow[]
+}
+
+export interface MCPStatus {
+  running: boolean
+  access_enabled: boolean
+  port: number
+  transport: string
+  endpoint: string
+  legacy_sse_endpoint?: string
+  last_error?: string
 }
 
 export interface InterceptFilter {
@@ -255,6 +266,9 @@ export const api = {
   },
   ca: {
     certUrl: () => BASE + '/ca/cert',
+  },
+  mcp: {
+    status: () => get<MCPStatus>('/mcp/status'),
   },
   project: {
     get: () => get<ProjectInfo>('/project'),

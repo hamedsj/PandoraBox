@@ -11,6 +11,7 @@ import (
 	"github.com/hamedsj5/pandorabox/internal/ca"
 	"github.com/hamedsj5/pandorabox/internal/config"
 	"github.com/hamedsj5/pandorabox/internal/events"
+	mcpsrv "github.com/hamedsj5/pandorabox/internal/mcp"
 	"github.com/hamedsj5/pandorabox/internal/project"
 	"github.com/hamedsj5/pandorabox/internal/proxy"
 	"github.com/hamedsj5/pandorabox/internal/storage"
@@ -31,6 +32,7 @@ type Server struct {
 		SetDB(*storage.DB)
 		SetProject(*project.Manager, *project.AppConfig)
 		ChangePort(context.Context, int) error
+		Status() mcpsrv.Status
 	}
 
 	projectMu sync.RWMutex
@@ -66,6 +68,7 @@ func (s *Server) SetMCPServer(mcp interface {
 	SetDB(*storage.DB)
 	SetProject(*project.Manager, *project.AppConfig)
 	ChangePort(context.Context, int) error
+	Status() mcpsrv.Status
 }) {
 	s.mcpServer = mcp
 }
@@ -125,6 +128,7 @@ func (s *Server) Handler() http.Handler {
 		// Project management
 		r.Get("/project", s.getProject)
 		r.Put("/project", s.updateProject)
+		r.Get("/mcp/status", s.getMCPStatus)
 		r.Post("/project/save-as", s.projectSaveAs)
 		r.Get("/project/recent", s.getRecentProjects)
 		r.Post("/project/open", s.openProject)

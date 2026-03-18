@@ -7,22 +7,31 @@ import (
 	"os"
 
 	"github.com/hamedsj5/pandorabox/internal/events"
+	mcpsrv "github.com/hamedsj5/pandorabox/internal/mcp"
 	proj "github.com/hamedsj5/pandorabox/internal/project"
 	"github.com/hamedsj5/pandorabox/internal/storage"
 )
 
 type projectInfoResponse struct {
-	Name         string                 `json:"name"`
-	Path         string                 `json:"path"`
-	IsTemp       bool                   `json:"is_temp"`
-	Proxy        proj.ProxyConfig       `json:"proxy"`
-	Filters      proj.FilterConfig      `json:"filters"`
-	Scope        proj.ScopeConfig       `json:"scope"`
-	MCPDisabled  bool                   `json:"mcp_disabled"`
-	MCPPort      int                    `json:"mcp_port,omitempty"`
+	Name         string                  `json:"name"`
+	Path         string                  `json:"path"`
+	IsTemp       bool                    `json:"is_temp"`
+	Proxy        proj.ProxyConfig        `json:"proxy"`
+	Filters      proj.FilterConfig       `json:"filters"`
+	Scope        proj.ScopeConfig        `json:"scope"`
+	MCPDisabled  bool                    `json:"mcp_disabled"`
+	MCPPort      int                     `json:"mcp_port,omitempty"`
+	MCPStatus    mcpsrv.Status           `json:"mcp_status"`
 	MatchReplace []proj.MatchReplaceRule `json:"match_replace"`
 	Middleware   proj.MiddlewareConfig   `json:"middleware"`
-	Flows        []proj.Flow            `json:"flows"`
+	Flows        []proj.Flow             `json:"flows"`
+}
+
+func (s *Server) getMCPStatusSnapshot() mcpsrv.Status {
+	if s.mcpServer == nil {
+		return mcpsrv.Status{}
+	}
+	return s.mcpServer.Status()
 }
 
 func (s *Server) getProject(w http.ResponseWriter, r *http.Request) {
@@ -45,6 +54,7 @@ func (s *Server) getProject(w http.ResponseWriter, r *http.Request) {
 		Scope:        cfg.Scope,
 		MCPDisabled:  cfg.MCPDisabled,
 		MCPPort:      cfg.MCPPort,
+		MCPStatus:    s.getMCPStatusSnapshot(),
 		MatchReplace: cfg.MatchReplace,
 		Middleware:   cfg.Middleware,
 		Flows:        cfg.Flows,
@@ -149,6 +159,7 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
 		Scope:        cfg.Scope,
 		MCPDisabled:  cfg.MCPDisabled,
 		MCPPort:      cfg.MCPPort,
+		MCPStatus:    s.getMCPStatusSnapshot(),
 		MatchReplace: cfg.MatchReplace,
 		Middleware:   cfg.Middleware,
 		Flows:        cfg.Flows,
@@ -382,6 +393,7 @@ func (s *Server) switchProject(newMgr *proj.Manager, appCfg *proj.AppConfig, w h
 		Scope:        cfg.Scope,
 		MCPDisabled:  cfg.MCPDisabled,
 		MCPPort:      cfg.MCPPort,
+		MCPStatus:    s.getMCPStatusSnapshot(),
 		MatchReplace: cfg.MatchReplace,
 		Middleware:   cfg.Middleware,
 		Flows:        cfg.Flows,
