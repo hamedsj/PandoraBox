@@ -1,7 +1,7 @@
 {
   "name": "pandorabox",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Programmable MITM proxy with MCP server for Claude Desktop integration",
   "author": {
     "name": "PandoraBox",
@@ -73,33 +73,36 @@
       "dist/**/*",
       "electron/**/*"
     ],
-    "extraResources": [
-      {
-        "from": "../bin/pandorabox",
-        "to": "pandorabox"
-      }
-    ],
     "mac": {
       "target": [
-        "dmg",
-        "zip"
+        { "target": "dmg", "arch": ["arm64", "x64"] },
+        { "target": "zip", "arch": ["arm64", "x64"] }
       ],
       "icon": "build/icon.icns",
-      "category": "public.app-category.developer-tools"
+      "category": "public.app-category.developer-tools",
+      "extraResources": [
+        { "from": "../bin/pandorabox-mac-${arch}", "to": "pandorabox" }
+      ]
     },
     "win": {
       "target": [
-        "nsis"
+        { "target": "nsis", "arch": ["x64"] }
       ],
-      "icon": "build/icon.ico"
+      "icon": "build/icon.ico",
+      "extraResources": [
+        { "from": "../bin/pandorabox-win.exe", "to": "pandorabox.exe" }
+      ]
     },
     "linux": {
       "target": [
-        "AppImage",
-        "deb"
+        { "target": "AppImage", "arch": ["x64"] },
+        { "target": "deb", "arch": ["x64"] }
       ],
       "icon": "build/icon.png",
-      "category": "Development"
+      "category": "Development",
+      "extraResources": [
+        { "from": "../bin/pandorabox-linux", "to": "pandorabox" }
+      ]
     }
   }
 }
