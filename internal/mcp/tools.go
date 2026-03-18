@@ -116,7 +116,7 @@ func (s *Server) registerTools() {
 
 	// get_project
 	s.mcp.AddTool(mcp.NewTool("get_project",
-		mcp.WithDescription("Get current project information including name, path, proxy config, scope, and MCP access setting"),
+		mcp.WithDescription("Get current project information including proxy config, scope, filters, match/replace, middleware, and flows"),
 	), s.toolGetProject)
 
 	// update_project
@@ -124,12 +124,81 @@ func (s *Server) registerTools() {
 		mcp.WithDescription("Update current project settings"),
 		mcp.WithString("name", mcp.Description("New project name")),
 		mcp.WithNumber("proxy_port", mcp.Description("Proxy listen port")),
+		mcp.WithString("upstream_url", mcp.Description("Optional upstream proxy URL")),
 		mcp.WithBoolean("intercept_enabled", mcp.Description("Enable/disable intercept")),
+		mcp.WithString("filters_json", mcp.Description("JSON FilterConfig object")),
 		mcp.WithBoolean("scope_enabled", mcp.Description("Enable/disable scope filtering")),
 		mcp.WithString("scope_include_json", mcp.Description("JSON array of ScopeRule objects for include rules")),
 		mcp.WithString("scope_exclude_json", mcp.Description("JSON array of ScopeRule objects for exclude rules")),
+		mcp.WithString("match_replace_json", mcp.Description("JSON array of MatchReplaceRule objects")),
+		mcp.WithString("middleware_json", mcp.Description("JSON MiddlewareConfig object")),
+		mcp.WithString("flows_json", mcp.Description("JSON array of Flow objects")),
 		mcp.WithBoolean("mcp_disabled", mcp.Description("Disable MCP access for this project")),
+		mcp.WithNumber("mcp_port", mcp.Description("MCP listen port")),
 	), s.toolUpdateProject)
+
+	// get_match_replace
+	s.mcp.AddTool(mcp.NewTool("get_match_replace",
+		mcp.WithDescription("Get the current Match & Replace rules"),
+	), s.toolGetMatchReplace)
+
+	// update_match_replace
+	s.mcp.AddTool(mcp.NewTool("update_match_replace",
+		mcp.WithDescription("Replace the current Match & Replace rules"),
+		mcp.WithString("rules_json", mcp.Description("JSON array of MatchReplaceRule objects"), mcp.Required()),
+	), s.toolUpdateMatchReplace)
+
+	// get_middleware
+	s.mcp.AddTool(mcp.NewTool("get_middleware",
+		mcp.WithDescription("Get the current middleware graph configuration"),
+	), s.toolGetMiddleware)
+
+	// update_middleware
+	s.mcp.AddTool(mcp.NewTool("update_middleware",
+		mcp.WithDescription("Replace the current middleware graph configuration"),
+		mcp.WithString("config_json", mcp.Description("JSON MiddlewareConfig object"), mcp.Required()),
+	), s.toolUpdateMiddleware)
+
+	// list_flows
+	s.mcp.AddTool(mcp.NewTool("list_flows",
+		mcp.WithDescription("List all saved flows"),
+	), s.toolListFlows)
+
+	// get_flow
+	s.mcp.AddTool(mcp.NewTool("get_flow",
+		mcp.WithDescription("Get one flow by id"),
+		mcp.WithString("flow_id", mcp.Description("Flow ID"), mcp.Required()),
+	), s.toolGetFlow)
+
+	// save_flow
+	s.mcp.AddTool(mcp.NewTool("save_flow",
+		mcp.WithDescription("Create or update one flow"),
+		mcp.WithString("flow_json", mcp.Description("JSON Flow object"), mcp.Required()),
+	), s.toolSaveFlow)
+
+	// delete_flow
+	s.mcp.AddTool(mcp.NewTool("delete_flow",
+		mcp.WithDescription("Delete one flow by id"),
+		mcp.WithString("flow_id", mcp.Description("Flow ID"), mcp.Required()),
+	), s.toolDeleteFlow)
+
+	// run_flow
+	s.mcp.AddTool(mcp.NewTool("run_flow",
+		mcp.WithDescription("Execute a flow by id"),
+		mcp.WithString("flow_id", mcp.Description("Flow ID"), mcp.Required()),
+		mcp.WithString("variables_json", mcp.Description("Optional JSON object of seed variables")),
+	), s.toolRunFlow)
+
+	// get_sitemap
+	s.mcp.AddTool(mcp.NewTool("get_sitemap",
+		mcp.WithDescription("Build a SiteMap tree from captured requests"),
+		mcp.WithString("host", mcp.Description("Filter by host")),
+		mcp.WithString("method", mcp.Description("Filter by HTTP method")),
+		mcp.WithString("search", mcp.Description("Search in host/path/query")),
+		mcp.WithNumber("status_min", mcp.Description("Minimum status code")),
+		mcp.WithNumber("status_max", mcp.Description("Maximum status code")),
+		mcp.WithBoolean("in_scope_only", mcp.Description("Restrict the SiteMap to in-scope requests")),
+	), s.toolGetSitemap)
 
 	// list_recent_projects
 	s.mcp.AddTool(mcp.NewTool("list_recent_projects",
@@ -434,15 +503,7 @@ func (s *Server) toolGetProject(ctx context.Context, req mcp.CallToolRequest) (*
 	if mgr == nil {
 		return nil, fmt.Errorf("no project loaded")
 	}
-	cfg := mgr.Config()
-	return jsonResult(map[string]interface{}{
-		"name":         cfg.Name,
-		"path":         mgr.Path(),
-		"is_temp":      mgr.IsTemp(),
-		"proxy":        cfg.Proxy,
-		"scope":        cfg.Scope,
-		"mcp_disabled": cfg.MCPDisabled,
-	})
+	return jsonResult(s.projectResult(mgr))
 }
 
 func (s *Server) toolUpdateProject(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -456,6 +517,8 @@ func (s *Server) toolUpdateProject(ctx context.Context, req mcp.CallToolRequest)
 
 	args := req.Params.Arguments
 	cfg := mgr.Config()
+	oldProxyPort := cfg.Proxy.Port
+	oldMCPPort := cfg.MCPPort
 
 	if v, ok := args["name"].(string); ok {
 		cfg.Name = v
@@ -465,9 +528,20 @@ func (s *Server) toolUpdateProject(ctx context.Context, req mcp.CallToolRequest)
 		cfg.Proxy.Port = int(v)
 		proxyChanged = true
 	}
+	if v, ok := args["upstream_url"].(string); ok {
+		cfg.Proxy.UpstreamURL = v
+		proxyChanged = true
+	}
 	if v, ok := args["intercept_enabled"].(bool); ok {
 		cfg.Proxy.InterceptEnabled = v
 		proxyChanged = true
+	}
+	if v, ok := args["filters_json"].(string); ok && v != "" {
+		var filters proj.FilterConfig
+		if err := json.Unmarshal([]byte(v), &filters); err != nil {
+			return nil, fmt.Errorf("filters_json: %w", err)
+		}
+		cfg.Filters = filters
 	}
 	scopeChanged := false
 	if v, ok := args["scope_enabled"].(bool); ok {
@@ -493,25 +567,303 @@ func (s *Server) toolUpdateProject(ctx context.Context, req mcp.CallToolRequest)
 	if v, ok := args["mcp_disabled"].(bool); ok {
 		cfg.MCPDisabled = v
 	}
+	if v, ok := args["mcp_port"].(float64); ok {
+		cfg.MCPPort = int(v)
+	}
+	if v, ok := args["match_replace_json"].(string); ok && v != "" {
+		var rules []proj.MatchReplaceRule
+		if err := json.Unmarshal([]byte(v), &rules); err != nil {
+			return nil, fmt.Errorf("match_replace_json: %w", err)
+		}
+		cfg.MatchReplace = rules
+		s.proxy.SetMatchReplace(cfg.MatchReplace)
+	}
+	if v, ok := args["middleware_json"].(string); ok && v != "" {
+		var middleware proj.MiddlewareConfig
+		if err := json.Unmarshal([]byte(v), &middleware); err != nil {
+			return nil, fmt.Errorf("middleware_json: %w", err)
+		}
+		cfg.Middleware = middleware
+		s.proxy.SetMiddleware(cfg.Middleware)
+	}
+	if v, ok := args["flows_json"].(string); ok && v != "" {
+		var flows []proj.Flow
+		if err := json.Unmarshal([]byte(v), &flows); err != nil {
+			return nil, fmt.Errorf("flows_json: %w", err)
+		}
+		cfg.Flows = flows
+	}
 
 	if err := mgr.Save(cfg); err != nil {
 		return nil, err
 	}
 	if proxyChanged {
 		s.proxy.ApplyConfig(cfg.Proxy.Port, cfg.Proxy.InterceptEnabled, cfg.Proxy.UpstreamURL)
+		if cfg.Proxy.Port != oldProxyPort && cfg.Proxy.Port > 0 {
+			if err := s.proxy.ChangePort(cfg.Proxy.Port); err != nil {
+				return nil, fmt.Errorf("proxy port in use: %w", err)
+			}
+		}
 	}
 	if scopeChanged {
 		s.proxy.SetScope(cfg.Scope)
 	}
+	if cfg.MCPPort != oldMCPPort && cfg.MCPPort > 0 {
+		if err := s.ChangePort(ctx, cfg.MCPPort); err != nil {
+			return nil, fmt.Errorf("mcp port in use: %w", err)
+		}
+	}
 
+	return jsonResult(s.projectResult(mgr))
+}
+
+func (s *Server) toolGetMatchReplace(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if !s.mcpEnabled() {
+		return nil, fmt.Errorf("MCP access is disabled for this project")
+	}
+	mgr := s.getProject()
+	if mgr == nil {
+		return nil, fmt.Errorf("no project loaded")
+	}
+	return jsonResult(mgr.Config().MatchReplace)
+}
+
+func (s *Server) toolUpdateMatchReplace(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if !s.mcpEnabled() {
+		return nil, fmt.Errorf("MCP access is disabled for this project")
+	}
+	mgr := s.getProject()
+	if mgr == nil {
+		return nil, fmt.Errorf("no project loaded")
+	}
+	rulesJSON, ok := req.Params.Arguments["rules_json"].(string)
+	if !ok || rulesJSON == "" {
+		return nil, fmt.Errorf("rules_json required")
+	}
+	var rules []proj.MatchReplaceRule
+	if err := json.Unmarshal([]byte(rulesJSON), &rules); err != nil {
+		return nil, fmt.Errorf("rules_json: %w", err)
+	}
+	cfg := mgr.Config()
+	cfg.MatchReplace = rules
+	if err := mgr.Save(cfg); err != nil {
+		return nil, err
+	}
+	s.proxy.SetMatchReplace(cfg.MatchReplace)
+	return jsonResult(cfg.MatchReplace)
+}
+
+func (s *Server) toolGetMiddleware(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if !s.mcpEnabled() {
+		return nil, fmt.Errorf("MCP access is disabled for this project")
+	}
+	mgr := s.getProject()
+	if mgr == nil {
+		return nil, fmt.Errorf("no project loaded")
+	}
+	return jsonResult(mgr.Config().Middleware)
+}
+
+func (s *Server) toolUpdateMiddleware(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if !s.mcpEnabled() {
+		return nil, fmt.Errorf("MCP access is disabled for this project")
+	}
+	mgr := s.getProject()
+	if mgr == nil {
+		return nil, fmt.Errorf("no project loaded")
+	}
+	configJSON, ok := req.Params.Arguments["config_json"].(string)
+	if !ok || configJSON == "" {
+		return nil, fmt.Errorf("config_json required")
+	}
+	var cfgValue proj.MiddlewareConfig
+	if err := json.Unmarshal([]byte(configJSON), &cfgValue); err != nil {
+		return nil, fmt.Errorf("config_json: %w", err)
+	}
+	cfg := mgr.Config()
+	cfg.Middleware = cfgValue
+	if err := mgr.Save(cfg); err != nil {
+		return nil, err
+	}
+	s.proxy.SetMiddleware(cfg.Middleware)
+	return jsonResult(cfg.Middleware)
+}
+
+func (s *Server) toolListFlows(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if !s.mcpEnabled() {
+		return nil, fmt.Errorf("MCP access is disabled for this project")
+	}
+	mgr := s.getProject()
+	if mgr == nil {
+		return nil, fmt.Errorf("no project loaded")
+	}
+	return jsonResult(mgr.Config().Flows)
+}
+
+func (s *Server) toolGetFlow(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if !s.mcpEnabled() {
+		return nil, fmt.Errorf("MCP access is disabled for this project")
+	}
+	mgr := s.getProject()
+	if mgr == nil {
+		return nil, fmt.Errorf("no project loaded")
+	}
+	flowID, ok := req.Params.Arguments["flow_id"].(string)
+	if !ok || flowID == "" {
+		return nil, fmt.Errorf("flow_id required")
+	}
+	for _, flow := range mgr.Config().Flows {
+		if flow.ID == flowID {
+			return jsonResult(flow)
+		}
+	}
+	return nil, fmt.Errorf("flow not found")
+}
+
+func (s *Server) toolSaveFlow(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if !s.mcpEnabled() {
+		return nil, fmt.Errorf("MCP access is disabled for this project")
+	}
+	mgr := s.getProject()
+	if mgr == nil {
+		return nil, fmt.Errorf("no project loaded")
+	}
+	flowJSON, ok := req.Params.Arguments["flow_json"].(string)
+	if !ok || flowJSON == "" {
+		return nil, fmt.Errorf("flow_json required")
+	}
+	var flow proj.Flow
+	if err := json.Unmarshal([]byte(flowJSON), &flow); err != nil {
+		return nil, fmt.Errorf("flow_json: %w", err)
+	}
+	cfg := mgr.Config()
+	replaced := false
+	for i := range cfg.Flows {
+		if cfg.Flows[i].ID == flow.ID {
+			cfg.Flows[i] = flow
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		cfg.Flows = append(cfg.Flows, flow)
+	}
+	if err := mgr.Save(cfg); err != nil {
+		return nil, err
+	}
+	return jsonResult(flow)
+}
+
+func (s *Server) toolDeleteFlow(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if !s.mcpEnabled() {
+		return nil, fmt.Errorf("MCP access is disabled for this project")
+	}
+	mgr := s.getProject()
+	if mgr == nil {
+		return nil, fmt.Errorf("no project loaded")
+	}
+	flowID, ok := req.Params.Arguments["flow_id"].(string)
+	if !ok || flowID == "" {
+		return nil, fmt.Errorf("flow_id required")
+	}
+	cfg := mgr.Config()
+	next := make([]proj.Flow, 0, len(cfg.Flows))
+	removed := false
+	for _, flow := range cfg.Flows {
+		if flow.ID == flowID {
+			removed = true
+			continue
+		}
+		next = append(next, flow)
+	}
+	if !removed {
+		return nil, fmt.Errorf("flow not found")
+	}
+	cfg.Flows = next
+	if err := mgr.Save(cfg); err != nil {
+		return nil, err
+	}
+	return jsonResult(map[string]interface{}{"success": true})
+}
+
+func (s *Server) toolRunFlow(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if !s.mcpEnabled() {
+		return nil, fmt.Errorf("MCP access is disabled for this project")
+	}
+	flowID, ok := req.Params.Arguments["flow_id"].(string)
+	if !ok || flowID == "" {
+		return nil, fmt.Errorf("flow_id required")
+	}
+	var seedVars map[string]string
+	if raw, ok := req.Params.Arguments["variables_json"].(string); ok && raw != "" {
+		if err := json.Unmarshal([]byte(raw), &seedVars); err != nil {
+			return nil, fmt.Errorf("variables_json: %w", err)
+		}
+	}
+	result, err := s.runFlowByID(ctx, flowID, seedVars)
+	if err != nil {
+		return nil, err
+	}
+	return jsonResult(result)
+}
+
+func (s *Server) toolGetSitemap(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if !s.mcpEnabled() {
+		return nil, fmt.Errorf("MCP access is disabled for this project")
+	}
+	args := req.Params.Arguments
+	filter := storage.RequestFilter{Limit: 50000}
+	if v, ok := args["host"].(string); ok {
+		filter.Host = v
+	}
+	if v, ok := args["method"].(string); ok {
+		filter.Method = v
+	}
+	if v, ok := args["search"].(string); ok {
+		filter.Search = v
+	}
+	if v, ok := args["status_min"].(float64); ok {
+		filter.StatusMin = int(v)
+	}
+	if v, ok := args["status_max"].(float64); ok {
+		filter.StatusMax = int(v)
+	}
+	requests, _, err := s.getDB().ListRequests(filter)
+	if err != nil {
+		return nil, err
+	}
+	if v, ok := args["in_scope_only"].(bool); ok && v {
+		mgr := s.getProject()
+		if mgr != nil {
+			requests = filterInScopeRequests(requests, mgr.Config().Scope)
+		}
+	}
+	tree := buildSitemapTree(requests)
 	return jsonResult(map[string]interface{}{
-		"name":         cfg.Name,
-		"path":         mgr.Path(),
-		"is_temp":      mgr.IsTemp(),
-		"proxy":        cfg.Proxy,
-		"scope":        cfg.Scope,
-		"mcp_disabled": cfg.MCPDisabled,
+		"tree":               tree,
+		"request_count":      len(requests),
+		"host_count":         len(tree),
+		"route_count":        countUniqueRoutes(requests),
+		"responded_requests": countResponses(requests),
 	})
+}
+
+func (s *Server) projectResult(mgr *proj.Manager) map[string]interface{} {
+	cfg := mgr.Config()
+	return map[string]interface{}{
+		"name":          cfg.Name,
+		"path":          mgr.Path(),
+		"is_temp":       mgr.IsTemp(),
+		"proxy":         cfg.Proxy,
+		"filters":       cfg.Filters,
+		"scope":         cfg.Scope,
+		"mcp_disabled":  cfg.MCPDisabled,
+		"mcp_port":      cfg.MCPPort,
+		"mcp_status":    s.Status(),
+		"match_replace": cfg.MatchReplace,
+		"middleware":    cfg.Middleware,
+		"flows":         cfg.Flows,
+	}
 }
 
 func (s *Server) toolListRecentProjects(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {

@@ -40,6 +40,9 @@ func removeHopByHop(h http.Header) {
 }
 
 func (p *Proxy) roundTrip(req *http.Request, scheme string) (*http.Response, *storage.Request, error) {
+	if req.Host == "" && req.URL != nil {
+		req.Host = req.URL.Host
+	}
 	// Capture raw request before we strip headers
 	rawReq, _ := httputil.DumpRequest(req, true)
 
@@ -121,7 +124,6 @@ func (p *Proxy) roundTrip(req *http.Request, scheme string) (*http.Response, *st
 		bodyBytes = applyToRequest(rules, req, bodyBytes)
 		req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 		req.ContentLength = int64(len(bodyBytes))
-		captured.Body = bodyBytes
 	}
 
 	// Apply Python middleware to request
@@ -135,14 +137,17 @@ func (p *Proxy) roundTrip(req *http.Request, scheme string) (*http.Response, *st
 			req.Method = newMethod
 			if u, e := url.Parse(newURL); e == nil {
 				req.URL = u
+				if u.Host != "" {
+					req.Host = u.Host
+				}
 			}
 			req.Header = newHeaders
 			bodyBytes = newBody
 			req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 			req.ContentLength = int64(len(bodyBytes))
-			captured.Body = bodyBytes
 		}
 	}
+	syncCapturedRequest(captured, req, bodyBytes)
 
 	// Prepare request for upstream:
 	// - clear RequestURI so http.Transport uses req.URL
@@ -239,6 +244,9 @@ func (p *Proxy) SendRequest(method, url string, headers map[string]string, body 
 	if err != nil {
 		return nil, err
 	}
+	if req.URL != nil {
+		req.Host = req.URL.Host
+	}
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
@@ -277,11 +285,54 @@ func (p *Proxy) ReplayRequest(reqID int64, modHeaders map[string]string, modBody
 			return nil, err
 		}
 	}
+	if req.Host == "" && req.URL != nil {
+		req.Host = req.URL.Host
+	}
 
 	var originID *int64
 	if reqID != 0 {
 		originID = &reqID
 	}
+
+	var bodyBytes []byte
+	if req.Body != nil {
+		bodyBytes, _ = io.ReadAll(req.Body)
+		req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+	}
+
+	inScope := p.scope.InScope(req.Host, req.URL.Path)
+	if inScope {
+		rules := p.getMatchReplace()
+		if len(rules) > 0 {
+			bodyBytes = applyToRequest(rules, req, bodyBytes)
+			req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+			req.ContentLength = int64(len(bodyBytes))
+		}
+		if mw := p.getMiddlewareRunner(); mw != nil {
+			newMethod, newURL, newHeaders, newBody, err := mw.ProcessRequest(
+				req.Method, req.URL.String(), req.Header.Clone(), bodyBytes,
+			)
+			if err != nil {
+				slog.Warn("Replay request middleware error", "err", err)
+			} else {
+				req.Method = newMethod
+				if u, e := url.Parse(newURL); e == nil {
+					req.URL = u
+					if u.Host != "" {
+						req.Host = u.Host
+					}
+				}
+				req.Header = newHeaders
+				bodyBytes = newBody
+				req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+				req.ContentLength = int64(len(bodyBytes))
+			}
+		}
+	}
+
+	syncCapturedRequest(newReqCapture, req, bodyBytes)
+	newReqCapture.Response = nil
+
 	replay := &storage.Replay{OriginRequestID: originID, Status: "pending"}
 
 	newReqID, err := db.SaveRequest(newReqCapture)
@@ -304,14 +355,37 @@ func (p *Proxy) ReplayRequest(reqID int64, modHeaders map[string]string, modBody
 	resp, err := transport.RoundTrip(req)
 	if err != nil {
 		db.UpdateReplay(replayID, nil, "error", err.Error())
+		replay.Status = "error"
+		replay.Error = err.Error()
+		replay.Request = newReqCapture
 		return replay, err
 	}
 	defer resp.Body.Close()
 
 	duration := time.Since(start).Milliseconds()
 	respBodyBytes, _ := io.ReadAll(resp.Body)
-	respHeadersJSON, _ := json.Marshal(resp.Header)
 
+	if inScope {
+		rules := p.getMatchReplace()
+		if len(rules) > 0 {
+			respBodyBytes = applyToResponse(rules, resp, respBodyBytes)
+		}
+		if mw := p.getMiddlewareRunner(); mw != nil {
+			newCode, newText, newHeaders, newBody, err := mw.ProcessResponse(
+				resp.StatusCode, resp.Status, resp.Header.Clone(), respBodyBytes,
+			)
+			if err != nil {
+				slog.Warn("Replay response middleware error", "err", err)
+			} else {
+				resp.StatusCode = newCode
+				resp.Status = newText
+				resp.Header = newHeaders
+				respBodyBytes = newBody
+			}
+		}
+	}
+
+	respHeadersJSON, _ := json.Marshal(resp.Header)
 	respRecord := &storage.Response{
 		RequestID:  newReqID,
 		StatusCode: resp.StatusCode,
@@ -321,7 +395,14 @@ func (p *Proxy) ReplayRequest(reqID int64, modHeaders map[string]string, modBody
 		DurationMs: duration,
 		SizeBytes:  int64(len(respBodyBytes)),
 	}
-	respID, _ := db.SaveResponse(respRecord)
+	respID, err := db.SaveResponse(respRecord)
+	if err != nil {
+		db.UpdateReplay(replayID, nil, "error", err.Error())
+		replay.Status = "error"
+		replay.Error = err.Error()
+		replay.Request = newReqCapture
+		return replay, err
+	}
 	respRecord.ID = respID
 
 	db.UpdateReplay(replayID, &respID, "done", "")
@@ -332,6 +413,26 @@ func (p *Proxy) ReplayRequest(reqID int64, modHeaders map[string]string, modBody
 	replay.Request = newReqCapture
 
 	return replay, nil
+}
+
+func syncCapturedRequest(captured *storage.Request, req *http.Request, body []byte) {
+	if captured == nil || req == nil {
+		return
+	}
+	headersJSON, _ := json.Marshal(req.Header)
+	host := req.Host
+	if host == "" && req.URL != nil {
+		host = req.URL.Host
+	}
+	captured.Method = req.Method
+	captured.Host = host
+	if req.URL != nil {
+		captured.Scheme = req.URL.Scheme
+		captured.Path = req.URL.Path
+		captured.Query = req.URL.RawQuery
+	}
+	captured.Headers = string(headersJSON)
+	captured.Body = body
 }
 
 func buildReplayRequest(orig *storage.Request, modHeaders map[string]string, modBody []byte, modURL string, raw []byte) (*http.Request, *storage.Request, error) {
