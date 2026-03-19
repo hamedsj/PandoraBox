@@ -54,7 +54,7 @@ export const useThemeStore = create<ThemeStore>()(
       variant: 'midnight',
       fontFamily: 'jetbrains',
       fontSize: 13,
-      accentColor: 'teal',
+      accentColor: 'red',
       setMode: (mode) => set({ mode, variant: defaultVariants[mode] }),
       setVariant: (variant) => set({ variant }),
       setFontFamily: (fontFamily) => set({ fontFamily }),

@@ -9,11 +9,11 @@
   --card-foreground: 210 20% 88%;
   --border: 215 15% 18%;
   --input: 215 15% 16%;
-  --primary: 174 72% 46%;
+  --primary: 0 72% 51%;
   --primary-foreground: 222 20% 8%;
   --muted: 215 15% 14%;
   --muted-foreground: 215 12% 52%;
-  --accent: 174 72% 46%;
+  --accent: 0 72% 51%;
   --accent-foreground: 222 20% 8%;
   /* Themeable font settings — overridden at runtime by ThemeProvider */
   --font-mono: 'JetBrains Mono', monospace;
