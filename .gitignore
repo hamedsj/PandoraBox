@@ -72,6 +72,8 @@ Desktop.ini
 *.o
 *.a
 *.prof
+.cache/
+pandorabox
 
 # Database
 *.db
