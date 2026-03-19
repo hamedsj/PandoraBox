@@ -141,9 +141,11 @@ func NewServer(cfg *config.Config, db *storage.DB, p *proxy.Proxy, intercept *pr
 	mcpSrv := mcpserver.NewMCPServer(
 		"PandoraBox",
 		"1.0.0",
+		mcpserver.WithResourceCapabilities(false, false),
 	)
 
 	s.mcp = mcpSrv
+	s.registerDocs()
 	s.registerTools()
 
 	return s
