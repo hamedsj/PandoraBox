@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/hamedsj5/pandorabox/internal/ca"
 	"github.com/hamedsj5/pandorabox/internal/config"
+	"github.com/hamedsj5/pandorabox/internal/events"
 	proj "github.com/hamedsj5/pandorabox/internal/project"
 	"github.com/hamedsj5/pandorabox/internal/proxy"
 	"github.com/hamedsj5/pandorabox/internal/storage"
@@ -49,6 +50,7 @@ type Server struct {
 	cfg       *config.Config
 	dbMu      sync.RWMutex
 	db        *storage.DB
+	bus       *events.Bus
 	proxy     *proxy.Proxy
 	intercept *proxy.InterceptQueue
 	ca        *ca.CA
@@ -118,10 +120,11 @@ func (s *Server) mcpEnabled() bool {
 	return !p.Config().MCPDisabled
 }
 
-func NewServer(cfg *config.Config, db *storage.DB, p *proxy.Proxy, intercept *proxy.InterceptQueue, authority *ca.CA) *Server {
+func NewServer(cfg *config.Config, db *storage.DB, bus *events.Bus, p *proxy.Proxy, intercept *proxy.InterceptQueue, authority *ca.CA) *Server {
 	s := &Server{
 		cfg:       cfg,
 		db:        db,
+		bus:       bus,
 		proxy:     p,
 		intercept: intercept,
 		ca:        authority,

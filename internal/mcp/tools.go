@@ -60,6 +60,19 @@ func (s *Server) registerTools() {
 		mcp.WithNumber("id", mcp.Description("Request ID"), mcp.Required()),
 	), s.toolGetRequest)
 
+	// get_websocket_session
+	s.mcp.AddTool(mcp.NewTool("get_websocket_session",
+		mcp.WithDescription("Get the WebSocket session associated with an HTTP upgrade request"),
+		mcp.WithNumber("request_id", mcp.Description("HTTP upgrade request ID"), mcp.Required()),
+	), s.toolGetWebSocketSession)
+
+	// get_websocket_frames
+	s.mcp.AddTool(mcp.NewTool("get_websocket_frames",
+		mcp.WithDescription("Get captured WebSocket frames for an HTTP upgrade request or session"),
+		mcp.WithNumber("request_id", mcp.Description("HTTP upgrade request ID")),
+		mcp.WithNumber("session_id", mcp.Description("WebSocket session ID")),
+	), s.toolGetWebSocketFrames)
+
 	// replay_request
 	s.mcp.AddTool(mcp.NewTool("replay_request",
 		mcp.WithDescription("Replay a captured request with optional modifications"),
@@ -261,6 +274,7 @@ func (s *Server) toolProxyStop(ctx context.Context, req mcp.CallToolRequest) (*m
 		return nil, fmt.Errorf("MCP access is disabled for this project")
 	}
 	s.proxy.Stop()
+	s.publishProxyStatus()
 	return jsonResult(map[string]interface{}{"success": true})
 }
 
@@ -326,6 +340,54 @@ func (s *Server) toolGetRequest(ctx context.Context, req mcp.CallToolRequest) (*
 	return jsonResult(r)
 }
 
+func (s *Server) toolGetWebSocketSession(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if !s.mcpEnabled() {
+		return nil, fmt.Errorf("MCP access is disabled for this project")
+	}
+	requestID, ok := req.Params.Arguments["request_id"].(float64)
+	if !ok {
+		return nil, fmt.Errorf("request_id required")
+	}
+
+	session, err := s.getDB().GetWebSocketSession(int64(requestID))
+	if err != nil {
+		return nil, err
+	}
+	return jsonResult(map[string]interface{}{"session": session})
+}
+
+func (s *Server) toolGetWebSocketFrames(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if !s.mcpEnabled() {
+		return nil, fmt.Errorf("MCP access is disabled for this project")
+	}
+
+	var sessionID int64
+	if raw, ok := req.Params.Arguments["session_id"].(float64); ok {
+		sessionID = int64(raw)
+	} else if raw, ok := req.Params.Arguments["request_id"].(float64); ok {
+		session, err := s.getDB().GetWebSocketSession(int64(raw))
+		if err != nil {
+			return nil, err
+		}
+		if session == nil {
+			return jsonResult(map[string]interface{}{"session": nil, "frames": []any{}})
+		}
+		sessionID = session.ID
+	} else {
+		return nil, fmt.Errorf("request_id or session_id required")
+	}
+
+	frames, err := s.getDB().ListWebSocketFrames(sessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	return jsonResult(map[string]interface{}{
+		"session_id": sessionID,
+		"frames":     frames,
+	})
+}
+
 func (s *Server) toolReplayRequest(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	if !s.mcpEnabled() {
 		return nil, fmt.Errorf("MCP access is disabled for this project")
@@ -389,6 +451,7 @@ func (s *Server) toolInterceptToggle(ctx context.Context, req mcp.CallToolReques
 	}
 	enabled, _ := req.Params.Arguments["enabled"].(bool)
 	s.intercept.SetEnabled(enabled)
+	s.publishProxyStatus()
 	return jsonResult(map[string]interface{}{"enabled": enabled})
 }
 
@@ -504,6 +567,8 @@ func (s *Server) toolDeleteRequest(ctx context.Context, req mcp.CallToolRequest)
 	if err := s.getDB().DeleteRequest(int64(id)); err != nil {
 		return nil, err
 	}
+	s.publishRequestDeleted(int64(id))
+	s.publishProxyStatus()
 	return jsonResult(map[string]interface{}{"success": true})
 }
 
@@ -625,6 +690,10 @@ func (s *Server) toolUpdateProject(ctx context.Context, req mcp.CallToolRequest)
 			return nil, fmt.Errorf("mcp port in use: %w", err)
 		}
 	}
+	s.publishProjectUpdated()
+	if proxyChanged {
+		s.publishProxyStatus()
+	}
 
 	return jsonResult(s.projectResult(mgr))
 }
@@ -662,6 +731,7 @@ func (s *Server) toolUpdateMatchReplace(ctx context.Context, req mcp.CallToolReq
 		return nil, err
 	}
 	s.proxy.SetMatchReplace(cfg.MatchReplace)
+	s.publishProjectUpdated()
 	return jsonResult(cfg.MatchReplace)
 }
 
@@ -698,6 +768,7 @@ func (s *Server) toolUpdateMiddleware(ctx context.Context, req mcp.CallToolReque
 		return nil, err
 	}
 	s.proxy.SetMiddleware(cfg.Middleware)
+	s.publishProjectUpdated()
 	return jsonResult(cfg.Middleware)
 }
 
@@ -763,6 +834,7 @@ func (s *Server) toolSaveFlow(ctx context.Context, req mcp.CallToolRequest) (*mc
 	if err := mgr.Save(cfg); err != nil {
 		return nil, err
 	}
+	s.publishProjectUpdated()
 	return jsonResult(flow)
 }
 
@@ -795,6 +867,7 @@ func (s *Server) toolDeleteFlow(ctx context.Context, req mcp.CallToolRequest) (*
 	if err := mgr.Save(cfg); err != nil {
 		return nil, err
 	}
+	s.publishProjectUpdated()
 	return jsonResult(map[string]interface{}{"success": true})
 }
 

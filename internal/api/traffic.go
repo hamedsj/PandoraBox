@@ -68,6 +68,8 @@ func (s *Server) deleteRequest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.publishRequestDeleted(id)
+	s.publishProxyStatus()
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true})
 }

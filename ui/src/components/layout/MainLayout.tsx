@@ -13,7 +13,7 @@ export function MainLayout() {
   useWebSocket()
   useKeyboardShortcuts()
   const setStatus = useProxyStore((s) => s.setStatus)
-  const setProject = useProxyStore((s) => s.setProject)
+  const syncProject = useProxyStore((s) => s.syncProject)
   const setFlows = useFlowsStore((s) => s.setFlows)
   const toggleConsole = useConsoleStore((s) => s.toggle)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -22,10 +22,10 @@ export function MainLayout() {
   // Load project on mount
   useEffect(() => {
     api.project.get().then((p) => {
-      setProject(p)
+      syncProject(p)
       setFlows(p.flows ?? [])
     }).catch(console.error)
-  }, [setProject, setFlows])
+  }, [syncProject, setFlows])
 
   // Poll proxy status
   useEffect(() => {

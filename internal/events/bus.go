@@ -12,7 +12,9 @@ const (
 	EventInterceptHeld     EventType = "intercept.held"
 	EventInterceptResolved EventType = "intercept.resolved"
 	EventProxyStatus       EventType = "proxy.status"
+	EventProjectUpdated    EventType = "project.updated"
 	EventProjectSwitched   EventType = "project.switched"
+	EventRequestDeleted    EventType = "request.deleted"
 
 	EventWebSocketFrame         EventType = "websocket.frame"
 	EventWebSocketSessionOpened EventType = "websocket.session.opened"
@@ -22,7 +24,7 @@ const (
 )
 
 type ConsoleOutputData struct {
-	Source    string `json:"source"`    // "middleware" | "flow"
+	Source    string `json:"source"` // "middleware" | "flow"
 	Text      string `json:"text"`
 	Timestamp string `json:"timestamp"` // RFC3339Nano UTC
 }

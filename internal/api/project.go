@@ -149,6 +149,10 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	s.publishProjectUpdated()
+	if body.Proxy != nil {
+		s.publishProxyStatus()
+	}
 
 	writeJSON(w, http.StatusOK, projectInfoResponse{
 		Name:         cfg.Name,

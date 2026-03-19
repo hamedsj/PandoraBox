@@ -166,7 +166,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	apiServer.SetProject(projectMgr, appCfg)
 
 	// MCP server
-	mcpServer := mcpsrv.NewServer(cfg, db, proxyEngine, interceptQueue, authority)
+	mcpServer := mcpsrv.NewServer(cfg, db, bus, proxyEngine, interceptQueue, authority)
 	mcpServer.SetProject(projectMgr, appCfg)
 	mcpServer.SetSwitchProjectFn(apiServer.SwitchProject)
 	apiServer.SetMCPServer(mcpServer)

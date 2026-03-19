@@ -87,6 +87,32 @@ Arguments:
 
 - `id` required
 
+### `get_websocket_session`
+
+Gets the WebSocket session associated with one captured HTTP upgrade request.
+
+Arguments:
+
+- `request_id` required
+
+Use this after `list_requests` or `get_request` when a request is tagged as WebSocket traffic.
+
+### `get_websocket_frames`
+
+Gets captured WebSocket frames for one session.
+
+Arguments:
+
+- `request_id`
+- `session_id`
+
+Provide either:
+
+- `request_id` to resolve the session from the original HTTP upgrade request
+- `session_id` if you already know the session id
+
+Returns raw captured frames, including `direction`, `opcode`, `fin`, `payload`, `length`, `truncated`, and `timestamp`.
+
 ### `delete_request`
 
 Deletes one captured request and its response.

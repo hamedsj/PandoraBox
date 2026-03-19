@@ -51,6 +51,70 @@ const status = {
 
 type SettingsTab = 'appearance' | 'shortcuts' | 'certificate' | 'proxy' | 'mcp'
 
+interface MCPClientTip {
+  name: string
+  summary: string
+  command?: string
+  configLabel?: string
+  config?: string
+  notes: string[]
+}
+
+function buildMCPClientTips(endpoint: string): MCPClientTip[] {
+  return [
+    {
+      name: 'Claude Code',
+      summary: 'Add PandoraBox as a remote HTTP MCP server from the Claude Code CLI.',
+      command: `claude mcp add --transport http pandorabox ${endpoint}`,
+      notes: [
+        'Run `claude mcp list` to verify it was added.',
+        'If you want it across projects, add `--scope user`.',
+        'If the server ever requires auth in the future, use `/mcp` inside Claude Code.',
+      ],
+    },
+    {
+      name: 'Gemini CLI',
+      summary: 'Gemini supports remote MCP over HTTP and can add it directly from the terminal.',
+      command: `gemini mcp add --transport http pandorabox ${endpoint}`,
+      notes: [
+        'Use `--scope user` if you want the server in `~/.gemini/settings.json` instead of project scope.',
+        'Run `gemini mcp list` after adding it.',
+        'Restart Gemini in the project after changing MCP config.',
+      ],
+    },
+    {
+      name: 'Codex',
+      summary: 'Codex can add remote MCP servers from the CLI or through `~/.codex/config.toml`.',
+      command: `codex mcp add pandorabox --url ${endpoint}`,
+      configLabel: '~/.codex/config.toml',
+      config: `[mcp_servers.pandorabox]
+url = "${endpoint}"`,
+      notes: [
+        'Run `codex mcp list` to confirm the server is registered.',
+        'CLI and IDE extension share the same Codex MCP configuration.',
+      ],
+    },
+    {
+      name: 'Qwen Code',
+      summary: 'Qwen supports remote streamable HTTP MCP servers from CLI or settings JSON.',
+      command: `qwen mcp add --transport http pandorabox ${endpoint}`,
+      configLabel: '.qwen/settings.json or ~/.qwen/settings.json',
+      config: `{
+  "mcpServers": {
+    "pandorabox": {
+      "httpUrl": "${endpoint}"
+    }
+  }
+}`,
+      notes: [
+        'Use `--scope user` if you want the server available across projects.',
+        'Open `qwen mcp` to manage configured servers.',
+        'Restart Qwen Code after adding the server.',
+      ],
+    },
+  ]
+}
+
 export function SettingsPage() {
   const {
     mode,
@@ -211,6 +275,7 @@ export function SettingsPage() {
       : 'Ready'
   const mcpEndpoint = mcpStatus?.endpoint || `http://localhost:${mcpPort}/mcp`
   const legacySSEEndpoint = mcpStatus?.legacy_sse_endpoint || `http://localhost:${mcpPort}/sse`
+  const mcpClientTips = buildMCPClientTips(mcpEndpoint)
 
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6 overflow-auto h-full">
@@ -700,7 +765,7 @@ export function SettingsPage() {
         <section className="bg-card rounded-lg border border-border p-5 space-y-4">
           <div className="flex items-center gap-2">
             <Bot className="w-4 h-4" />
-            <h2 className="text-sm font-medium">Claude / MCP Integration</h2>
+            <h2 className="text-sm font-medium">MCP Integration</h2>
           </div>
 
           <div className="space-y-4">
@@ -829,7 +894,7 @@ export function SettingsPage() {
               </div>
             </div>
 
-            {/* Claude Desktop config snippet */}
+            {/* Generic client config snippet */}
             <div className="bg-muted/50 rounded-lg p-4 border border-border space-y-2">
               <div className="text-sm font-medium">MCP Client Config</div>
               <p className="text-xs text-muted-foreground">
@@ -852,6 +917,78 @@ export function SettingsPage() {
                 >
                   Copy
                 </button>
+              </div>
+            </div>
+
+            {/* Assistant-specific setup tips */}
+            <div className="bg-muted/50 rounded-lg p-4 border border-border space-y-4">
+              <div>
+                <div className="text-sm font-medium">Assistant Setup Tips</div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Quick copy-paste commands and config snippets for common MCP clients.
+                </p>
+              </div>
+
+              <div className="grid gap-3 xl:grid-cols-2">
+                {mcpClientTips.map((tip) => (
+                  <div key={tip.name} className="rounded-xl border border-border bg-background/70 p-4 space-y-3">
+                    <div className="space-y-1">
+                      <div className="text-sm font-medium text-foreground">{tip.name}</div>
+                      <p className="text-xs text-muted-foreground">{tip.summary}</p>
+                    </div>
+
+                    {tip.command && (
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">CLI Command</div>
+                          <button
+                            onClick={() => navigator.clipboard.writeText(tip.command!)}
+                            className="text-xs text-muted-foreground hover:text-foreground"
+                            title="Copy to clipboard"
+                          >
+                            Copy
+                          </button>
+                        </div>
+                        <pre className="overflow-x-auto rounded-md border border-border bg-card px-3 py-2 text-xs font-mono text-foreground whitespace-pre-wrap break-all">
+{tip.command}
+                        </pre>
+                      </div>
+                    )}
+
+                    {tip.config && (
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
+                            Config Snippet
+                            {tip.configLabel ? ` · ${tip.configLabel}` : ''}
+                          </div>
+                          <button
+                            onClick={() => navigator.clipboard.writeText(tip.config!)}
+                            className="text-xs text-muted-foreground hover:text-foreground"
+                            title="Copy to clipboard"
+                          >
+                            Copy
+                          </button>
+                        </div>
+                        <pre className="overflow-x-auto rounded-md border border-border bg-card px-3 py-2 text-xs font-mono text-foreground whitespace-pre-wrap break-all">
+{tip.config}
+                        </pre>
+                      </div>
+                    )}
+
+                    <div className="space-y-1">
+                      {tip.notes.map((note) => (
+                        <p key={note} className="text-xs text-muted-foreground">
+                          {note}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="rounded-xl border border-border bg-background/50 px-3 py-2 text-xs text-muted-foreground">
+                Prefer the primary HTTP endpoint when the client supports it. The SSE endpoint is shown above only for older compatibility cases.
               </div>
             </div>
           </div>

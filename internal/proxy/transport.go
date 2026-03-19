@@ -412,6 +412,9 @@ func (p *Proxy) ReplayRequest(reqID int64, modHeaders map[string]string, modBody
 	replay.Response = respRecord
 	replay.Request = newReqCapture
 
+	p.bus.Publish(events.Event{Type: events.EventRequestCaptured, Data: newReqCapture})
+	p.bus.Publish(events.Event{Type: events.EventResponseReceived, Data: respRecord})
+
 	return replay, nil
 }
 

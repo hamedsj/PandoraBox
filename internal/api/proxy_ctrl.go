@@ -3,8 +3,6 @@ package api
 import (
 	"encoding/json"
 	"net/http"
-
-	"github.com/hamedsj5/pandorabox/internal/events"
 )
 
 func (s *Server) proxyStart(w http.ResponseWriter, r *http.Request) {
@@ -18,10 +16,7 @@ func (s *Server) proxyStart(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) proxyStop(w http.ResponseWriter, r *http.Request) {
 	s.proxy.Stop()
-	s.bus.Publish(events.Event{
-		Type: events.EventProxyStatus,
-		Data: map[string]interface{}{"running": false},
-	})
+	s.publishProxyStatus()
 	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true})
 }
 
@@ -48,6 +43,7 @@ func (s *Server) proxyConfig(w http.ResponseWriter, r *http.Request) {
 	if body.InterceptEnabled != nil {
 		s.intercept.SetEnabled(*body.InterceptEnabled)
 	}
+	s.publishProxyStatus()
 	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true})
 }
 

@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Plus, Play, Square, Trash2, GitBranch, Globe, Code2, Variable } from 'lucide-react'
 import { useFlowsStore } from '@/store/flows'
 import { useProxyStore } from '@/store/proxy'
@@ -29,6 +29,11 @@ export function FlowsPage() {
   const selectedFlow = flows.find((f) => f.id === selectedFlowId) ?? null
   const runState: FlowRunState | undefined = selectedFlowId ? runStates[selectedFlowId] : undefined
   const isRunning = runState?.status === 'running'
+
+  useEffect(() => {
+    if (selectedFlowId && flows.some((flow) => flow.id === selectedFlowId)) return
+    setSelectedFlowId(flows[0]?.id ?? null)
+  }, [flows, selectedFlowId])
 
   async function saveFlows(updatedFlows: Flow[]) {
     setSaving(true)

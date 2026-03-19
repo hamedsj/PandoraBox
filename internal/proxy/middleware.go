@@ -458,7 +458,9 @@ func (r *MiddlewareRunner) buildScriptForConfig(cfg proj.MiddlewareConfig) strin
 
 	var sb strings.Builder
 
-	sb.WriteString("import sys, json, base64, traceback\n\n")
+	sb.WriteString("import sys, json, base64, traceback\n")
+	sb.WriteString("_stdout = sys.stdout\n")
+	sb.WriteString("sys.stdout = sys.stderr  # user prints -> stderr (captured for Console)\n\n")
 	sb.WriteString("class Packet:\n    def __init__(self, **kw):\n        self.__dict__.update(kw)\n\n")
 	sb.WriteString("# -- Node definitions --\n")
 
@@ -536,10 +538,12 @@ for line in sys.stdin:
                    "payload_b64":base64.b64encode(p.payload).decode(),"error":""}
         else:
             out = {"id":msg.get("id",""),"ok":False,"error":f"unknown type {t}"}
-        print(json.dumps(out), flush=True)
+        _stdout.write(json.dumps(out) + "\n")
+        _stdout.flush()
     except Exception as e:
-        print(json.dumps({"id":msg.get("id",""),"ok":False,
-                          "error":str(e),"trace":traceback.format_exc()}),flush=True)
+        _stdout.write(json.dumps({"id":msg.get("id",""),"ok":False,
+                          "error":str(e),"trace":traceback.format_exc()}) + "\n")
+        _stdout.flush()
 `)
 
 	return sb.String()

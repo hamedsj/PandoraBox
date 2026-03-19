@@ -34,8 +34,8 @@ const DEFAULT_TEMPLATES: Record<MiddlewareNode['type'], string> = {
     WebSocket Client→Server Frame Middleware
     Active rewrite: the peer receives your returned payload.
 
-    packet.direction  (str)   Always "c2s"
-    packet.opcode     (int)   1=text 2=binary
+    packet.direction  (str)   Always "ws_c2s"
+    packet.opcode     (int)   WebSocket frame opcode (1=text, 2=binary, 0=continuation, etc.)
     packet.payload    (bytes) Unmasked frame payload
     """
     return packet`,
@@ -44,8 +44,8 @@ const DEFAULT_TEMPLATES: Record<MiddlewareNode['type'], string> = {
     WebSocket Server→Client Frame Middleware
     Active rewrite: the browser receives your returned payload.
 
-    packet.direction  (str)   Always "s2c"
-    packet.opcode     (int)   1=text 2=binary
+    packet.direction  (str)   Always "ws_s2c"
+    packet.opcode     (int)   WebSocket frame opcode (1=text, 2=binary, 0=continuation, etc.)
     packet.payload    (bytes) Frame payload bytes
     """
     return packet`,
@@ -100,7 +100,7 @@ export function MiddlewareTab() {
       api.project.get().then((p) => load(p.middleware ?? emptyConfig())).catch(() => {})
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project?.path])
+  }, [project?.path, project?.middleware])
 
   const isDirty = JSON.stringify(local) !== JSON.stringify(saved)
 

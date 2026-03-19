@@ -13,7 +13,7 @@ interface WSEvent {
 export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
-  const { prependRequest, setStatus, setProject, setRequests, appendWsFrame } = useProxyStore()
+  const { prependRequest, removeRequest, setStatus, syncProject, setRequests, appendWsFrame } = useProxyStore()
   const setFlows = useFlowsStore((s) => s.setFlows)
 
   const connect = useCallback(() => {
@@ -51,14 +51,23 @@ export function useWebSocket() {
     } else if (evt.type === 'proxy.status') {
       const status = evt.data as ProxyStatus
       setStatus(status)
+    } else if (evt.type === 'project.updated') {
+      const project = evt.data as import('@/api/client').ProjectInfo
+      syncProject(project)
+      setFlows(project.flows ?? [])
     } else if (evt.type === 'project.switched') {
       api.project.get().then((p) => {
-        setProject(p)
+        syncProject(p)
         setRequests([])
         setFlows(p.flows ?? [])
       }).catch(console.error)
     } else if (evt.type === 'websocket.frame') {
       appendWsFrame(evt.data as WebSocketFrame)
+    } else if (evt.type === 'request.deleted') {
+      const data = evt.data as { id?: number }
+      if (typeof data?.id === 'number') {
+        removeRequest(data.id)
+      }
     } else if (evt.type === 'console.output') {
       useConsoleStore.getState().append(evt.data as { source: 'middleware' | 'flow'; text: string; timestamp: string })
     }

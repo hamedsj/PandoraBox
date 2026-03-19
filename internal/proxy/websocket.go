@@ -257,11 +257,11 @@ func copyWebSocketFrames(
 		wireFrame = append(wireFrame, maskKey...)
 		wireFrame = append(wireFrame, rawPayload...)
 
-		// Apply middleware only to standalone, uncompressed data messages.
-		// Rewriting compressed or fragmented frames would corrupt the wire format.
+		// Apply middleware to every frame payload exactly as seen on the wire
+		// after unmasking. This lets users inspect or rewrite raw compressed,
+		// fragmented, continuation, and control frame bytes if they want to.
 		outPayload := payload
-		canRewrite := fin == 1 && rsv1 == 0 && (opcode == 1 || opcode == 2)
-		if proxy != nil && canRewrite {
+		if proxy != nil {
 			if mw := proxy.getMiddlewareRunner(); mw != nil {
 				if modified, err := mw.ProcessWSFrame(mwDir, opcode, payload); err != nil {
 					slog.Warn("WS middleware error", "dir", direction, "err", err)
