@@ -14,6 +14,18 @@ import (
 )
 
 func (s *Server) registerTools() {
+	// list_docs
+	s.mcp.AddTool(mcp.NewTool("list_docs",
+		mcp.WithDescription("List built-in PandoraBox MCP documentation topics for tool usage, project schemas, middleware, and flows"),
+	), s.toolListDocs)
+
+	// get_doc
+	s.mcp.AddTool(mcp.NewTool("get_doc",
+		mcp.WithDescription("Read one built-in PandoraBox MCP documentation topic"),
+		mcp.WithString("topic", mcp.Description(`Documentation topic id: "overview", "tools", "project-schemas", "middleware", or "flows"`)),
+		mcp.WithString("id", mcp.Description("Alias for topic")),
+	), s.toolGetDoc)
+
 	// proxy_status
 	s.mcp.AddTool(mcp.NewTool("proxy_status",
 		mcp.WithDescription("Get proxy status"),
