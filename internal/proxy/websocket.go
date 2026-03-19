@@ -149,10 +149,10 @@ func (p *Proxy) handleWebSocketUpgrade(
 	// Relay frames in both directions concurrently.
 	errCh := make(chan error, 2)
 	go func() {
-		errCh <- copyWebSocketFrames(upstreamConn, clientBR, "c2s", sessionID, db, p.bus, wsCompression.ClientCompressed(), p)
+		errCh <- copyWebSocketFrames(upstreamConn, clientBR, "c2s", sessionID, db, p.bus, wsCompression, p)
 	}()
 	go func() {
-		errCh <- copyWebSocketFrames(clientConn, upstreamBR, "s2c", sessionID, db, p.bus, wsCompression.ServerCompressed(), p)
+		errCh <- copyWebSocketFrames(clientConn, upstreamBR, "s2c", sessionID, db, p.bus, wsCompression, p)
 	}()
 
 	// Wait for either direction to finish (connection closed or error).
@@ -179,9 +179,13 @@ func copyWebSocketFrames(
 	sessionID int64,
 	db *storage.DB,
 	bus *events.Bus,
-	deflate wsDirectionCompression,
+	compression wsCompressionConfig,
 	proxy *Proxy,
 ) error {
+	deflate := compression.ClientCompressed()
+	if direction == "s2c" {
+		deflate = compression.ServerCompressed()
+	}
 	var decomp *wsDecompressor
 	if deflate.Enabled {
 		decomp = &wsDecompressor{noContextTakeover: deflate.NoContextTakeover}
@@ -263,7 +267,17 @@ func copyWebSocketFrames(
 		outPayload := payload
 		if proxy != nil {
 			if mw := proxy.getMiddlewareRunner(); mw != nil {
-				if modified, err := mw.ProcessWSFrame(mwDir, opcode, payload); err != nil {
+				meta := WSFrameMeta{
+					SessionID:               sessionID,
+					Fin:                     fin,
+					RSV1:                    rsv1 == 1,
+					Compressed:              rsv1 == 1,
+					CompressionEnabled:      compression.enabled,
+					NoContextTakeover:       deflate.NoContextTakeover,
+					ClientNoContextTakeover: compression.clientNoContextTakeover,
+					ServerNoContextTakeover: compression.serverNoContextTakeover,
+				}
+				if modified, err := mw.ProcessWSFrame(mwDir, opcode, payload, meta); err != nil {
 					slog.Warn("WS middleware error", "dir", direction, "err", err)
 				} else {
 					outPayload = modified

@@ -81,7 +81,7 @@ export function ConsolePanel() {
   const virtualizer = useVirtualizer({
     count: filtered.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => 22,
+    estimateSize: () => 28,
     overscan: 10,
   })
 
@@ -178,14 +178,22 @@ export function ConsolePanel() {
                   return (
                     <div
                       key={entry.id}
-                      className="absolute top-0 left-0 right-0 flex items-baseline px-3 font-mono text-xs leading-5"
+                      data-index={item.index}
+                      ref={(node) => {
+                        if (node) virtualizer.measureElement(node)
+                      }}
+                      className="absolute top-0 left-0 right-0 px-3 py-0.5 font-mono text-xs leading-5"
                       style={{ transform: `translateY(${item.start}px)` }}
                     >
-                      <span className="text-muted-foreground mr-2 shrink-0 tabular-nums">
-                        {formatTimestamp(entry.timestamp)}
-                      </span>
-                      <SourceBadge source={entry.source} />
-                      <span className="text-foreground break-all">{entry.text}</span>
+                      <div className="grid grid-cols-[auto_auto_1fr] items-start gap-x-2">
+                        <span className="text-muted-foreground shrink-0 tabular-nums">
+                          {formatTimestamp(entry.timestamp)}
+                        </span>
+                        <SourceBadge source={entry.source} />
+                        <span className="min-w-0 whitespace-pre-wrap break-all text-foreground">
+                          {entry.text}
+                        </span>
+                      </div>
                     </div>
                   )
                 })}

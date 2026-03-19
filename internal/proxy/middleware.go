@@ -36,6 +36,17 @@ type middlewareResult struct {
 	err     error
 }
 
+type WSFrameMeta struct {
+	SessionID               int64
+	Fin                     int
+	RSV1                    bool
+	Compressed              bool
+	CompressionEnabled      bool
+	NoContextTakeover       bool
+	ClientNoContextTakeover bool
+	ServerNoContextTakeover bool
+}
+
 // MiddlewareRunner manages a persistent Python subprocess that processes
 // HTTP and WebSocket packets through user-defined node chains.
 type MiddlewareRunner struct {
@@ -181,7 +192,7 @@ func (r *MiddlewareRunner) ProcessResponse(statusCode int, statusText string, he
 
 // ProcessWSFrame passes a WebSocket frame through the middleware chain.
 // direction must be "ws_c2s" or "ws_s2c".
-func (r *MiddlewareRunner) ProcessWSFrame(direction string, opcode int, payload []byte) ([]byte, error) {
+func (r *MiddlewareRunner) ProcessWSFrame(direction string, opcode int, payload []byte, meta WSFrameMeta) ([]byte, error) {
 	r.mu.Lock()
 	started := r.started
 	r.mu.Unlock()
@@ -190,8 +201,16 @@ func (r *MiddlewareRunner) ProcessWSFrame(direction string, opcode int, payload 
 	}
 
 	resp, err := r.call(direction, map[string]any{
-		"opcode":      opcode,
-		"payload_b64": base64.StdEncoding.EncodeToString(payload),
+		"opcode":                     opcode,
+		"payload_b64":                base64.StdEncoding.EncodeToString(payload),
+		"session_id":                 meta.SessionID,
+		"fin":                        meta.Fin,
+		"rsv1":                       meta.RSV1,
+		"compressed":                 meta.Compressed,
+		"compression_enabled":        meta.CompressionEnabled,
+		"no_context_takeover":        meta.NoContextTakeover,
+		"client_no_context_takeover": meta.ClientNoContextTakeover,
+		"server_no_context_takeover": meta.ServerNoContextTakeover,
 	})
 	if err != nil {
 		return payload, err
@@ -532,7 +551,19 @@ for line in sys.stdin:
                    "status_text":p.status_text,"headers":p.headers,
                    "body_b64":base64.b64encode(p.body).decode(),"error":""}
         elif t in ("ws_c2s","ws_s2c"):
-            p = Packet(direction=t, opcode=msg["opcode"], payload=pay)
+            p = Packet(
+                direction=t,
+                opcode=msg["opcode"],
+                payload=pay,
+                session_id=msg.get("session_id", 0),
+                fin=msg.get("fin", 1),
+                rsv1=msg.get("rsv1", False),
+                compressed=msg.get("compressed", False),
+                compression_enabled=msg.get("compression_enabled", False),
+                no_context_takeover=msg.get("no_context_takeover", False),
+                client_no_context_takeover=msg.get("client_no_context_takeover", False),
+                server_no_context_takeover=msg.get("server_no_context_takeover", False),
+            )
             p = run_chain(CHAINS[t], p)
             out = {"id":msg["id"],"ok":True,
                    "payload_b64":base64.b64encode(p.payload).decode(),"error":""}

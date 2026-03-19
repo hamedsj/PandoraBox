@@ -34,9 +34,17 @@ const DEFAULT_TEMPLATES: Record<MiddlewareNode['type'], string> = {
     WebSocket Client→Server Frame Middleware
     Active rewrite: the peer receives your returned payload.
 
-    packet.direction  (str)   Always "ws_c2s"
-    packet.opcode     (int)   WebSocket frame opcode (1=text, 2=binary, 0=continuation, etc.)
-    packet.payload    (bytes) Unmasked frame payload
+    packet.direction                  (str)   Always "ws_c2s"
+    packet.session_id                 (int)   Captured WebSocket session id
+    packet.opcode                     (int)   WebSocket frame opcode (1=text, 2=binary, 0=continuation, etc.)
+    packet.fin                        (int)   1 if final frame in the message, else 0
+    packet.rsv1                       (bool)  True when the frame sets RSV1
+    packet.compressed                 (bool)  True when RSV1 is set on this frame
+    packet.compression_enabled        (bool)  True when permessage-deflate was negotiated
+    packet.no_context_takeover        (bool)  Direction-specific no-context-takeover flag
+    packet.client_no_context_takeover (bool)  Negotiated client flag
+    packet.server_no_context_takeover (bool)  Negotiated server flag
+    packet.payload                    (bytes) Exact unmasked frame payload bytes
     """
     return packet`,
   ws_s2c: `def process(packet):
@@ -44,9 +52,17 @@ const DEFAULT_TEMPLATES: Record<MiddlewareNode['type'], string> = {
     WebSocket Server→Client Frame Middleware
     Active rewrite: the browser receives your returned payload.
 
-    packet.direction  (str)   Always "ws_s2c"
-    packet.opcode     (int)   WebSocket frame opcode (1=text, 2=binary, 0=continuation, etc.)
-    packet.payload    (bytes) Frame payload bytes
+    packet.direction                  (str)   Always "ws_s2c"
+    packet.session_id                 (int)   Captured WebSocket session id
+    packet.opcode                     (int)   WebSocket frame opcode (1=text, 2=binary, 0=continuation, etc.)
+    packet.fin                        (int)   1 if final frame in the message, else 0
+    packet.rsv1                       (bool)  True when the frame sets RSV1
+    packet.compressed                 (bool)  True when RSV1 is set on this frame
+    packet.compression_enabled        (bool)  True when permessage-deflate was negotiated
+    packet.no_context_takeover        (bool)  Direction-specific no-context-takeover flag
+    packet.client_no_context_takeover (bool)  Negotiated client flag
+    packet.server_no_context_takeover (bool)  Negotiated server flag
+    packet.payload                    (bytes) Exact frame payload bytes
     """
     return packet`,
 }

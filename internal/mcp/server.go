@@ -66,6 +66,9 @@ type Server struct {
 
 	sessions sync.Map
 
+	consoleMu      sync.RWMutex
+	consoleEntries []events.ConsoleOutputData
+
 	projectMu       sync.RWMutex
 	project         *proj.Manager
 	appCfg          *proj.AppConfig
@@ -148,6 +151,7 @@ func NewServer(cfg *config.Config, db *storage.DB, bus *events.Bus, p *proxy.Pro
 	)
 
 	s.mcp = mcpSrv
+	s.startConsoleCapture()
 	s.registerDocs()
 	s.registerTools()
 

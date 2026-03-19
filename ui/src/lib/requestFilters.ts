@@ -1,6 +1,7 @@
 import type { Request, ScopeConfig } from '@/api/client'
 import type { RequestFilters } from '@/store/proxy'
 import { decodeBodyBytes, type RawBody } from '@/lib/httpBodies'
+import { isWebSocketRequest } from '@/lib/requestTags'
 
 function bytesToText(body: RawBody): string {
   return decodeBodyBytes(body)
@@ -105,11 +106,7 @@ export function isInScope(host: string, path: string, scope: ScopeConfig): boole
 }
 
 export function isWebSocket(req: Request): boolean {
-  try {
-    return (JSON.parse(req.tags) as string[]).includes('websocket')
-  } catch {
-    return false
-  }
+  return isWebSocketRequest(req)
 }
 
 export function countActiveFilters(filters: RequestFilters): number {

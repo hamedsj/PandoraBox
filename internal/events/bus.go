@@ -15,6 +15,8 @@ const (
 	EventProjectUpdated    EventType = "project.updated"
 	EventProjectSwitched   EventType = "project.switched"
 	EventRequestDeleted    EventType = "request.deleted"
+	EventRequestUpdated    EventType = "request.updated"
+	EventRequestsCleared   EventType = "requests.cleared"
 
 	EventWebSocketFrame         EventType = "websocket.frame"
 	EventWebSocketSessionOpened EventType = "websocket.session.opened"

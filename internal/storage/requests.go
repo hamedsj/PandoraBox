@@ -176,12 +176,123 @@ func (db *DB) ListRequests(f RequestFilter) ([]*Request, int, error) {
 }
 
 func (db *DB) DeleteRequest(id int64) error {
-	_, err := db.Exec(`DELETE FROM requests WHERE id = ?`, id)
+	return db.DeleteRequests([]int64{id})
+}
+
+func (db *DB) UpdateRequestTags(id int64, tags string) error {
+	_, err := db.Exec(`UPDATE requests SET tags = ? WHERE id = ?`, tags, id)
 	return err
+}
+
+func (db *DB) DeleteRequests(ids []int64) error {
+	if len(ids) == 0 {
+		return nil
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if err := deleteRequestsTx(tx, ids); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func (db *DB) ClearRequests() error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`DELETE FROM websocket_frames`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM websocket_sessions`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM intercept_queue`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM replays`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM responses`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM requests`); err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
 func (db *DB) CountRequests() (int64, error) {
 	var n int64
 	err := db.QueryRow(`SELECT COUNT(*) FROM requests`).Scan(&n)
 	return n, err
+}
+
+func deleteRequestsTx(tx *sql.Tx, ids []int64) error {
+	placeholders := make([]string, 0, len(ids))
+	args := make([]interface{}, 0, len(ids))
+	for _, id := range ids {
+		placeholders = append(placeholders, "?")
+		args = append(args, id)
+	}
+	inClause := strings.Join(placeholders, ", ")
+
+	if _, err := tx.Exec(
+		fmt.Sprintf(`DELETE FROM websocket_frames WHERE session_id IN (SELECT id FROM websocket_sessions WHERE request_id IN (%s))`, inClause),
+		args...,
+	); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(
+		fmt.Sprintf(`DELETE FROM websocket_sessions WHERE request_id IN (%s)`, inClause),
+		args...,
+	); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(
+		fmt.Sprintf(`DELETE FROM intercept_queue WHERE request_id IN (%s)`, inClause),
+		args...,
+	); err != nil {
+		return err
+	}
+
+	replayArgs := make([]interface{}, 0, len(args)*3)
+	replayArgs = append(replayArgs, args...)
+	replayArgs = append(replayArgs, args...)
+	replayArgs = append(replayArgs, args...)
+	if _, err := tx.Exec(
+		fmt.Sprintf(
+			`DELETE FROM replays
+			 WHERE request_id IN (%[1]s)
+			    OR origin_request_id IN (%[1]s)
+			    OR response_id IN (SELECT id FROM responses WHERE request_id IN (%[1]s))`,
+			inClause,
+		),
+		replayArgs...,
+	); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(
+		fmt.Sprintf(`DELETE FROM responses WHERE request_id IN (%s)`, inClause),
+		args...,
+	); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(
+		fmt.Sprintf(`DELETE FROM requests WHERE id IN (%s)`, inClause),
+		args...,
+	); err != nil {
+		return err
+	}
+
+	return nil
 }

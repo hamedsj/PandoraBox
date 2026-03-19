@@ -179,6 +179,17 @@ Arguments:
 
 Lists requests currently held in the intercept queue.
 
+### `get_console_output`
+
+Gets recent console output produced by middleware and flows.
+
+Arguments:
+
+- `source`, optional `middleware` or `flow`
+- `limit`, optional max number of recent entries
+
+Use this when the MCP client needs to inspect `print()` output or Python errors emitted by middleware and flow execution.
+
 ### `intercept_forward`
 
 Forwards one held request.

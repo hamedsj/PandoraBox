@@ -13,7 +13,7 @@ interface WSEvent {
 export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
-  const { prependRequest, removeRequest, setStatus, syncProject, setRequests, appendWsFrame } = useProxyStore()
+  const { prependRequest, updateRequest, removeRequest, clearRequests, setStatus, syncProject, setRequests, appendWsFrame } = useProxyStore()
   const setFlows = useFlowsStore((s) => s.setFlows)
 
   const connect = useCallback(() => {
@@ -68,6 +68,13 @@ export function useWebSocket() {
       if (typeof data?.id === 'number') {
         removeRequest(data.id)
       }
+    } else if (evt.type === 'request.updated') {
+      const req = evt.data as Request
+      if (req?.id) {
+        updateRequest(req)
+      }
+    } else if (evt.type === 'requests.cleared') {
+      clearRequests()
     } else if (evt.type === 'console.output') {
       useConsoleStore.getState().append(evt.data as { source: 'middleware' | 'flow'; text: string; timestamp: string })
     }

@@ -2,6 +2,8 @@
 
 This document records the JSON shapes used by PandoraBox MCP tools. These are the shapes accepted by `update_project`, `update_match_replace`, `update_middleware`, and `save_flow`.
 
+It also records a few runtime data shapes that are useful when reading MCP results or writing middleware.
+
 ## ProxyConfig
 
 ```json
@@ -105,6 +107,7 @@ Rules:
 
 - `type` is one of `request`, `response`, `ws_c2s`, `ws_s2c`
 - `code` must define `process(packet)`
+- WebSocket node runtime packets now also expose frame metadata such as `session_id`, `fin`, `rsv1`, `compressed`, and context-takeover flags. That runtime shape is described below.
 
 ## MiddlewareEdge
 
@@ -161,6 +164,81 @@ Rules:
 ```
 
 `variables` are default seed variables for interpolation and process steps. `run_flow` can add or override them with `variables_json`.
+
+## WebSocketSession Result Shape
+
+`get_websocket_session` returns:
+
+```json
+{
+  "id": 1,
+  "request_id": 161,
+  "created_at": "2026-03-17T23:28:47Z",
+  "closed_at": null
+}
+```
+
+## WebSocketFrame Result Shape
+
+`get_websocket_frames` returns frame objects like:
+
+```json
+{
+  "id": 10,
+  "session_id": 1,
+  "direction": "c2s",
+  "opcode": 2,
+  "fin": 1,
+  "payload": "base64-or-byte-json-depending-client",
+  "length": 105,
+  "truncated": false,
+  "timestamp": "2026-03-17T23:49:56Z"
+}
+```
+
+Rules:
+
+- `direction` is `c2s` or `s2c`
+- `opcode` is the WebSocket frame opcode
+- `payload` is the stored raw frame payload bytes
+- `length` is the original payload size before any truncation
+- `truncated` indicates capture truncation
+
+## Console Output Result Shape
+
+`get_console_output` returns entries like:
+
+```json
+{
+  "source": "middleware",
+  "text": "decoded frame metadata ...",
+  "timestamp": "2026-03-19T12:34:56.123456Z"
+}
+```
+
+Rules:
+
+- `source` is `middleware` or `flow`
+- entries are stored in-memory, not in the project database
+- `get_console_output(limit=...)` returns recent entries only
+
+## WebSocket Middleware Runtime Packet Shape
+
+For WebSocket middleware nodes, the Python `packet` object exposes:
+
+```python
+packet.direction                  # "ws_c2s" or "ws_s2c"
+packet.session_id                 # int
+packet.opcode                     # int
+packet.fin                        # int
+packet.rsv1                       # bool
+packet.compressed                 # bool
+packet.compression_enabled        # bool
+packet.no_context_takeover        # bool
+packet.client_no_context_takeover # bool
+packet.server_no_context_takeover # bool
+packet.payload                    # bytes
+```
 
 ## Project Config Snapshot
 

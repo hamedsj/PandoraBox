@@ -96,7 +96,10 @@ interface ProxyStore {
   selectedRequestId: number | null
   setRequests: (reqs: Request[]) => void
   prependRequest: (req: Request) => void
+  updateRequest: (req: Request) => void
   removeRequest: (id: number) => void
+  removeRequests: (ids: number[]) => void
+  clearRequests: () => void
   setSelectedRequestId: (id: number | null) => void
 
   // Replay queue (requests explicitly sent to replay)
@@ -160,11 +163,24 @@ export const useProxyStore = create<ProxyStore>((set) => ({
   setRequests: (requests) => set({ requests }),
   prependRequest: (req) =>
     set((state) => ({ requests: [req, ...state.requests].slice(0, 5000) })),
+  updateRequest: (req) =>
+    set((state) => ({
+      requests: state.requests.map((existing) => existing.id === req.id ? req : existing),
+    })),
   removeRequest: (id) =>
     set((state) => ({
       requests: state.requests.filter((req) => req.id !== id),
       selectedRequestId: state.selectedRequestId === id ? null : state.selectedRequestId,
     })),
+  removeRequests: (ids) =>
+    set((state) => {
+      const idSet = new Set(ids)
+      return {
+        requests: state.requests.filter((req) => !idSet.has(req.id)),
+        selectedRequestId: state.selectedRequestId != null && idSet.has(state.selectedRequestId) ? null : state.selectedRequestId,
+      }
+    }),
+  clearRequests: () => set({ requests: [], selectedRequestId: null, wsFrames: new Map() }),
   setSelectedRequestId: (id) => set({ selectedRequestId: id }),
 
   replayQueue: [],

@@ -106,6 +106,9 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/requests", s.listRequests)
 		r.Get("/requests/{id}", s.getRequest)
 		r.Delete("/requests/{id}", s.deleteRequest)
+		r.Put("/requests/{id}/tags", s.updateRequestTags)
+		r.Post("/requests/delete-bulk", s.deleteRequestsBulk)
+		r.Post("/requests/clear", s.clearRequests)
 		r.Get("/requests/{id}/ws-frames", s.getWebSocketFrames)
 
 		// Intercept

@@ -71,15 +71,24 @@ def process(packet):
 For `type: "ws_c2s"` and `type: "ws_s2c"`, Python receives:
 
 ```python
-packet.direction  # "ws_c2s" or "ws_s2c"
-packet.opcode     # int
-packet.payload    # bytes
+packet.direction                  # "ws_c2s" or "ws_s2c"
+packet.session_id                 # int
+packet.opcode                     # int
+packet.fin                        # int
+packet.rsv1                       # bool
+packet.compressed                 # bool
+packet.compression_enabled        # bool
+packet.no_context_takeover        # bool
+packet.client_no_context_takeover # bool
+packet.server_no_context_takeover # bool
+packet.payload                    # bytes
 ```
 
 Notes:
 
 - `opcode 1` is text
 - `opcode 2` is binary
+- `opcode 0` is continuation
 - treat `payload` as raw bytes unless you know the application protocol
 - WebSocket middleware rewrites live traffic, not just the stored history
 

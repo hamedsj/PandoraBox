@@ -241,6 +241,9 @@ export const api = {
     }) => get<{ requests: Request[]; total: number }>('/requests', params as Record<string, string | number>),
     get: (id: number) => get<Request>(`/requests/${id}`),
     delete: (id: number) => del(`/requests/${id}`),
+    updateTags: (id: number, tags: string[]) => put<Request>(`/requests/${id}/tags`, { tags }),
+    deleteBulk: (ids: number[]) => post<{ success: boolean; deleted_ids: number[] }>('/requests/delete-bulk', { ids }),
+    clear: () => post<{ success: boolean }>('/requests/clear'),
     wsFrames: (id: number) =>
       get<{ session: WebSocketSession | null; frames: WebSocketFrame[] | null }>(`/requests/${id}/ws-frames`),
   },

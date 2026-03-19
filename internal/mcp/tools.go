@@ -126,6 +126,13 @@ func (s *Server) registerTools() {
 		mcp.WithDescription("List all requests currently held in the intercept queue"),
 	), s.toolListInterceptQueue)
 
+	// get_console_output
+	s.mcp.AddTool(mcp.NewTool("get_console_output",
+		mcp.WithDescription("Get recent console output from middleware and flow execution"),
+		mcp.WithString("source", mcp.Description(`Optional source filter: "middleware" or "flow"`)),
+		mcp.WithNumber("limit", mcp.Description("Maximum number of recent entries to return (default 200)")),
+	), s.toolGetConsoleOutput)
+
 	// intercept_modify
 	s.mcp.AddTool(mcp.NewTool("intercept_modify",
 		mcp.WithDescription("Modify and forward a held request using a base64-encoded raw HTTP packet"),

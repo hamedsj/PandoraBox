@@ -57,3 +57,17 @@ func (s *Server) publishRequestDeleted(id int64) {
 		Data: map[string]interface{}{"id": id},
 	})
 }
+
+func (s *Server) publishRequestUpdated(req interface{}) {
+	s.bus.Publish(events.Event{
+		Type: events.EventRequestUpdated,
+		Data: req,
+	})
+}
+
+func (s *Server) publishRequestsCleared() {
+	s.bus.Publish(events.Event{
+		Type: events.EventRequestsCleared,
+		Data: map[string]interface{}{"success": true},
+	})
+}
