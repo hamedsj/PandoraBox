@@ -8,6 +8,8 @@ import { Checkbox } from '@/components/ui/Checkbox'
 import { cn } from '@/lib/utils'
 import { api, type Request, type ScopeRule } from '@/api/client'
 import { Globe, Filter, RotateCcw, Trash2, ChevronUp, ChevronDown, Target, GitBranch, Highlighter, Sparkles } from 'lucide-react'
+import { UserDot } from '@/components/team/UserDot'
+import { useTeamStore } from '@/store/team'
 import { FilterModal } from './FilterModal'
 import { AddToFlowModal } from '@/components/flows/AddToFlowModal'
 import { countActiveFilters, filterRequests, isWebSocket } from '@/lib/requestFilters'
@@ -42,7 +44,9 @@ function buildExcludeRule(
 
 type SortColumn = 'id' | 'method' | 'status' | 'host' | 'path' | 'query' | 'size' | 'time'
 type SortDirection = 'asc' | 'desc' | null
-export type HistoryTab = 'http' | 'websocket'
+/** 'http' | 'websocket' are the protocol tabs.
+ *  'all' | 'mine' | <user_id> are team user-filter tabs (not protocol tabs). */
+export type HistoryTab = 'http' | 'websocket' | string
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes}B`
@@ -76,11 +80,16 @@ function nextRequestTags(req: Request, highlighted: boolean): string[] {
 export function RequestTable({
   historyTab,
   onTabChange,
+  userFilter,
 }: {
   historyTab: HistoryTab
   onTabChange: (tab: HistoryTab) => void
+  /** 'all' = show everyone, 'mine' = local user only, <user_id> = that member */
+  userFilter?: string
 }) {
   useRequests()
+  const myUserId = useTeamStore((s) => s.myUserId)
+  const isTeamActive = useTeamStore((s) => s.members.length > 0)
 
   const {
     requests,
@@ -173,10 +182,25 @@ export function RequestTable({
   const httpCount = useMemo(() => requests.filter((r) => !isWebSocket(r)).length, [requests])
   const wsCount = useMemo(() => requests.filter((r) => isWebSocket(r)).length, [requests])
 
-  const partitionedRequests = useMemo(
-    () => sortedRequests.filter((r) => historyTab === 'websocket' ? isWebSocket(r) : !isWebSocket(r)),
-    [sortedRequests, historyTab],
-  )
+  // Determine whether we are showing HTTP or WS requests based on the active protocol tab.
+  // Team user-filter tabs ('all', 'mine', <user_id>) are layered on top, not protocol selectors.
+  const activeProtocol: 'http' | 'websocket' =
+    historyTab === 'websocket' ? 'websocket' : 'http'
+
+  const partitionedRequests = useMemo(() => {
+    let result = sortedRequests.filter((r) =>
+      activeProtocol === 'websocket' ? isWebSocket(r) : !isWebSocket(r),
+    )
+    // Apply team user filter when team mode is active.
+    if (isTeamActive && userFilter && userFilter !== 'all') {
+      if (userFilter === 'mine') {
+        result = result.filter((r) => r.user_id === myUserId || r.user_id === '')
+      } else {
+        result = result.filter((r) => r.user_id === userFilter)
+      }
+    }
+    return result
+  }, [sortedRequests, activeProtocol, isTeamActive, userFilter, myUserId])
 
   const filteredRequests = useMemo(
     () => filterRequests(partitionedRequests, filters, scope),
@@ -622,6 +646,7 @@ function RequestRow({
         <td className="px-3 py-1.5 font-mono text-xs text-muted-foreground">
           <div className="flex items-center gap-2">
             {highlighted && <span className="h-2 w-2 rounded-full bg-amber-300 shadow-[0_0_12px_rgba(252,211,77,0.55)]" />}
+            <UserDot userId={req.user_id} />
             <span>{req.id}</span>
           </div>
         </td>

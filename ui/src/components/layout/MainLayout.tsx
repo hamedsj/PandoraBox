@@ -3,15 +3,18 @@ import { Sidebar } from './Sidebar'
 import { ConsolePanel } from '@/components/console/ConsolePanel'
 import { useWebSocket } from '@/hooks/useWebSocket'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
+import { useTeamSync } from '@/hooks/useTeamSync'
 import { useEffect, useRef } from 'react'
 import { api } from '@/api/client'
 import { useProxyStore } from '@/store/proxy'
 import { useFlowsStore } from '@/store/flows'
 import { useConsoleStore } from '@/store/console'
+import { Toaster } from 'sonner'
 
 export function MainLayout() {
   useWebSocket()
   useKeyboardShortcuts()
+  useTeamSync()
   const setStatus = useProxyStore((s) => s.setStatus)
   const syncProject = useProxyStore((s) => s.syncProject)
   const setFlows = useFlowsStore((s) => s.setFlows)
@@ -73,6 +76,7 @@ export function MainLayout() {
         <Outlet />
       </main>
       <ConsolePanel />
+      <Toaster position="bottom-right" theme="dark" richColors />
     </div>
   )
 }

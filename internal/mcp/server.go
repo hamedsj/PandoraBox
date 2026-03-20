@@ -19,6 +19,7 @@ import (
 	proj "github.com/hamedsj5/pandorabox/internal/project"
 	"github.com/hamedsj5/pandorabox/internal/proxy"
 	"github.com/hamedsj5/pandorabox/internal/storage"
+	"github.com/hamedsj5/pandorabox/internal/team"
 	"github.com/mark3labs/mcp-go/mcp"
 	mcpserver "github.com/mark3labs/mcp-go/server"
 )
@@ -73,6 +74,12 @@ type Server struct {
 	project         *proj.Manager
 	appCfg          *proj.AppConfig
 	onSwitchProject func(*proj.Manager) error
+
+	teamClient    *team.Client
+	teamServer    *team.Server
+	teamServerCfg *team.ServerConfig
+	isServerMode  bool
+	bgCtx         context.Context
 }
 
 func (s *Server) getDB() *storage.DB {
@@ -113,6 +120,23 @@ func (s *Server) SetSwitchProjectFn(fn func(*proj.Manager) error) {
 	s.projectMu.Lock()
 	s.onSwitchProject = fn
 	s.projectMu.Unlock()
+}
+
+// SetContext stores the server's lifecycle context for use in long-running tools.
+func (s *Server) SetContext(ctx context.Context) {
+	s.bgCtx = ctx
+}
+
+// SetTeamClient attaches the team client (outbound connection) to the MCP server.
+func (s *Server) SetTeamClient(c *team.Client) {
+	s.teamClient = c
+}
+
+// SetTeamServer attaches the team server hub and config (server mode only).
+func (s *Server) SetTeamServer(srv *team.Server, cfg *team.ServerConfig) {
+	s.teamServer = srv
+	s.teamServerCfg = cfg
+	s.isServerMode = true
 }
 
 func (s *Server) mcpEnabled() bool {

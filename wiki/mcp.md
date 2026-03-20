@@ -1,6 +1,6 @@
 # MCP Tool Reference
 
-PandoraBox exposes 20 tools over the Model Context Protocol (MCP) using Server-Sent Events (SSE) transport.
+PandoraBox exposes tools over the Model Context Protocol (MCP) using Server-Sent Events (SSE) transport.
 
 **Endpoint:** `http://localhost:9090/sse`
 
@@ -36,6 +36,21 @@ All tools return JSON. All tools check whether MCP is enabled for the current pr
   - [new_project](#new_project)
 - [Certificate](#certificate)
   - [get_ca_cert](#get_ca_cert)
+- [Team Collaboration](#team-collaboration)
+  - [team_status](#team_status)
+  - [team_connect](#team_connect)
+  - [team_disconnect](#team_disconnect)
+  - [list_team_members](#list_team_members)
+  - [get_team_member_traffic](#get_team_member_traffic)
+- [Team Server Admin](#team-server-admin) *(server mode only)*
+  - [team_server_status](#team_server_status)
+  - [team_server_list_members](#team_server_list_members)
+  - [team_server_kick_member](#team_server_kick_member)
+  - [team_server_update_config](#team_server_update_config)
+  - [team_server_set_password](#team_server_set_password)
+  - [team_server_export_project](#team_server_export_project)
+  - [team_server_restart](#team_server_restart)
+  - [team_server_migrate_data](#team_server_migrate_data)
 
 ---
 
@@ -118,6 +133,7 @@ Lists captured HTTP requests with optional filters and pagination. Returns the m
 | `search` | string | No | Keyword search across host, path, and query string |
 | `limit` | number | No | Maximum number of results to return (default: `20`) |
 | `offset` | number | No | Pagination offset (default: `0`) |
+| `user_id` | string | No | Filter by team member user ID (team mode only) |
 
 **Returns:**
 ```json
@@ -556,3 +572,259 @@ Returns the root CA certificate PEM and platform-specific installation instructi
 ```
 
 Save the `pem` value to a `.crt` file and follow the instructions for your browser. See the [README CA Certificate Setup section](../README.md#ca-certificate-setup) for full platform-specific steps.
+
+---
+
+## Team Collaboration
+
+These tools let Claude connect to a team server, inspect shared traffic, and manage team members. They are available on any PandoraBox instance (client or server mode).
+
+### How to connect via MCP
+
+```
+tool: team_connect
+  server_url: "ws://your-server:7778"
+  password:   "your-password"
+  display_name: "Alice"
+```
+
+After connecting, all traffic you capture will be automatically forwarded to the server and shared with teammates. Use `list_requests` with `user_id` to inspect a specific member's traffic.
+
+---
+
+### team_status
+
+Get the current team sync status, server URL, and list of connected members.
+
+**Parameters:** none
+
+**Returns:**
+```json
+{
+  "connected": true,
+  "status": "connected",
+  "server_url": "ws://myserver:7778",
+  "members": [
+    { "user_id": "abc123", "display_name": "Alice", "color": "teal", "online": true }
+  ]
+}
+```
+
+---
+
+### team_connect
+
+Connect this instance to a team server. Saves credentials to app config for auto-reconnect on next startup.
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|---|---|---|---|
+| `server_url` | string | Yes | Team server WebSocket URL (e.g. `ws://host:7778`) |
+| `password` | string | Yes | Team server password |
+| `display_name` | string | No | Your display name visible to teammates |
+
+**Returns:**
+```json
+{ "success": true, "status": "connecting" }
+```
+
+The connection is asynchronous. Call `team_status` after a moment to confirm `"status": "connected"`.
+
+---
+
+### team_disconnect
+
+Disconnect from the team server and clear saved credentials.
+
+**Parameters:** none
+
+**Returns:**
+```json
+{ "success": true }
+```
+
+---
+
+### list_team_members
+
+List all currently known team members (online and offline).
+
+**Parameters:** none
+
+**Returns:**
+```json
+[
+  { "user_id": "abc123", "display_name": "Alice", "color": "teal", "online": true },
+  { "user_id": "def456", "display_name": "Bob", "color": "blue", "online": false }
+]
+```
+
+---
+
+### get_team_member_traffic
+
+Get a summary of HTTP requests captured by a specific team member.
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|---|---|---|---|
+| `user_id` | string | Yes | Team member's user ID |
+| `limit` | number | No | Maximum results (default: `20`) |
+| `host` | string | No | Filter by host |
+
+**Returns:**
+```json
+{
+  "user_id": "abc123",
+  "requests": [ /* same shape as list_requests */ ],
+  "total": 42
+}
+```
+
+---
+
+## Team Server Admin
+
+These tools are only available when PandoraBox is running in `--team-server` mode. They return an error on normal client instances.
+
+---
+
+### team_server_status
+
+Get team server status including uptime, config, and connected members.
+
+**Parameters:** none
+
+**Returns:**
+```json
+{
+  "uptime_seconds": 3600,
+  "team_port": 7778,
+  "api_port": 7777,
+  "team_name": "My Team",
+  "max_members": 20,
+  "member_count": 3,
+  "members": [ /* Member array */ ],
+  "data_dir": "/data",
+  "config_version": 12
+}
+```
+
+---
+
+### team_server_list_members
+
+List all team members known to the server (online + offline), with request counts.
+
+**Parameters:** none
+
+**Returns:** Array of `Member` objects (same as `list_team_members`).
+
+---
+
+### team_server_kick_member
+
+Forcibly disconnect a connected team member.
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|---|---|---|---|
+| `user_id` | string | Yes | The member's user ID |
+
+**Returns:**
+```json
+{ "success": true }
+```
+
+---
+
+### team_server_update_config
+
+Update the server's `pandorabox-server.json` settings. Port changes take effect after restart.
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|---|---|---|---|
+| `team_name` | string | No | New team name |
+| `max_members` | number | No | Max simultaneous connections |
+| `team_port` | number | No | Sync WebSocket port (restart required) |
+| `api_port` | number | No | API/UI port (restart required) |
+
+**Returns:**
+```json
+{
+  "success": true,
+  "config": { "team_name": "...", "max_members": 20, "team_port": 7778, "api_port": 7777, "data_dir": "/data" }
+}
+```
+
+---
+
+### team_server_set_password
+
+Change the team server password. Existing client connections are NOT dropped; they will use the new password on their next reconnect.
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|---|---|---|---|
+| `new_password` | string | Yes | Plaintext password (hashed with bcrypt before storage) |
+
+**Returns:**
+```json
+{ "success": true }
+```
+
+---
+
+### team_server_export_project
+
+Export the server's project data as a base64-encoded ZIP archive containing `project.json` and `pandora.db`.
+
+**Parameters:** none
+
+**Returns:**
+```json
+{
+  "zip_base64": "<base64 string>",
+  "size_bytes": 204800
+}
+```
+
+Decode `zip_base64` and save as `pandorabox-project.zip` to create a backup or migrate to another server.
+
+---
+
+### team_server_restart
+
+Gracefully restart the team server process (re-reads `pandorabox-server.json`). All connected clients will disconnect briefly and auto-reconnect.
+
+**Parameters:** none
+
+**Returns:**
+```json
+{ "restarting": true }
+```
+
+The connection will drop momentarily. Clients with auto-reconnect will rejoin automatically.
+
+---
+
+### team_server_migrate_data
+
+Move the server's data directory (`pandora.db` + `project.json`) to a new absolute path and update the config.
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|---|---|---|---|
+| `new_data_dir` | string | Yes | New absolute path for the data directory |
+
+**Returns:**
+```json
+{ "success": true, "new_data_dir": "/new/path/to/data" }
+```

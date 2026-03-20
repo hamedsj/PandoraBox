@@ -121,6 +121,14 @@ CREATE TABLE IF NOT EXISTS websocket_frames (
 );
 CREATE INDEX IF NOT EXISTS idx_ws_frames_session ON websocket_frames(session_id);
 `
-	_, err := db.Exec(schema)
-	return err
+	if _, err := db.Exec(schema); err != nil {
+		return err
+	}
+
+	// v2 migration: add user_id column for team collaboration.
+	// ALTER TABLE returns an error if the column already exists; that is safe to ignore.
+	_, _ = db.Exec(`ALTER TABLE requests ADD COLUMN user_id TEXT NOT NULL DEFAULT ''`)
+	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_req_user ON requests(user_id)`)
+
+	return nil
 }

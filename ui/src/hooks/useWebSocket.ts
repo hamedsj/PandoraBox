@@ -1,9 +1,11 @@
 import { useEffect, useRef, useCallback } from 'react'
+import { toast } from 'sonner'
 import { useProxyStore } from '@/store/proxy'
 import { useFlowsStore } from '@/store/flows'
 import { useConsoleStore } from '@/store/console'
+import { useTeamStore } from '@/store/team'
 import { api } from '@/api/client'
-import type { Request, ProxyStatus, WebSocketFrame } from '@/api/client'
+import type { Request, ProxyStatus, WebSocketFrame, TeamMember } from '@/api/client'
 
 interface WSEvent {
   type: string
@@ -15,6 +17,7 @@ export function useWebSocket() {
   const reconnectTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
   const { prependRequest, updateRequest, removeRequest, clearRequests, setStatus, syncProject, setRequests, appendWsFrame } = useProxyStore()
   const setFlows = useFlowsStore((s) => s.setFlows)
+  const { upsertMember, removeMember, setMembers, setSyncStatus } = useTeamStore()
 
   const connect = useCallback(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -77,6 +80,30 @@ export function useWebSocket() {
       clearRequests()
     } else if (evt.type === 'console.output') {
       useConsoleStore.getState().append(evt.data as { source: 'middleware' | 'flow'; text: string; timestamp: string })
+
+    // ── Team collaboration events ─────────────────────────────────────────────
+    } else if (evt.type === 'team.member.joined') {
+      const member = evt.data as TeamMember
+      if (member?.user_id) {
+        upsertMember({ ...member, online: true })
+        toast.success(`${member.display_name || member.user_id} joined the team`)
+      }
+    } else if (evt.type === 'team.member.left') {
+      const data = evt.data as { user_id?: string; display_name?: string }
+      if (data?.user_id) {
+        removeMember(data.user_id)
+        toast(`${data.display_name || data.user_id} left the team`)
+      }
+    } else if (evt.type === 'team.members.update') {
+      const members = evt.data as TeamMember[]
+      if (Array.isArray(members)) {
+        setMembers(members)
+      }
+    } else if (evt.type === 'team.sync.status') {
+      const data = evt.data as { status?: string }
+      if (data?.status) {
+        setSyncStatus(data.status as 'connected' | 'connecting' | 'disconnected')
+      }
     }
   }
 
