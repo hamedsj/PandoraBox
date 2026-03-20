@@ -52,6 +52,7 @@ func (s *Server) registerTools() {
 		mcp.WithString("search", mcp.Description("Search in host/path/query")),
 		mcp.WithNumber("limit", mcp.Description("Max results (default 20)")),
 		mcp.WithNumber("offset", mcp.Description("Offset for pagination")),
+		mcp.WithString("user_id", mcp.Description("Filter by team member user ID (team mode only)")),
 	), s.toolListRequests)
 
 	// get_request
@@ -119,6 +120,7 @@ func (s *Server) registerTools() {
 		mcp.WithDescription("Search requests by keyword"),
 		mcp.WithString("query", mcp.Description("Search query"), mcp.Required()),
 		mcp.WithNumber("limit", mcp.Description("Max results")),
+		mcp.WithString("user_id", mcp.Description("Filter by team member user ID (team mode only)")),
 	), s.toolSearchRequests)
 
 	// list_intercept_queue
@@ -230,6 +232,7 @@ func (s *Server) registerTools() {
 		mcp.WithNumber("status_min", mcp.Description("Minimum status code")),
 		mcp.WithNumber("status_max", mcp.Description("Maximum status code")),
 		mcp.WithBoolean("in_scope_only", mcp.Description("Restrict the SiteMap to in-scope requests")),
+		mcp.WithString("user_id", mcp.Description("Restrict the SiteMap to one team member's traffic (team mode only)")),
 	), s.toolGetSitemap)
 
 	// list_recent_projects
@@ -249,6 +252,88 @@ func (s *Server) registerTools() {
 		mcp.WithString("path", mcp.Description("Absolute path for new project folder"), mcp.Required()),
 		mcp.WithString("name", mcp.Description("Project name (optional)")),
 	), s.toolNewProject)
+
+	// ── Team Client Tools ──────────────────────────────────────────────────────
+
+	// team_status
+	s.mcp.AddTool(mcp.NewTool("team_status",
+		mcp.WithDescription("Get current team sync status, connected members, and server URL"),
+	), s.toolTeamStatus)
+
+	// team_connect
+	s.mcp.AddTool(mcp.NewTool("team_connect",
+		mcp.WithDescription("Connect this instance to a team server"),
+		mcp.WithString("server_url", mcp.Description("Team server WebSocket URL (e.g. ws://host:7778)"), mcp.Required()),
+		mcp.WithString("password", mcp.Description("Team server password"), mcp.Required()),
+		mcp.WithString("display_name", mcp.Description("Your display name visible to teammates")),
+	), s.toolTeamConnect)
+
+	// team_disconnect
+	s.mcp.AddTool(mcp.NewTool("team_disconnect",
+		mcp.WithDescription("Disconnect from the team server"),
+	), s.toolTeamDisconnect)
+
+	// list_team_members
+	s.mcp.AddTool(mcp.NewTool("list_team_members",
+		mcp.WithDescription("List all team members (online and recently seen)"),
+	), s.toolListTeamMembers)
+
+	// get_team_member_traffic
+	s.mcp.AddTool(mcp.NewTool("get_team_member_traffic",
+		mcp.WithDescription("Get a summary of traffic captured by a specific team member"),
+		mcp.WithString("user_id", mcp.Description("Team member's user ID"), mcp.Required()),
+		mcp.WithNumber("limit", mcp.Description("Max results (default 20)")),
+		mcp.WithString("host", mcp.Description("Filter by host")),
+	), s.toolGetTeamMemberTraffic)
+
+	// ── Team Server Admin Tools ────────────────────────────────────────────────
+
+	// team_server_status
+	s.mcp.AddTool(mcp.NewTool("team_server_status",
+		mcp.WithDescription("Get team server status, uptime, current config, and connected member count (server mode only)"),
+	), s.toolTeamServerStatus)
+
+	// team_server_list_members
+	s.mcp.AddTool(mcp.NewTool("team_server_list_members",
+		mcp.WithDescription("List all members including offline ones with request counts and last-seen timestamps (server mode only)"),
+	), s.toolTeamServerListMembers)
+
+	// team_server_kick_member
+	s.mcp.AddTool(mcp.NewTool("team_server_kick_member",
+		mcp.WithDescription("Forcibly disconnect a connected team member (server mode only)"),
+		mcp.WithString("user_id", mcp.Description("Team member's user ID"), mcp.Required()),
+	), s.toolTeamServerKickMember)
+
+	// team_server_update_config
+	s.mcp.AddTool(mcp.NewTool("team_server_update_config",
+		mcp.WithDescription("Update the server's pandorabox-server.json settings (server mode only)"),
+		mcp.WithString("team_name", mcp.Description("New team name")),
+		mcp.WithNumber("max_members", mcp.Description("Max simultaneous connections")),
+		mcp.WithNumber("team_port", mcp.Description("Sync WebSocket port (takes effect after restart)")),
+		mcp.WithNumber("api_port", mcp.Description("API/UI port (takes effect after restart)")),
+	), s.toolTeamServerUpdateConfig)
+
+	// team_server_set_password
+	s.mcp.AddTool(mcp.NewTool("team_server_set_password",
+		mcp.WithDescription("Change the team server password (server mode only)"),
+		mcp.WithString("new_password", mcp.Description("New plaintext password to hash and store"), mcp.Required()),
+	), s.toolTeamServerSetPassword)
+
+	// team_server_export_project
+	s.mcp.AddTool(mcp.NewTool("team_server_export_project",
+		mcp.WithDescription("Export the server's project (project.json + pandora.db) as a base64-encoded ZIP (server mode only)"),
+	), s.toolTeamServerExportProject)
+
+	// team_server_restart
+	s.mcp.AddTool(mcp.NewTool("team_server_restart",
+		mcp.WithDescription("Gracefully restart the team server process (server mode only)"),
+	), s.toolTeamServerRestart)
+
+	// team_server_migrate_data
+	s.mcp.AddTool(mcp.NewTool("team_server_migrate_data",
+		mcp.WithDescription("Move the server's data directory to a new path and update config (server mode only)"),
+		mcp.WithString("new_data_dir", mcp.Description("New absolute path for data directory"), mcp.Required()),
+	), s.toolTeamServerMigrateData)
 }
 
 func (s *Server) toolProxyStatus(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -314,6 +399,9 @@ func (s *Server) toolListRequests(ctx context.Context, req mcp.CallToolRequest) 
 	}
 	if v, ok := args["status_max"].(float64); ok {
 		filter.StatusMax = int(v)
+	}
+	if v, ok := args["user_id"].(string); ok {
+		filter.UserID = v
 	}
 
 	requests, total, err := s.getDB().ListRequests(filter)
@@ -513,10 +601,11 @@ func (s *Server) toolSearchRequests(ctx context.Context, req mcp.CallToolRequest
 		limit = int(v)
 	}
 
-	requests, total, err := s.getDB().ListRequests(storage.RequestFilter{
-		Search: query,
-		Limit:  limit,
-	})
+	filter := storage.RequestFilter{Search: query, Limit: limit}
+	if v, ok := args["user_id"].(string); ok {
+		filter.UserID = v
+	}
+	requests, total, err := s.getDB().ListRequests(filter)
 	if err != nil {
 		return nil, err
 	}
@@ -919,6 +1008,9 @@ func (s *Server) toolGetSitemap(ctx context.Context, req mcp.CallToolRequest) (*
 	}
 	if v, ok := args["status_max"].(float64); ok {
 		filter.StatusMax = int(v)
+	}
+	if v, ok := args["user_id"].(string); ok {
+		filter.UserID = v
 	}
 	requests, _, err := s.getDB().ListRequests(filter)
 	if err != nil {

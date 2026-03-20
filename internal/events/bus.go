@@ -23,6 +23,13 @@ const (
 	EventWebSocketSessionClosed EventType = "websocket.session.closed"
 
 	EventConsoleOutput EventType = "console.output"
+
+	// Team collaboration events — published onto the local bus so the WS hub
+	// forwards them to connected browser clients.
+	EventTeamMemberJoined  EventType = "team.member.joined"
+	EventTeamMemberLeft    EventType = "team.member.left"
+	EventTeamMembersUpdate EventType = "team.members.update"
+	EventTeamSyncStatus    EventType = "team.sync.status"
 )
 
 type ConsoleOutputData struct {
