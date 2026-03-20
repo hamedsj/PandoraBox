@@ -15,6 +15,7 @@ import (
 	"github.com/hamedsj5/pandorabox/internal/project"
 	"github.com/hamedsj5/pandorabox/internal/proxy"
 	"github.com/hamedsj5/pandorabox/internal/storage"
+	"github.com/hamedsj5/pandorabox/internal/team"
 )
 
 type Server struct {
@@ -38,6 +39,12 @@ type Server struct {
 	projectMu sync.RWMutex
 	project   *project.Manager
 	appCfg    *project.AppConfig
+
+	// Team collaboration — both fields may be nil when not in team mode.
+	teamClient     *team.Client      // non-nil when connected as a team client
+	teamServer     *team.Server      // non-nil when running as team server hub
+	teamServerCfg  *team.ServerConfig // non-nil in server mode
+	isServerMode   bool
 }
 
 func NewServer(cfg *config.Config, db *storage.DB, bus *events.Bus, p *proxy.Proxy, intercept *proxy.InterceptQueue, authority *ca.CA) *Server {
@@ -62,6 +69,19 @@ func (s *Server) SetProject(mgr *project.Manager, appCfg *project.AppConfig) {
 	s.project = mgr
 	s.appCfg = appCfg
 	s.projectMu.Unlock()
+}
+
+// SetTeamClient attaches a running team client to the API server.
+func (s *Server) SetTeamClient(c *team.Client) {
+	s.teamClient = c
+}
+
+// SetTeamServer attaches the team sync server and its config to the API server
+// (used in --team-server mode).
+func (s *Server) SetTeamServer(srv *team.Server, cfg *team.ServerConfig) {
+	s.teamServer = srv
+	s.teamServerCfg = cfg
+	s.isServerMode = true
 }
 
 func (s *Server) SetMCPServer(mcp interface {
@@ -139,6 +159,21 @@ func (s *Server) Handler() http.Handler {
 
 		// Flows
 		r.Post("/flows/exec", s.execFlowStep)
+
+		// Team client endpoints (available on any instance)
+		r.Get("/team/status", s.teamStatus)
+		r.Post("/team/connect", s.teamConnect)
+		r.Post("/team/disconnect", s.teamDisconnect)
+
+		// Admin endpoints (team server mode only)
+		r.Get("/admin/status", s.adminStatus)
+		r.Get("/admin/members", s.adminListMembers)
+		r.Post("/admin/members/{user_id}/kick", s.adminKickMember)
+		r.Put("/admin/config", s.adminUpdateConfig)
+		r.Post("/admin/password", s.adminSetPassword)
+		r.Get("/admin/project/export", s.adminExportProject)
+		r.Post("/admin/server/restart", s.adminRestartServer)
+		r.Post("/admin/project/migrate", s.adminMigrateData)
 	})
 
 	// Serve embedded UI for all non-API routes

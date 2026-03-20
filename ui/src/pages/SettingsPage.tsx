@@ -3,9 +3,10 @@ import { useThemeStore, fontFamilyMap, accentColorMap, getAvailableVariants, dar
 import { useShortcutStore } from '@/store/shortcuts'
 import { useReplayStore } from '@/store/replay'
 import { useProxyStore } from '@/store/proxy'
+import { TeamSettings } from '@/components/settings/TeamSettings'
 import { shortcutDefinitions, type ShortcutActionId } from '@/shortcuts/actions'
 import { eventToShortcut, formatShortcut } from '@/lib/shortcuts'
-import { Download, Sun, Moon, Palette, Type, Check, Shield, Server, Globe, LayoutDashboard, Keyboard, RotateCcw, Bot } from 'lucide-react'
+import { Download, Sun, Moon, Palette, Type, Check, Shield, Server, Globe, LayoutDashboard, Keyboard, RotateCcw, Bot, Users } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useState, useEffect } from 'react'
 
@@ -49,7 +50,7 @@ const status = {
   message: "OK"
 };`
 
-type SettingsTab = 'appearance' | 'shortcuts' | 'certificate' | 'proxy' | 'mcp'
+type SettingsTab = 'appearance' | 'shortcuts' | 'certificate' | 'proxy' | 'mcp' | 'team'
 
 interface MCPClientTip {
   name: string
@@ -312,6 +313,12 @@ export function SettingsPage() {
           label="MCP"
           active={activeTab === 'mcp'}
           onClick={() => setActiveTab('mcp')}
+        />
+        <TabButton
+          icon={Users}
+          label="Team"
+          active={activeTab === 'team'}
+          onClick={() => setActiveTab('team')}
         />
       </div>
 
@@ -994,6 +1001,9 @@ export function SettingsPage() {
           </div>
         </section>
       )}
+
+      {/* Team Tab */}
+      {activeTab === 'team' && <TeamSettings />}
     </div>
   )
 }

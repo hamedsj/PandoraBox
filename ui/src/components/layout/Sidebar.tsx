@@ -1,9 +1,11 @@
 import { NavLink } from 'react-router-dom'
-import { Globe, Shield, RotateCcw, Settings, Sun, Moon, Target, Network, Replace, GitBranch, Terminal } from 'lucide-react'
+import { Globe, Shield, RotateCcw, Settings, Sun, Moon, Target, Network, Replace, GitBranch, Terminal, Wifi, WifiOff, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useProxyStore } from '@/store/proxy'
 import { useThemeStore } from '@/store/theme'
 import { useConsoleStore } from '@/store/console'
+import { useTeamStore } from '@/store/team'
+import { TeamPresence } from '@/components/team/TeamPresence'
 import { ProjectSwitcher } from './ProjectSwitcher'
 import { useEffect, useState } from 'react'
 
@@ -23,6 +25,7 @@ export function Sidebar() {
   const replayAttentionTick = useProxyStore((s) => s.replayAttentionTick)
   const { mode, setMode } = useThemeStore()
   const { toggle: toggleConsole, unread, isOpen: consoleOpen } = useConsoleStore()
+  const syncStatus = useTeamStore((s) => s.syncStatus)
   const [blinkReplay, setBlinkReplay] = useState(false)
 
   useEffect(() => {
@@ -73,6 +76,9 @@ export function Sidebar() {
         ))}
       </nav>
 
+      {/* Team Presence — avatar bubbles of online teammates */}
+      <TeamPresence />
+
       {/* Bottom section */}
       <div className="px-3 flex flex-col gap-2">
         {/* Theme Toggle */}
@@ -105,18 +111,37 @@ export function Sidebar() {
           )}
         </button>
 
-        {/* Proxy Status Indicator */}
-        <div className="flex items-center gap-3 px-3 py-2">
-          <div
-            title={status?.running ? 'Proxy running' : 'Proxy stopped'}
-            className={cn(
-              'w-2 h-2 rounded-full',
-              status?.running ? 'bg-emerald-400' : 'bg-red-400'
-            )}
-          />
-          <span className="text-xs text-muted-foreground">
-            {status?.running ? 'Proxy Active' : 'Proxy Stopped'}
-          </span>
+        {/* Status row: proxy + team sync */}
+        <div className="flex items-center justify-between px-3 py-2">
+          <div className="flex items-center gap-2">
+            <div
+              title={status?.running ? 'Proxy running' : 'Proxy stopped'}
+              className={cn(
+                'w-2 h-2 rounded-full',
+                status?.running ? 'bg-emerald-400' : 'bg-red-400'
+              )}
+            />
+            <span className="text-xs text-muted-foreground">
+              {status?.running ? 'Proxy Active' : 'Proxy Stopped'}
+            </span>
+          </div>
+          {/* Team sync icon — only shown when team client is configured */}
+          {syncStatus !== 'disconnected' && (
+            <span
+              title={
+                syncStatus === 'connected' ? 'Team: connected' :
+                syncStatus === 'connecting' ? 'Team: connecting…' : 'Team: disconnected'
+              }
+              className={cn(
+                'text-xs',
+                syncStatus === 'connected' ? 'text-emerald-400' :
+                syncStatus === 'connecting' ? 'text-amber-400' : 'text-muted-foreground'
+              )}
+            >
+              {syncStatus === 'connected' && <Wifi size={14} />}
+              {syncStatus === 'connecting' && <Loader2 size={14} className="animate-spin" />}
+            </span>
+          )}
         </div>
       </div>
     </aside>

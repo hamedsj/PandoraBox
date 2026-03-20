@@ -129,7 +129,44 @@ export interface Request {
   raw?: string | null
   timestamp: string
   tags: string
+  user_id: string // team member who captured this; empty string = local user
   response?: Response
+}
+
+// ── Team types ────────────────────────────────────────────────────────────────
+
+export type AccentColor =
+  | 'teal' | 'blue' | 'purple' | 'indigo' | 'pink'
+  | 'red'  | 'orange' | 'yellow' | 'green' | 'cyan'
+
+export interface TeamMember {
+  user_id: string
+  display_name: string
+  color: AccentColor
+  online: boolean
+}
+
+export interface TeamStatus {
+  enabled: boolean
+  connected: boolean
+  status: 'connected' | 'connecting' | 'disconnected'
+  server_url: string
+  members: TeamMember[]
+}
+
+export interface AdminStatus {
+  uptime_seconds: number
+  team_port: number
+  api_port: number
+  team_name: string
+  member_count: number
+  members: TeamMember[]
+  data_dir: string
+  config_version: number
+}
+
+export interface AdminMember extends TeamMember {
+  request_count: number
 }
 
 export interface Response {
@@ -288,5 +325,28 @@ export const api = {
       response: { status: number; headers: Record<string, string>; body: string }
       variables: Record<string, string>
     }) => post<{ variables: Record<string, string>; error: string }>('/flows/exec', body),
+  },
+  team: {
+    status: () => get<TeamStatus>('/team/status'),
+    connect: (body: { server_url: string; password: string; display_name?: string }) =>
+      post<{ success: boolean; status: string }>('/team/connect', body),
+    disconnect: () => post<{ success: boolean }>('/team/disconnect'),
+  },
+  admin: {
+    status: () => get<AdminStatus>('/admin/status'),
+    listMembers: () => get<AdminMember[]>('/admin/members'),
+    kickMember: (userId: string) => post<{ success: boolean }>(`/admin/members/${userId}/kick`),
+    updateConfig: (body: {
+      team_name?: string
+      max_members?: number
+      team_port?: number
+      api_port?: number
+    }) => put<{ success: boolean; config: object }>('/admin/config', body),
+    setPassword: (newPassword: string) =>
+      post<{ success: boolean }>('/admin/password', { new_password: newPassword }),
+    exportProjectUrl: () => BASE + '/admin/project/export',
+    restartServer: () => post<{ restarting: boolean }>('/admin/server/restart'),
+    migrateData: (newDataDir: string) =>
+      post<{ success: boolean; new_data_dir: string }>('/admin/project/migrate', { new_data_dir: newDataDir }),
   },
 }

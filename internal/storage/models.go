@@ -13,7 +13,8 @@ type Request struct {
 	Body      []byte    `json:"body"`
 	Raw       []byte    `json:"raw,omitempty"`
 	Timestamp time.Time `json:"timestamp"`
-	Tags      string    `json:"tags"` // JSON array
+	Tags      string    `json:"tags"`   // JSON array
+	UserID    string    `json:"user_id"` // team member who captured this request; empty = local user
 
 	Response *Response `json:"response,omitempty"`
 }

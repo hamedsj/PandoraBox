@@ -1,0 +1,32 @@
+version: "3.9"
+
+services:
+  pandorabox:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # Alternatively, use a pre-built image:
+    # image: pandorabox/server:latest
+    container_name: pandorabox-team
+    ports:
+      - "7777:7777"   # Admin UI (web browser)
+      - "7778:7778"   # Team sync WebSocket (clients connect here)
+    volumes:
+      - pandora_data:/data        # Persistent: pandora.db + project.json
+      - ./config:/config          # Config dir: pandorabox-server.json
+    environment:
+      # Set an initial password on first run (if pandorabox-server.json doesn't exist yet).
+      # Change this before deploying! The value is bcrypt-hashed on first start and
+      # removed from memory — it is NOT stored in plaintext.
+      - PANDORA_PASSWORD=changeme
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:7778/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  pandora_data:
+    driver: local

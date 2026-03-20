@@ -12,16 +12,17 @@ type RequestFilter struct {
 	StatusMin int
 	StatusMax int
 	Search    string
+	UserID    string // filter by team member; empty = all users
 	Limit     int
 	Offset    int
 }
 
 func (db *DB) SaveRequest(r *Request) (int64, error) {
 	res, err := db.Exec(
-		`INSERT INTO requests (method, scheme, host, path, query, headers, body, raw, tags)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO requests (method, scheme, host, path, query, headers, body, raw, tags, user_id)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		r.Method, r.Scheme, r.Host, r.Path, r.Query,
-		r.Headers, r.Body, r.Raw, r.Tags,
+		r.Headers, r.Body, r.Raw, r.Tags, r.UserID,
 	)
 	if err != nil {
 		return 0, err
@@ -45,10 +46,10 @@ func (db *DB) SaveResponse(resp *Response) (int64, error) {
 func (db *DB) GetRequest(id int64) (*Request, error) {
 	r := &Request{}
 	err := db.QueryRow(
-		`SELECT id, method, scheme, host, path, query, headers, body, raw, timestamp, tags
+		`SELECT id, method, scheme, host, path, query, headers, body, raw, timestamp, tags, user_id
 		 FROM requests WHERE id = ?`, id,
 	).Scan(&r.ID, &r.Method, &r.Scheme, &r.Host, &r.Path,
-		&r.Query, &r.Headers, &r.Body, &r.Raw, &r.Timestamp, &r.Tags)
+		&r.Query, &r.Headers, &r.Body, &r.Raw, &r.Timestamp, &r.Tags, &r.UserID)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -108,6 +109,10 @@ func (db *DB) ListRequests(f RequestFilter) ([]*Request, int, error) {
 		where = append(where, "resp.status_code <= ?")
 		args = append(args, f.StatusMax)
 	}
+	if f.UserID != "" {
+		where = append(where, "r.user_id = ?")
+		args = append(args, f.UserID)
+	}
 
 	whereClause := ""
 	if len(where) > 0 {
@@ -126,7 +131,7 @@ func (db *DB) ListRequests(f RequestFilter) ([]*Request, int, error) {
 
 	query := fmt.Sprintf(`
 		SELECT r.id, r.method, r.scheme, r.host, r.path, r.query,
-		       r.headers, r.body, r.timestamp, r.tags,
+		       r.headers, r.body, r.timestamp, r.tags, r.user_id,
 		       resp.id, resp.status_code, resp.status_text, resp.duration_ms, resp.size_bytes
 		FROM requests r
 		LEFT JOIN responses resp ON resp.request_id = r.id
@@ -153,7 +158,7 @@ func (db *DB) ListRequests(f RequestFilter) ([]*Request, int, error) {
 
 		err := rows.Scan(
 			&r.ID, &r.Method, &r.Scheme, &r.Host, &r.Path, &r.Query,
-			&r.Headers, &r.Body, &ts, &r.Tags,
+			&r.Headers, &r.Body, &ts, &r.Tags, &r.UserID,
 			&respID, &statusCode, &statusText, &durationMs, &sizeBytes,
 		)
 		if err != nil {
@@ -231,9 +236,44 @@ func (db *DB) ClearRequests() error {
 	return tx.Commit()
 }
 
+// ClearRequestsByUser deletes all requests (and their related rows) captured by a specific
+// team member. Pass an empty string to clear all requests (same behaviour as ClearRequests).
+func (db *DB) ClearRequestsByUser(userID string) error {
+	if userID == "" {
+		return db.ClearRequests()
+	}
+
+	// Collect IDs for this user, then delegate to the existing batch-delete helper.
+	rows, err := db.Query(`SELECT id FROM requests WHERE user_id = ?`, userID)
+	if err != nil {
+		return err
+	}
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	return db.DeleteRequests(ids)
+}
+
 func (db *DB) CountRequests() (int64, error) {
 	var n int64
 	err := db.QueryRow(`SELECT COUNT(*) FROM requests`).Scan(&n)
+	return n, err
+}
+
+// CountRequestsByUser returns the number of requests captured by a specific user.
+func (db *DB) CountRequestsByUser(userID string) (int64, error) {
+	var n int64
+	err := db.QueryRow(`SELECT COUNT(*) FROM requests WHERE user_id = ?`, userID).Scan(&n)
 	return n, err
 }
 
