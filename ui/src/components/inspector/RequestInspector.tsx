@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useContextMenu } from '@/hooks/useContextMenu'
 import { useProxyStore } from '@/store/proxy'
 import { api } from '@/api/client'
 import type { Request, ScopeRule } from '@/api/client'
@@ -44,8 +45,7 @@ export function RequestInspector({ edge = 'left' }: { edge?: 'left' | 'top' | 'n
   const [requestBody, setRequestBody] = useState<DecodedBody | null>(null)
   const [responseBody, setResponseBody] = useState<DecodedBody | null>(null)
 
-  const [contextMenuOpen, setContextMenuOpen] = useState(false)
-  const [contextMenuPosition, setContextMenuPosition] = useState({ x: 0, y: 0 })
+  const { open: contextMenuOpen, openMenu, close: closeContextMenu, menuRef } = useContextMenu()
   const [addToFlowOpen, setAddToFlowOpen] = useState(false)
   const [addToOrganizerOpen, setAddToOrganizerOpen] = useState(false)
 
@@ -81,29 +81,13 @@ export function RequestInspector({ edge = 'left' }: { edge?: 'left' | 'top' | 'n
     }
   }, [req])
 
-  useEffect(() => {
-    if (!contextMenuOpen) return
-    function handleOutsideClick() { setContextMenuOpen(false) }
-    function handleKeyDown(e: KeyboardEvent) { if (e.key === 'Escape') setContextMenuOpen(false) }
-    document.addEventListener('click', handleOutsideClick)
-    document.addEventListener('keydown', handleKeyDown)
-    return () => {
-      document.removeEventListener('click', handleOutsideClick)
-      document.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [contextMenuOpen])
-
   const highlighted = req ? parseRequestTags(req).includes(REQUEST_TAG_HIGHLIGHTED) : false
   const inReplay = req ? replayQueue.some((e) => e.request.id === req.id) : false
 
   function handleContextMenu(e: React.MouseEvent) {
     if (!req) return
-    e.preventDefault()
-    setContextMenuPosition({ x: e.clientX, y: e.clientY })
-    setContextMenuOpen(true)
+    openMenu(e)
   }
-
-  function closeContextMenu() { setContextMenuOpen(false) }
 
   async function handleToggleHighlight() {
     if (!req) return
@@ -237,10 +221,11 @@ export function RequestInspector({ edge = 'left' }: { edge?: 'left' | 'top' | 'n
       {/* Context menu */}
       {contextMenuOpen && (
         <div
+          ref={menuRef}
           className="fixed z-50 min-w-[240px] rounded-lg border border-border bg-card py-1 shadow-lg"
-          style={{ left: `${contextMenuPosition.x}px`, top: `${contextMenuPosition.y}px` }}
+          style={{ left: 0, top: 0 }}
           onClick={(e) => e.stopPropagation()}
-          onContextMenu={(e) => e.preventDefault()}
+          onContextMenu={(e) => { e.preventDefault(); e.stopPropagation() }}
         >
           <button
             onClick={() => { handleToggleHighlight(); closeContextMenu() }}

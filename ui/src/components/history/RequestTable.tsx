@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useContextMenu } from '@/hooks/useContextMenu'
 import { useProxyStore } from '@/store/proxy'
 import { useRequests } from '@/hooks/useRequests'
 import { MethodBadge } from '@/components/common/MethodBadge'
@@ -575,8 +576,7 @@ function RequestRow({
 }) {
   const project = useProxyStore((s) => s.project)
   const setProject = useProxyStore((s) => s.setProject)
-  const [contextMenuOpen, setContextMenuOpen] = useState(false)
-  const [contextMenuPosition, setContextMenuPosition] = useState({ x: 0, y: 0 })
+  const { open: contextMenuOpen, openMenu, close: closeContextMenu, menuRef } = useContextMenu()
   const [addToFlowOpen, setAddToFlowOpen] = useState(false)
   const [addToOrganizerOpen, setAddToOrganizerOpen] = useState(false)
 
@@ -589,45 +589,15 @@ function RequestRow({
     setProject(updated)
   }
 
-  useEffect(() => {
-    if (!contextMenuOpen) return
-
-    function handleOutsideClick() {
-      setContextMenuOpen(false)
-    }
-
-    function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') setContextMenuOpen(false)
-    }
-
-    document.addEventListener('click', handleOutsideClick)
-    document.addEventListener('keydown', handleKeyDown)
-    return () => {
-      document.removeEventListener('click', handleOutsideClick)
-      document.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [contextMenuOpen])
-
   const resp = req.response
   const displayPath = truncatePath(req.path, 60)
   const displayQuery = req.query ? truncateQuery(req.query, 30) : ''
-
-  function handleContextMenu(e: React.MouseEvent) {
-    e.preventDefault()
-    e.stopPropagation()
-    setContextMenuPosition({ x: e.clientX, y: e.clientY })
-    setContextMenuOpen(true)
-  }
-
-  function closeContextMenu() {
-    setContextMenuOpen(false)
-  }
 
   return (
     <>
       <tr
         onClick={onClick}
-        onContextMenu={handleContextMenu}
+        onContextMenu={openMenu}
         className={cn(
           'cursor-pointer border-b border-border/50 transition-colors',
           selected
@@ -697,11 +667,11 @@ function RequestRow({
 
       {contextMenuOpen && (
         <div
+          ref={menuRef}
           className="fixed z-50 min-w-[240px] rounded-lg border border-border bg-card py-1 shadow-lg"
-          style={{
-            left: `${contextMenuPosition.x}px`,
-            top: `${contextMenuPosition.y}px`,
-          }}
+          style={{ left: 0, top: 0 }}
+          onClick={(e) => e.stopPropagation()}
+          onContextMenu={(e) => { e.preventDefault(); e.stopPropagation() }}
         >
           <button
             onClick={(e) => { e.stopPropagation(); onToggleHighlight(); closeContextMenu() }}

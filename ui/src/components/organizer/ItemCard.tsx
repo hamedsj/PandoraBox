@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import { useContextMenu } from '@/hooks/useContextMenu'
 import { GripVertical, StickyNote, X, Highlighter, RotateCcw, Trash2, GitBranch, FolderPlus, Target } from 'lucide-react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -46,8 +47,7 @@ interface Props {
 
 export function ItemCard({ item, selected, folderColor, onSelect, onRemove, onNoteChange, onNoteSave, sortable = true }: Props) {
   const [showNote, setShowNote] = useState(false)
-  const [contextMenuOpen, setContextMenuOpen] = useState(false)
-  const [contextMenuPosition, setContextMenuPosition] = useState({ x: 0, y: 0 })
+  const { open: contextMenuOpen, openMenu, close: closeContextMenu, menuRef } = useContextMenu()
   const [addToFlowOpen, setAddToFlowOpen] = useState(false)
   const [addToOrganizerOpen, setAddToOrganizerOpen] = useState(false)
 
@@ -80,26 +80,10 @@ export function ItemCard({ item, selected, folderColor, onSelect, onRemove, onNo
     opacity: isDragging ? 0.5 : 1,
   }
 
-  useEffect(() => {
-    if (!contextMenuOpen) return
-    function handleOutsideClick() { setContextMenuOpen(false) }
-    function handleKeyDown(e: KeyboardEvent) { if (e.key === 'Escape') setContextMenuOpen(false) }
-    document.addEventListener('click', handleOutsideClick)
-    document.addEventListener('keydown', handleKeyDown)
-    return () => {
-      document.removeEventListener('click', handleOutsideClick)
-      document.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [contextMenuOpen])
-
   function handleContextMenu(e: React.MouseEvent) {
-    e.preventDefault()
-    e.stopPropagation()
-    setContextMenuPosition({ x: e.clientX, y: e.clientY })
-    setContextMenuOpen(true)
+    if (!req) return
+    openMenu(e)
   }
-
-  function closeContextMenu() { setContextMenuOpen(false) }
 
   async function handleToggleHighlight() {
     if (!req) return
@@ -211,9 +195,11 @@ export function ItemCard({ item, selected, folderColor, onSelect, onRemove, onNo
       {/* Context menu */}
       {contextMenuOpen && (
         <div
+          ref={menuRef}
           className="fixed z-50 min-w-[240px] rounded-lg border border-border bg-card py-1 shadow-lg"
-          style={{ left: `${contextMenuPosition.x}px`, top: `${contextMenuPosition.y}px` }}
+          style={{ left: 0, top: 0 }}
           onClick={(e) => e.stopPropagation()}
+          onContextMenu={(e) => { e.preventDefault(); e.stopPropagation() }}
         >
           {req && (
             <>
