@@ -190,9 +190,17 @@ ipcMain.handle('launcher:get-recent-projects', async () => {
   let appCfg = { recent_projects: [], last_project: '' }
   try { appCfg = JSON.parse(fs.readFileSync(configPath, 'utf8')) } catch {}
 
+  // Drop entries whose folder no longer exists and persist the cleaned list
+  const allRecent = appCfg.recent_projects || []
+  const existing = allRecent.filter(p => { try { return fs.existsSync(p) } catch { return false } })
+  if (existing.length !== allRecent.length) {
+    appCfg.recent_projects = existing
+    try { fs.writeFileSync(configPath, JSON.stringify(appCfg, null, 2)) } catch {}
+  }
+
   // Build project names map
   const projectNames = {}
-  for (const p of (appCfg.recent_projects || [])) {
+  for (const p of existing) {
     try {
       const projJson = JSON.parse(fs.readFileSync(path.join(p, 'project.json'), 'utf8'))
       if (projJson.name) projectNames[p] = projJson.name
@@ -206,7 +214,7 @@ ipcMain.handle('launcher:get-recent-projects', async () => {
   return {
     logoSrc,
     tempPath,
-    recentProjects: appCfg.recent_projects || [],
+    recentProjects: existing,
     lastProject: appCfg.last_project || '',
     projectNames,
   }

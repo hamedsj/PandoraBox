@@ -238,18 +238,25 @@ func (s *Server) getRecentProjects(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var result []recentEntry
+	var surviving []string
 	if appCfg != nil {
 		for _, p := range appCfg.RecentProjects {
+			if _, statErr := os.Stat(p); os.IsNotExist(statErr) {
+				continue // skip and drop from list
+			}
+			surviving = append(surviving, p)
 			entry := recentEntry{Path: p, Exists: true}
 			if m, err := proj.OpenProject(p); err == nil {
 				entry.Name = m.Config().Name
 			} else {
-				if _, statErr := os.Stat(p); os.IsNotExist(statErr) {
-					entry.Exists = false
-				}
 				entry.Name = p
 			}
 			result = append(result, entry)
+		}
+		// Persist cleaned list if any dead entries were removed
+		if len(surviving) != len(appCfg.RecentProjects) {
+			appCfg.RecentProjects = surviving
+			_ = appCfg.Save()
 		}
 	}
 	if result == nil {
