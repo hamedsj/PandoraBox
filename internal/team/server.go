@@ -268,6 +268,71 @@ func (s *Server) readLoop(m *connectedMember) {
 
 		case MsgPong:
 			// pong is handled by SetPongHandler; nothing extra needed.
+
+		// ── Organizer mutations ───────────────────────────────────────────────
+		case MsgOrganizerFolderCreated:
+			var p OrganizerMutationPayload
+			if err := json.Unmarshal(env.Data, &p); err != nil {
+				continue
+			}
+			go s.applyOrganizerFolderCreate(p)
+			s.fanOut(m.member.UserID, MsgOrganizerFolderCreated, p)
+
+		case MsgOrganizerFolderUpdated:
+			var p OrganizerMutationPayload
+			if err := json.Unmarshal(env.Data, &p); err != nil {
+				continue
+			}
+			go s.applyOrganizerFolderUpdate(p)
+			s.fanOut(m.member.UserID, MsgOrganizerFolderUpdated, p)
+
+		case MsgOrganizerFolderDeleted:
+			var p OrganizerDeletePayload
+			if err := json.Unmarshal(env.Data, &p); err != nil {
+				continue
+			}
+			go s.applyOrganizerFolderDelete(p)
+			s.fanOut(m.member.UserID, MsgOrganizerFolderDeleted, p)
+
+		case MsgOrganizerFoldersReordered:
+			var p OrganizerReorderPayload
+			if err := json.Unmarshal(env.Data, &p); err != nil {
+				continue
+			}
+			go s.applyOrganizerFoldersReorder(p)
+			s.fanOut(m.member.UserID, MsgOrganizerFoldersReordered, p)
+
+		case MsgOrganizerItemAdded:
+			var p OrganizerMutationPayload
+			if err := json.Unmarshal(env.Data, &p); err != nil {
+				continue
+			}
+			go s.applyOrganizerItemAdd(p)
+			s.fanOut(m.member.UserID, MsgOrganizerItemAdded, p)
+
+		case MsgOrganizerItemUpdated:
+			var p OrganizerMutationPayload
+			if err := json.Unmarshal(env.Data, &p); err != nil {
+				continue
+			}
+			go s.applyOrganizerItemUpdate(p)
+			s.fanOut(m.member.UserID, MsgOrganizerItemUpdated, p)
+
+		case MsgOrganizerItemRemoved:
+			var p OrganizerDeletePayload
+			if err := json.Unmarshal(env.Data, &p); err != nil {
+				continue
+			}
+			go s.applyOrganizerItemRemove(p)
+			s.fanOut(m.member.UserID, MsgOrganizerItemRemoved, p)
+
+		case MsgOrganizerItemsReordered:
+			var p OrganizerReorderPayload
+			if err := json.Unmarshal(env.Data, &p); err != nil {
+				continue
+			}
+			go s.applyOrganizerItemsReorder(p)
+			s.fanOut(m.member.UserID, MsgOrganizerItemsReordered, p)
 		}
 	}
 }
@@ -391,6 +456,112 @@ func (s *Server) persistConfig(cfgJSON json.RawMessage) {
 	}
 	if err := s.project.Save(cfg); err != nil {
 		slog.Warn("team server: failed to save project config", "err", err)
+	}
+}
+
+// ─── Organizer server-side persistence helpers ───────────────────────────────
+
+func (s *Server) applyOrganizerFolderCreate(p OrganizerMutationPayload) {
+	if s.db == nil {
+		return
+	}
+	var f storage.OrganizerFolder
+	if err := json.Unmarshal(p.Data, &f); err != nil {
+		slog.Warn("team server: bad organizer folder create", "err", err)
+		return
+	}
+	f.ID = 0 // let DB assign
+	if _, err := s.db.CreateOrganizerFolder(&f); err != nil {
+		slog.Warn("team server: failed to create organizer folder", "err", err)
+	}
+}
+
+func (s *Server) applyOrganizerFolderUpdate(p OrganizerMutationPayload) {
+	if s.db == nil {
+		return
+	}
+	var f storage.OrganizerFolder
+	if err := json.Unmarshal(p.Data, &f); err != nil {
+		slog.Warn("team server: bad organizer folder update", "err", err)
+		return
+	}
+	if err := s.db.UpdateOrganizerFolder(&f); err != nil {
+		slog.Warn("team server: failed to update organizer folder", "err", err)
+	}
+}
+
+func (s *Server) applyOrganizerFolderDelete(p OrganizerDeletePayload) {
+	if s.db == nil {
+		return
+	}
+	if err := s.db.DeleteOrganizerFolder(p.ID); err != nil {
+		slog.Warn("team server: failed to delete organizer folder", "err", err)
+	}
+}
+
+func (s *Server) applyOrganizerFoldersReorder(p OrganizerReorderPayload) {
+	if s.db == nil {
+		return
+	}
+	var updates []storage.ReorderFolderUpdate
+	if err := json.Unmarshal(p.Data, &updates); err != nil {
+		slog.Warn("team server: bad organizer folders reorder", "err", err)
+		return
+	}
+	if err := s.db.ReorderOrganizerFolders(updates); err != nil {
+		slog.Warn("team server: failed to reorder organizer folders", "err", err)
+	}
+}
+
+func (s *Server) applyOrganizerItemAdd(p OrganizerMutationPayload) {
+	if s.db == nil {
+		return
+	}
+	var item storage.OrganizerItem
+	if err := json.Unmarshal(p.Data, &item); err != nil {
+		slog.Warn("team server: bad organizer item add", "err", err)
+		return
+	}
+	item.ID = 0
+	if _, err := s.db.AddOrganizerItem(&item); err != nil {
+		slog.Warn("team server: failed to add organizer item", "err", err)
+	}
+}
+
+func (s *Server) applyOrganizerItemUpdate(p OrganizerMutationPayload) {
+	if s.db == nil {
+		return
+	}
+	var item storage.OrganizerItem
+	if err := json.Unmarshal(p.Data, &item); err != nil {
+		slog.Warn("team server: bad organizer item update", "err", err)
+		return
+	}
+	if err := s.db.UpdateOrganizerItem(&item); err != nil {
+		slog.Warn("team server: failed to update organizer item", "err", err)
+	}
+}
+
+func (s *Server) applyOrganizerItemRemove(p OrganizerDeletePayload) {
+	if s.db == nil {
+		return
+	}
+	if err := s.db.RemoveOrganizerItem(p.ID); err != nil {
+		slog.Warn("team server: failed to remove organizer item", "err", err)
+	}
+}
+
+func (s *Server) applyOrganizerItemsReorder(p OrganizerReorderPayload) {
+	if s.db == nil {
+		return
+	}
+	var updates []storage.ReorderItemUpdate
+	if err := json.Unmarshal(p.Data, &updates); err != nil {
+		slog.Warn("team server: bad organizer items reorder", "err", err)
+		return
+	}
+	if err := s.db.ReorderOrganizerItems(updates); err != nil {
+		slog.Warn("team server: failed to reorder organizer items", "err", err)
 	}
 }
 

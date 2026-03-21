@@ -30,6 +30,16 @@ const (
 	EventTeamMemberLeft    EventType = "team.member.left"
 	EventTeamMembersUpdate EventType = "team.members.update"
 	EventTeamSyncStatus    EventType = "team.sync.status"
+
+	// Organizer events — real-time sync to browser + team relay.
+	EventOrganizerFolderCreated    EventType = "organizer.folder.created"
+	EventOrganizerFolderUpdated    EventType = "organizer.folder.updated"
+	EventOrganizerFolderDeleted    EventType = "organizer.folder.deleted"
+	EventOrganizerFoldersReordered EventType = "organizer.folders.reordered"
+	EventOrganizerItemAdded        EventType = "organizer.item.added"
+	EventOrganizerItemUpdated      EventType = "organizer.item.updated"
+	EventOrganizerItemRemoved      EventType = "organizer.item.removed"
+	EventOrganizerItemsReordered   EventType = "organizer.items.reordered"
 )
 
 type ConsoleOutputData struct {
