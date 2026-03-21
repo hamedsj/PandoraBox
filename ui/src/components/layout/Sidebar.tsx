@@ -1,8 +1,7 @@
 import { NavLink } from 'react-router-dom'
-import { Globe, Shield, RotateCcw, Settings, Sun, Moon, Target, Network, Replace, GitBranch, Terminal, Wifi, WifiOff, Loader2, FolderOpen, Crosshair, RadioTower } from 'lucide-react'
+import { Globe, Shield, RotateCcw, Settings, Target, Network, Replace, GitBranch, Terminal, Wifi, WifiOff, Loader2, FolderOpen, Crosshair, RadioTower } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useProxyStore } from '@/store/proxy'
-import { useThemeStore } from '@/store/theme'
 import { useConsoleStore } from '@/store/console'
 import { useTeamStore } from '@/store/team'
 import { useIntruderStore } from '@/store/intruder'
@@ -28,7 +27,6 @@ const navItems = [
 export function Sidebar() {
   const status = useProxyStore((s) => s.status)
   const replayAttentionTick = useProxyStore((s) => s.replayAttentionTick)
-  const { mode, setMode } = useThemeStore()
   const { toggle: toggleConsole, unread, isOpen: consoleOpen } = useConsoleStore()
   const syncStatus = useTeamStore((s) => s.syncStatus)
   const intruderAttentionTick = useIntruderStore((s) => s.intruderAttentionTick)
@@ -114,16 +112,6 @@ export function Sidebar() {
 
       {/* Bottom section */}
       <div className="px-3 flex flex-col gap-2">
-        {/* Theme Toggle */}
-        <button
-          onClick={() => setMode(mode === 'dark' ? 'light' : 'dark')}
-          title={mode === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-          className="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all text-sm text-muted-foreground hover:text-foreground hover:bg-muted"
-        >
-          {mode === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
-          <span>{mode === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
-        </button>
-
         {/* Console Toggle */}
         <button
           onClick={toggleConsole}

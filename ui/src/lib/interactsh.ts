@@ -127,17 +127,14 @@ interface PollResponse {
 
 export async function poll(session: InteractshSession): Promise<Interaction[]> {
   const url = `https://${session.server}/poll?id=${session.correlationId}&secret=${encodeURIComponent(session.secretKey)}`
-  console.log('[interactsh] polling', url)
   const resp = await fetch(url, { signal: AbortSignal.timeout(8_000) })
   if (!resp.ok) throw new Error(`Poll failed: ${resp.status}`)
 
   const data = await resp.json() as PollResponse
-  console.log('[interactsh] poll response:', JSON.stringify(data))
   const interactions: Interaction[] = []
 
   // Decrypt AES-encrypted interactions
   if (data.data?.length && data.aes_key) {
-    console.log('[interactsh] poll: got', data.data.length, 'encrypted item(s)')
     let aesKey: CryptoKey | null = null
     try {
       const encAesKey = b64ToBytes(data.aes_key)
@@ -146,7 +143,6 @@ export async function poll(session: InteractshSession): Promise<Interaction[]> {
         session._privateKey,
         encAesKey,
       )
-      console.log('[interactsh] RSA decrypt OK, AES key bytes:', aesKeyBytes.byteLength)
       aesKey = await crypto.subtle.importKey(
         'raw', new Uint8Array(aesKeyBytes), { name: 'AES-CTR' }, false, ['decrypt'],
       )
@@ -166,7 +162,6 @@ export async function poll(session: InteractshSession): Promise<Interaction[]> {
             ciphertext,
           )
           const text = new TextDecoder().decode(dec)
-          console.log('[interactsh] decrypted interaction:', text)
           const parsed = JSON.parse(text) as Interaction
           interactions.push(parsed)
         } catch (e) {
@@ -180,14 +175,12 @@ export async function poll(session: InteractshSession): Promise<Interaction[]> {
   for (const item of data.extra ?? []) {
     try {
       const parsed = JSON.parse(item) as Interaction
-      console.log('[interactsh] extra interaction:', item)
       interactions.push(parsed)
     } catch { /* skip */ }
   }
   for (const item of data.tlddata ?? []) {
     try {
       const parsed = JSON.parse(item) as Interaction
-      console.log('[interactsh] tlddata interaction:', item)
       interactions.push(parsed)
     } catch { /* skip */ }
   }

@@ -69,8 +69,7 @@ export const useCollaboratorStore = create<CollaboratorStore>((set, get) => ({
 
       // ── Poll immediately, then on interval ───────────────────────────────
       const doPoll = async () => {
-        if (!_session) { console.log('[collaborator] doPoll skipped: no session'); return }
-        console.log('[collaborator] doPoll firing for', _session.correlationId)
+        if (!_session) return
         try {
           const results = await poll(_session)
           if (results.length > 0) {
@@ -84,7 +83,7 @@ export const useCollaboratorStore = create<CollaboratorStore>((set, get) => ({
             set({ lastPollAt: new Date().toISOString() })
           }
         } catch (e) {
-          console.error('[collaborator] poll threw:', e)
+          console.error('[collaborator] poll error:', e)
         }
       }
 

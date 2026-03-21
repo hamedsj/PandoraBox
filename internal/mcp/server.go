@@ -67,6 +67,8 @@ type Server struct {
 
 	sessions sync.Map
 
+	collaboratorSessions sync.Map // sessionID → *collabSession
+
 	consoleMu      sync.RWMutex
 	consoleEntries []events.ConsoleOutputData
 
@@ -179,6 +181,8 @@ func NewServer(cfg *config.Config, db *storage.DB, bus *events.Bus, p *proxy.Pro
 	s.registerDocs()
 	s.registerTools()
 	s.registerOrganizerTools()
+	s.registerIntruderTools()
+	s.registerCollaboratorTools()
 
 	return s
 }
