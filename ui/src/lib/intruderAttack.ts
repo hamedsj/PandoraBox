@@ -8,6 +8,7 @@ export interface AttackResult {
   status: number | null
   length: number | null
   time: number            // ms
+  replayId: number | null // for full request/response inspection
   error?: string
 }
 
@@ -106,7 +107,7 @@ async function sendVariant(
   raw: string,
   requestId: number,
   signal: AbortSignal,
-): Promise<{ status: number | null; length: number | null; time: number; error?: string }> {
+): Promise<{ status: number | null; length: number | null; time: number; replayId: number | null; error?: string }> {
   const start = performance.now()
   try {
     // base64-encode: handle unicode chars correctly
@@ -122,13 +123,14 @@ async function sendVariant(
         length = replay.response.body.length
       }
     }
-    return { status, length, time }
+    return { status, length, time, replayId: replay.id }
   } catch (err) {
     if (signal.aborted) throw err
     return {
       status: null,
       length: null,
       time: Math.round(performance.now() - start),
+      replayId: null,
       error: err instanceof Error ? err.message : String(err),
     }
   }
@@ -159,10 +161,10 @@ export async function runAttack(opts: {
 
   async function runOne(variantIndex: number, payloadValues: string[]): Promise<void> {
     const variant = markers.length > 0 ? applyPayloads(raw, markers, payloadValues) : raw
-    const { status, length, time, error } = await sendVariant(variant, requestId, signal)
+    const { status, length, time, replayId, error } = await sendVariant(variant, requestId, signal)
     done++
     onProgress(done, total)
-    onResult({ index: variantIndex, payloads: payloadValues, status, length, time, error })
+    onResult({ index: variantIndex, payloads: payloadValues, status, length, time, replayId, error })
   }
 
   for (const payloadValues of variants) {
