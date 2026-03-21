@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
-import { X, FolderPlus, Check } from 'lucide-react'
+import { X, FolderPlus, Check, CornerDownLeft } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/api/client'
 import { useOrganizerStore } from '@/store/organizer'
@@ -28,14 +28,23 @@ function flattenFolders(roots: OrganizerFolder[], depth = 0): Array<{ folder: Or
 export function AddToOrganizerModal({ open, requestId, onClose, onCreateFolder }: Props) {
   const roots = useOrganizerStore((s) => s.roots)
   const folders = useOrganizerStore((s) => s.folders)
+  const upsertFolder = useOrganizerStore((s) => s.upsertFolder)
   const [checkedIds, setCheckedIds] = useState<Set<number>>(new Set())
   const [loading, setLoading] = useState(false)
+  const [creatingFolder, setCreatingFolder] = useState(false)
+  const [newFolderName, setNewFolderName] = useState('')
+  const [savingFolder, setSavingFolder] = useState(false)
+  const newFolderInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (open && requestId != null) {
       api.organizer.getRequestFolders(requestId).then((r) => {
         setCheckedIds(new Set(r.folder_ids))
       }).catch(() => setCheckedIds(new Set()))
+    }
+    if (!open) {
+      setCreatingFolder(false)
+      setNewFolderName('')
     }
   }, [open, requestId])
 
@@ -70,6 +79,27 @@ export function AddToOrganizerModal({ open, requestId, onClose, onCreateFolder }
         success: 'Added to folder',
         error: 'Failed to add',
       })
+    }
+  }
+
+  const handleCreateFolder = async () => {
+    const name = newFolderName.trim() || 'New Folder'
+    setSavingFolder(true)
+    try {
+      const folder = await api.organizer.createFolder({ name, color: 'teal', icon: 'Folder', note: '', parent_id: null })
+      upsertFolder(folder)
+      toast.success('Folder created')
+      // Auto-add request to new folder if one is selected
+      if (requestId != null) {
+        await api.organizer.addItem(folder.id, { request_id: requestId }).catch(() => {})
+        setCheckedIds((prev) => new Set([...prev, folder.id]))
+      }
+      setCreatingFolder(false)
+      setNewFolderName('')
+    } catch {
+      toast.error('Failed to create folder')
+    } finally {
+      setSavingFolder(false)
     }
   }
 
@@ -119,13 +149,48 @@ export function AddToOrganizerModal({ open, requestId, onClose, onCreateFolder }
           </div>
 
           <div className="px-4 py-3 border-t border-zinc-800">
-            <button
-              onClick={() => { onClose(); onCreateFolder?.() }}
-              className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
-            >
-              <FolderPlus size={13} />
-              Create new folder
-            </button>
+            {creatingFolder ? (
+              <div className="flex items-center gap-2">
+                <FolderPlus size={13} className="text-zinc-500 flex-shrink-0" />
+                <input
+                  ref={newFolderInputRef}
+                  autoFocus
+                  value={newFolderName}
+                  onChange={(e) => setNewFolderName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleCreateFolder()
+                    if (e.key === 'Escape') { setCreatingFolder(false); setNewFolderName('') }
+                  }}
+                  placeholder="Folder name…"
+                  disabled={savingFolder}
+                  className="flex-1 min-w-0 bg-zinc-800 border border-zinc-600 rounded-md px-2 py-1 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-zinc-400 disabled:opacity-50"
+                />
+                <button
+                  onClick={handleCreateFolder}
+                  disabled={savingFolder}
+                  className="flex-shrink-0 p-1 rounded-md bg-zinc-700 hover:bg-zinc-600 text-zinc-300 hover:text-zinc-100 transition-colors disabled:opacity-50"
+                  title="Create (Enter)"
+                >
+                  <CornerDownLeft size={12} />
+                </button>
+                <button
+                  onClick={() => { setCreatingFolder(false); setNewFolderName('') }}
+                  disabled={savingFolder}
+                  className="flex-shrink-0 p-1 rounded-md hover:bg-zinc-700 text-zinc-500 hover:text-zinc-300 transition-colors disabled:opacity-50"
+                  title="Cancel (Esc)"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setCreatingFolder(true)}
+                className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+              >
+                <FolderPlus size={13} />
+                Create new folder
+              </button>
+            )}
           </div>
         </Dialog.Content>
       </Dialog.Portal>
