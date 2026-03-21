@@ -8,7 +8,9 @@ import { StatusBadge } from '@/components/common/StatusBadge'
 import { CodeViewer } from '@/components/common/CodeViewer'
 import { AddToFlowModal } from '@/components/flows/AddToFlowModal'
 import { AddToOrganizerModal } from '@/components/organizer/AddToOrganizerModal'
-import { X, Copy, PanelBottomOpen, PanelRightOpen, Highlighter, RotateCcw, Trash2, GitBranch, FolderPlus, Target } from 'lucide-react'
+import { X, Copy, PanelBottomOpen, PanelRightOpen, Highlighter, RotateCcw, Trash2, GitBranch, FolderPlus, Target, Link, Terminal, Code2 } from 'lucide-react'
+import { copyURL, copyRawRequest, copyAsCurl, copyAsFetch } from '@/lib/copyRequest'
+import { displayHost } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import { decodeBodyBytes, decodeBodyForDisplay, type DecodedBody, type RawBody } from '@/lib/httpBodies'
 import { presentBody } from '@/lib/bodyPresentation'
@@ -149,7 +151,7 @@ export function RequestInspector({ edge = 'left' }: { edge?: 'left' | 'top' | 'n
         <MethodBadge method={req.method} />
         {highlighted && <span className="h-2 w-2 rounded-full bg-amber-300 shadow-[0_0_10px_rgba(252,211,77,0.6)] flex-shrink-0" />}
         <span className="font-mono text-xs text-muted-foreground flex-1 truncate">
-          {req.scheme}://{req.host}{req.path}
+          {req.scheme}://{displayHost(req.host, req.scheme)}{req.path}
           {req.query ? <span className="text-muted-foreground/60">?{req.query}</span> : null}
         </span>
         <button
@@ -267,6 +269,27 @@ export function RequestInspector({ edge = 'left' }: { edge?: 'left' | 'top' | 'n
           >
             <FolderPlus size={14} />
             Add to Organizer
+          </button>
+
+          <div className="my-1 border-t border-border" />
+
+          <div className="px-3 py-1">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Copy
+            </span>
+          </div>
+
+          <button onClick={() => { copyURL(req); closeContextMenu() }} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-muted">
+            <Link size={14} />Copy URL
+          </button>
+          <button onClick={() => { copyRawRequest(req); closeContextMenu() }} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-muted">
+            <Copy size={14} />Copy Raw Request
+          </button>
+          <button onClick={() => { copyAsCurl(req); closeContextMenu() }} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-muted">
+            <Terminal size={14} />Copy as cURL
+          </button>
+          <button onClick={() => { copyAsFetch(req); closeContextMenu() }} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-muted">
+            <Code2 size={14} />Copy as fetch()
           </button>
 
           <div className="my-1 border-t border-border" />
@@ -393,7 +416,7 @@ function formatBytes(n: number): string {
 function buildRawRequest(req: Request): string {
   const headers = tryParseHeaders(req.headers)
   let raw = `${req.method} ${req.path}${req.query ? '?' + req.query : ''} HTTP/1.1\r\n`
-  raw += `Host: ${req.host}\r\n`
+  raw += `Host: ${displayHost(req.host, req.scheme)}\r\n`
   for (const [k, vs] of Object.entries(headers)) {
     if (k.toLowerCase() === 'host') continue
     for (const v of vs) raw += `${k}: ${v}\r\n`

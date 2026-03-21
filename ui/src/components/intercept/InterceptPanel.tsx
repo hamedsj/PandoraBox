@@ -7,7 +7,7 @@ import { useThemeStore } from '@/store/theme'
 import { MethodBadge } from '@/components/common/MethodBadge'
 import { InterceptFilterModal } from './InterceptFilterModal'
 import { Shield, ShieldOff, Check, X, Filter, ChevronsRight } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, displayHost } from '@/lib/utils'
 import { subscribeShortcutAction } from '@/lib/shortcuts'
 import { useNavigate } from 'react-router-dom'
 
@@ -233,7 +233,7 @@ export function InterceptPanel() {
               >
                 <div className="flex items-center gap-2 mb-0.5">
                   <MethodBadge method={req.method} />
-                  <span className="text-xs font-mono text-muted-foreground truncate">{req.host}</span>
+                  <span className="text-xs font-mono text-muted-foreground truncate">{displayHost(req.host, req.scheme)}</span>
                 </div>
                 <div className="text-xs font-mono text-muted-foreground/60 truncate pl-0.5">
                   {req.path || '/'}
@@ -252,7 +252,7 @@ export function InterceptPanel() {
                 <span className="text-xs text-muted-foreground font-mono">#{selected.id}</span>
                 <MethodBadge method={selected.method} />
                 <span className="text-xs font-mono text-muted-foreground truncate min-w-0">
-                  {selected.host}{selected.path}{selected.query ? `?${selected.query}` : ''}
+                  {displayHost(selected.host, selected.scheme)}{selected.path}{selected.query ? `?${selected.query}` : ''}
                 </span>
                 <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
                   <button

@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { useContextMenu } from '@/hooks/useContextMenu'
-import { GripVertical, StickyNote, X, Highlighter, RotateCcw, Trash2, GitBranch, FolderPlus, Target } from 'lucide-react'
+import { GripVertical, StickyNote, X, Highlighter, RotateCcw, Trash2, GitBranch, FolderPlus, Target, Link, Copy, Terminal, Code2 } from 'lucide-react'
+import { copyURL, copyRawRequest, copyAsCurl, copyAsFetch } from '@/lib/copyRequest'
+import { displayHost } from '@/lib/utils'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { toast } from 'sonner'
@@ -145,7 +147,7 @@ export function ItemCard({ item, selected, folderColor, onSelect, onRemove, onNo
             {req?.response && <StatusBadge code={req.response.status_code} />}
             {highlighted && <span className="h-1.5 w-1.5 rounded-full bg-amber-300 shadow-[0_0_8px_rgba(252,211,77,0.6)]" />}
             <span className="text-xs text-zinc-400 truncate font-mono">
-              {req ? `${req.host}${req.path}` : `Request #${item.request_id}`}
+              {req ? `${displayHost(req.host, req.scheme)}${req.path}` : `Request #${item.request_id}`}
             </span>
           </div>
           {req && (
@@ -243,6 +245,27 @@ export function ItemCard({ item, selected, folderColor, onSelect, onRemove, onNo
               >
                 <FolderPlus size={14} />
                 Manage in Organizer
+              </button>
+
+              <div className="my-1 border-t border-border" />
+
+              <div className="px-3 py-1">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Copy
+                </span>
+              </div>
+
+              <button onClick={() => { copyURL(req); closeContextMenu() }} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-muted">
+                <Link size={14} />Copy URL
+              </button>
+              <button onClick={() => { copyRawRequest(req); closeContextMenu() }} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-muted">
+                <Copy size={14} />Copy Raw Request
+              </button>
+              <button onClick={() => { copyAsCurl(req); closeContextMenu() }} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-muted">
+                <Terminal size={14} />Copy as cURL
+              </button>
+              <button onClick={() => { copyAsFetch(req); closeContextMenu() }} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-muted">
+                <Code2 size={14} />Copy as fetch()
               </button>
 
               <div className="my-1 border-t border-border" />

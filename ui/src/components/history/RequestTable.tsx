@@ -8,7 +8,9 @@ import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { Checkbox } from '@/components/ui/Checkbox'
 import { cn } from '@/lib/utils'
 import { api, type Request, type ScopeRule } from '@/api/client'
-import { Globe, Filter, RotateCcw, Trash2, ChevronUp, ChevronDown, Target, GitBranch, Highlighter, Sparkles, FolderPlus } from 'lucide-react'
+import { Globe, Filter, RotateCcw, Trash2, ChevronUp, ChevronDown, Target, GitBranch, Highlighter, Sparkles, FolderPlus, Copy, Link, Terminal, Code2 } from 'lucide-react'
+import { copyURL, copyRawRequest, copyAsCurl, copyAsFetch } from '@/lib/copyRequest'
+import { displayHost } from '@/lib/utils'
 import { UserDot } from '@/components/team/UserDot'
 import { useTeamStore } from '@/store/team'
 import { FilterModal } from './FilterModal'
@@ -635,7 +637,7 @@ function RequestRow({
           )}
         </td>
         <td className="min-w-0 w-[160px] max-w-[160px] px-3 py-1.5 font-mono text-xs text-muted-foreground">
-          <div className="truncate">{req.host}</div>
+          <div className="truncate">{displayHost(req.host, req.scheme)}</div>
         </td>
         <td className="min-w-0 w-[140px] px-3 py-1.5 font-mono text-xs">
           <div className="truncate text-foreground">{displayPath}</div>
@@ -713,6 +715,46 @@ function RequestRow({
           >
             <FolderPlus size={14} />
             Add to Organizer
+          </button>
+
+          <div className="my-1 border-t border-border" />
+
+          <div className="px-3 py-1">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Copy
+            </span>
+          </div>
+
+          <button
+            onClick={(e) => { e.stopPropagation(); copyURL(req); closeContextMenu() }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-muted"
+          >
+            <Link size={14} />
+            Copy URL
+          </button>
+
+          <button
+            onClick={(e) => { e.stopPropagation(); copyRawRequest(req); closeContextMenu() }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-muted"
+          >
+            <Copy size={14} />
+            Copy Raw Request
+          </button>
+
+          <button
+            onClick={(e) => { e.stopPropagation(); copyAsCurl(req); closeContextMenu() }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-muted"
+          >
+            <Terminal size={14} />
+            Copy as cURL
+          </button>
+
+          <button
+            onClick={(e) => { e.stopPropagation(); copyAsFetch(req); closeContextMenu() }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-muted"
+          >
+            <Code2 size={14} />
+            Copy as fetch()
           </button>
 
           <div className="my-1 border-t border-border" />

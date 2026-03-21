@@ -11,7 +11,7 @@ import { subscribeShortcutAction } from '@/lib/shortcuts'
 import { decodeBodyForDisplay, type DecodedBody } from '@/lib/httpBodies'
 import { presentBody } from '@/lib/bodyPresentation'
 import { applyAutomaticContentLength, encodeRawRequest, getRawRequestText } from '@/lib/rawHttp'
-import { cn } from '@/lib/utils'
+import { cn, displayHost } from '@/lib/utils'
 
 export function ReplayPanel() {
   const { replayQueue, removeFromReplay, duplicateReplayItem, clearReplay } = useProxyStore()
@@ -225,7 +225,7 @@ export function ReplayPanel() {
 
   const headerSubtitle = useMemo(() => {
     if (!selectedReq) return ''
-    return `${selectedReq.host}${selectedReq.path}${selectedReq.query ? `?${selectedReq.query}` : ''}`
+    return `${displayHost(selectedReq.host, selectedReq.scheme)}${selectedReq.path}${selectedReq.query ? `?${selectedReq.query}` : ''}`
   }, [selectedReq])
 
   return (
@@ -292,7 +292,7 @@ export function ReplayPanel() {
                     </button>
                   </div>
                 </div>
-                <div className="text-xs font-mono text-foreground truncate">{entry.request.host}{entry.request.path}</div>
+                <div className="text-xs font-mono text-foreground truncate">{displayHost(entry.request.host, entry.request.scheme)}{entry.request.path}</div>
                 {entry.request.query && (
                   <div className="mt-1 text-[11px] font-mono text-muted-foreground truncate">?{entry.request.query}</div>
                 )}
