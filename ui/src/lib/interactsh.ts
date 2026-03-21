@@ -52,9 +52,14 @@ export async function createSession(server: string): Promise<{ session: Interact
     ['decrypt'],
   )
 
-  // Export public key as DER-encoded PKIX (SPKI) then base64
+  // Export public key as DER-encoded SPKI, wrap in PEM, then base64-encode the whole PEM.
+  // The interactsh server does: base64.Decode(field) → pem.Decode() → parse key.
+  // So the field must be base64(PEM string), not base64(raw DER bytes).
   const spki = await crypto.subtle.exportKey('spki', keyPair.publicKey)
-  const publicKeyB64 = btoa(String.fromCharCode(...new Uint8Array(spki)))
+  const derB64 = btoa(String.fromCharCode(...new Uint8Array(spki)))
+  const pemBody = derB64.match(/.{1,64}/g)?.join('\n') ?? derB64
+  const pem = `-----BEGIN PUBLIC KEY-----\n${pemBody}\n-----END PUBLIC KEY-----\n`
+  const publicKeyB64 = btoa(pem)
 
   const correlationId = randomAlphaLower(20)
   const secretKey = crypto.randomUUID()
