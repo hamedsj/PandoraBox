@@ -178,6 +178,7 @@ func NewServer(cfg *config.Config, db *storage.DB, bus *events.Bus, p *proxy.Pro
 	s.startConsoleCapture()
 	s.registerDocs()
 	s.registerTools()
+	s.registerOrganizerTools()
 
 	return s
 }

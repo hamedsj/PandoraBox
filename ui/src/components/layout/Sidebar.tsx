@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { Globe, Shield, RotateCcw, Settings, Sun, Moon, Target, Network, Replace, GitBranch, Terminal, Wifi, WifiOff, Loader2 } from 'lucide-react'
+import { Globe, Shield, RotateCcw, Settings, Sun, Moon, Target, Network, Replace, GitBranch, Terminal, Wifi, WifiOff, Loader2, FolderOpen } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useProxyStore } from '@/store/proxy'
 import { useThemeStore } from '@/store/theme'
@@ -17,6 +17,7 @@ const navItems = [
   { to: '/sitemap', label: 'SiteMap', icon: Network },
   { to: '/replay', label: 'Replay', icon: RotateCcw },
   { to: '/flows', label: 'Flows', icon: GitBranch },
+  { to: '/organizer', label: 'Organizer', icon: FolderOpen },
   { to: '/settings', label: 'Settings', icon: Settings },
 ]
 

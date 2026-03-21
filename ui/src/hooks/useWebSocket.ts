@@ -4,8 +4,9 @@ import { useProxyStore } from '@/store/proxy'
 import { useFlowsStore } from '@/store/flows'
 import { useConsoleStore } from '@/store/console'
 import { useTeamStore } from '@/store/team'
+import { useOrganizerStore } from '@/store/organizer'
 import { api } from '@/api/client'
-import type { Request, ProxyStatus, WebSocketFrame, TeamMember } from '@/api/client'
+import type { Request, ProxyStatus, WebSocketFrame, TeamMember, OrganizerFolder, OrganizerItem } from '@/api/client'
 
 interface WSEvent {
   type: string
@@ -18,6 +19,7 @@ export function useWebSocket() {
   const { prependRequest, updateRequest, removeRequest, clearRequests, setStatus, syncProject, setRequests, appendWsFrame } = useProxyStore()
   const setFlows = useFlowsStore((s) => s.setFlows)
   const { upsertMember, removeMember, setMembers, setSyncStatus } = useTeamStore()
+  const { upsertFolder, removeFolder, setFolders, upsertItem, removeItem, setItemsForFolder } = useOrganizerStore()
 
   const connect = useCallback(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -103,6 +105,31 @@ export function useWebSocket() {
       const data = evt.data as { status?: string }
       if (data?.status) {
         setSyncStatus(data.status as 'connected' | 'connecting' | 'disconnected')
+      }
+
+    // ── Organizer events ──────────────────────────────────────────────────────
+    } else if (evt.type === 'organizer.folder.created') {
+      upsertFolder(evt.data as OrganizerFolder)
+    } else if (evt.type === 'organizer.folder.updated') {
+      upsertFolder(evt.data as OrganizerFolder)
+    } else if (evt.type === 'organizer.folder.deleted') {
+      const data = evt.data as { id?: number }
+      if (typeof data?.id === 'number') removeFolder(data.id)
+    } else if (evt.type === 'organizer.folders.reordered') {
+      api.organizer.listFolders().then((r) => setFolders(r.flat)).catch(console.error)
+    } else if (evt.type === 'organizer.item.added') {
+      upsertItem(evt.data as OrganizerItem)
+    } else if (evt.type === 'organizer.item.updated') {
+      upsertItem(evt.data as OrganizerItem)
+    } else if (evt.type === 'organizer.item.removed') {
+      const data = evt.data as { id?: number }
+      if (typeof data?.id === 'number') removeItem(data.id)
+    } else if (evt.type === 'organizer.items.reordered') {
+      const data = evt.data as { folder_id?: number }
+      if (typeof data?.folder_id === 'number') {
+        api.organizer.listItems(data.folder_id)
+          .then((r) => setItemsForFolder(data.folder_id!, r.items))
+          .catch(console.error)
       }
     }
   }

@@ -165,6 +165,20 @@ func (s *Server) Handler() http.Handler {
 		r.Post("/team/connect", s.teamConnect)
 		r.Post("/team/disconnect", s.teamDisconnect)
 
+		// Organizer — IMPORTANT: literal "reorder" routes must come before {id} wildcard
+		r.Post("/organizer/folders", s.createOrganizerFolder)
+		r.Get("/organizer/folders", s.listOrganizerFolders)
+		r.Put("/organizer/folders/reorder", s.reorderOrganizerFolders)
+		r.Get("/organizer/folders/{id}", s.getOrganizerFolder)
+		r.Put("/organizer/folders/{id}", s.updateOrganizerFolder)
+		r.Delete("/organizer/folders/{id}", s.deleteOrganizerFolder)
+		r.Post("/organizer/folders/{id}/items", s.addOrganizerItem)
+		r.Get("/organizer/folders/{id}/items", s.listOrganizerItems)
+		r.Put("/organizer/folders/{id}/items/reorder", s.reorderOrganizerItems)
+		r.Put("/organizer/items/{id}", s.updateOrganizerItem)
+		r.Delete("/organizer/items/{id}", s.removeOrganizerItem)
+		r.Get("/organizer/request/{request_id}/folders", s.getRequestFolders)
+
 		// Admin endpoints (team server mode only)
 		r.Get("/admin/status", s.adminStatus)
 		r.Get("/admin/members", s.adminListMembers)

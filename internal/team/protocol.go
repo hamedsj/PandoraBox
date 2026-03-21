@@ -90,6 +90,38 @@ type PingPayload struct {
 	TS string `json:"ts"` // RFC3339 timestamp
 }
 
+// ─── Organizer sync message types ────────────────────────────────────────────
+
+const (
+	MsgOrganizerFolderCreated    = "team.organizer.folder.created"
+	MsgOrganizerFolderUpdated    = "team.organizer.folder.updated"
+	MsgOrganizerFolderDeleted    = "team.organizer.folder.deleted"
+	MsgOrganizerFoldersReordered = "team.organizer.folders.reordered"
+	MsgOrganizerItemAdded        = "team.organizer.item.added"
+	MsgOrganizerItemUpdated      = "team.organizer.item.updated"
+	MsgOrganizerItemRemoved      = "team.organizer.item.removed"
+	MsgOrganizerItemsReordered   = "team.organizer.items.reordered"
+)
+
+// OrganizerMutationPayload wraps any organizer create/update for relay.
+type OrganizerMutationPayload struct {
+	UserID string          `json:"user_id"`
+	Data   json.RawMessage `json:"data"`
+}
+
+// OrganizerDeletePayload is used for folder.deleted and item.removed.
+type OrganizerDeletePayload struct {
+	UserID string `json:"user_id"`
+	ID     int64  `json:"id"`
+}
+
+// OrganizerReorderPayload carries new sort_order assignments.
+type OrganizerReorderPayload struct {
+	UserID   string          `json:"user_id"`
+	FolderID int64           `json:"folder_id,omitempty"` // set for item reorders
+	Data     json.RawMessage `json:"data"`                // []ReorderFolderUpdate or []ReorderItemUpdate
+}
+
 // encode marshals an Envelope with the given type and payload.
 func encode(msgType string, payload interface{}) ([]byte, error) {
 	data, err := json.Marshal(payload)

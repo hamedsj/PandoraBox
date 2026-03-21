@@ -7,11 +7,12 @@ import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { Checkbox } from '@/components/ui/Checkbox'
 import { cn } from '@/lib/utils'
 import { api, type Request, type ScopeRule } from '@/api/client'
-import { Globe, Filter, RotateCcw, Trash2, ChevronUp, ChevronDown, Target, GitBranch, Highlighter, Sparkles } from 'lucide-react'
+import { Globe, Filter, RotateCcw, Trash2, ChevronUp, ChevronDown, Target, GitBranch, Highlighter, Sparkles, FolderPlus } from 'lucide-react'
 import { UserDot } from '@/components/team/UserDot'
 import { useTeamStore } from '@/store/team'
 import { FilterModal } from './FilterModal'
 import { AddToFlowModal } from '@/components/flows/AddToFlowModal'
+import { AddToOrganizerModal } from '@/components/organizer/AddToOrganizerModal'
 import { countActiveFilters, filterRequests, isWebSocket } from '@/lib/requestFilters'
 import { parseRequestTags, REQUEST_TAG_HIGHLIGHTED } from '@/lib/requestTags'
 import { subscribeShortcutAction } from '@/lib/shortcuts'
@@ -577,6 +578,7 @@ function RequestRow({
   const [contextMenuOpen, setContextMenuOpen] = useState(false)
   const [contextMenuPosition, setContextMenuPosition] = useState({ x: 0, y: 0 })
   const [addToFlowOpen, setAddToFlowOpen] = useState(false)
+  const [addToOrganizerOpen, setAddToOrganizerOpen] = useState(false)
 
   async function addExcludeRule(kind: 'entirely' | 'host' | 'path' | 'subpath') {
     const scope = project?.scope ?? { enabled: false, include_rules: [], exclude_rules: [] }
@@ -687,6 +689,12 @@ function RequestRow({
         onClose={() => setAddToFlowOpen(false)}
       />
 
+      <AddToOrganizerModal
+        open={addToOrganizerOpen}
+        requestId={req.id}
+        onClose={() => setAddToOrganizerOpen(false)}
+      />
+
       {contextMenuOpen && (
         <div
           className="fixed z-50 min-w-[240px] rounded-lg border border-border bg-card py-1 shadow-lg"
@@ -727,6 +735,14 @@ function RequestRow({
           >
             <GitBranch size={14} />
             Send to Flow
+          </button>
+
+          <button
+            onClick={(e) => { e.stopPropagation(); setAddToOrganizerOpen(true); closeContextMenu() }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-muted"
+          >
+            <FolderPlus size={14} />
+            Add to Organizer
           </button>
 
           <div className="my-1 border-t border-border" />

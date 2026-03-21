@@ -133,6 +133,36 @@ export interface Request {
   response?: Response
 }
 
+// ── Organizer types ───────────────────────────────────────────────────────────
+
+export type OrganizerColor = 'teal' | 'blue' | 'purple' | 'indigo' | 'pink' | 'red' | 'orange' | 'yellow' | 'green' | 'cyan'
+export type OrganizerIcon = 'Folder' | 'FolderOpen' | 'Star' | 'Bookmark' | 'Flag' | 'Target' | 'Zap' | 'Shield' | 'Bug' | 'FlaskConical' | 'Lock' | 'Globe' | 'Code' | 'Database' | 'Server'
+
+export interface OrganizerFolder {
+  id: number
+  parent_id: number | null
+  name: string
+  color: OrganizerColor
+  icon: OrganizerIcon
+  note: string
+  sort_order: number
+  created_at: string
+  updated_at: string
+  children?: OrganizerFolder[]
+  items?: OrganizerItem[]
+}
+
+export interface OrganizerItem {
+  id: number
+  folder_id: number
+  request_id: number
+  note: string
+  sort_order: number
+  created_at: string
+  updated_at: string
+  request?: Request
+}
+
 // ── Team types ────────────────────────────────────────────────────────────────
 
 export type AccentColor =
@@ -331,6 +361,26 @@ export const api = {
     connect: (body: { server_url: string; password: string; display_name?: string }) =>
       post<{ success: boolean; status: string }>('/team/connect', body),
     disconnect: () => post<{ success: boolean }>('/team/disconnect'),
+  },
+  organizer: {
+    listFolders: () => get<{ folders: OrganizerFolder[]; flat: OrganizerFolder[] }>('/organizer/folders'),
+    createFolder: (body: { name?: string; color?: string; icon?: string; note?: string; parent_id?: number | null; sort_order?: number }) =>
+      post<OrganizerFolder>('/organizer/folders', body),
+    getFolder: (id: number) => get<OrganizerFolder>(`/organizer/folders/${id}`),
+    updateFolder: (id: number, body: Partial<{ name: string; color: string; icon: string; note: string; parent_id: number | null; sort_order: number }>) =>
+      put<OrganizerFolder>(`/organizer/folders/${id}`, body),
+    deleteFolder: (id: number) => del<{ success: boolean }>(`/organizer/folders/${id}`),
+    reorderFolders: (updates: Array<{ id: number; sort_order: number }>) =>
+      put<{ success: boolean }>('/organizer/folders/reorder', { updates }),
+    addItem: (folderId: number, body: { request_id: number; note?: string; sort_order?: number }) =>
+      post<OrganizerItem>(`/organizer/folders/${folderId}/items`, body),
+    listItems: (folderId: number) => get<{ items: OrganizerItem[] }>(`/organizer/folders/${folderId}/items`),
+    updateItem: (id: number, body: Partial<{ note: string; sort_order: number }>) =>
+      put<OrganizerItem>(`/organizer/items/${id}`, body),
+    removeItem: (id: number) => del<{ success: boolean }>(`/organizer/items/${id}`),
+    reorderItems: (folderId: number, updates: Array<{ id: number; sort_order: number }>) =>
+      put<{ success: boolean }>(`/organizer/folders/${folderId}/items/reorder`, { updates }),
+    getRequestFolders: (requestId: number) => get<{ folder_ids: number[] }>(`/organizer/request/${requestId}/folders`),
   },
   admin: {
     status: () => get<AdminStatus>('/admin/status'),

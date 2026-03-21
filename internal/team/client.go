@@ -311,6 +311,63 @@ func (c *Client) readLoop(ctx context.Context, conn *websocket.Conn) {
 		case MsgPing:
 			pong, _ := encode(MsgPong, struct{}{})
 			conn.WriteMessage(websocket.TextMessage, pong) //nolint:errcheck
+
+		// ── Organizer relay messages → apply to local DB + publish to browser ─
+		case MsgOrganizerFolderCreated:
+			var p OrganizerMutationPayload
+			if err := json.Unmarshal(env.Data, &p); err != nil {
+				continue
+			}
+			go c.applyRemoteOrganizerFolderCreate(p)
+
+		case MsgOrganizerFolderUpdated:
+			var p OrganizerMutationPayload
+			if err := json.Unmarshal(env.Data, &p); err != nil {
+				continue
+			}
+			go c.applyRemoteOrganizerFolderUpdate(p)
+
+		case MsgOrganizerFolderDeleted:
+			var p OrganizerDeletePayload
+			if err := json.Unmarshal(env.Data, &p); err != nil {
+				continue
+			}
+			go c.applyRemoteOrganizerFolderDelete(p)
+
+		case MsgOrganizerFoldersReordered:
+			var p OrganizerReorderPayload
+			if err := json.Unmarshal(env.Data, &p); err != nil {
+				continue
+			}
+			go c.applyRemoteOrganizerFoldersReorder(p)
+
+		case MsgOrganizerItemAdded:
+			var p OrganizerMutationPayload
+			if err := json.Unmarshal(env.Data, &p); err != nil {
+				continue
+			}
+			go c.applyRemoteOrganizerItemAdd(p)
+
+		case MsgOrganizerItemUpdated:
+			var p OrganizerMutationPayload
+			if err := json.Unmarshal(env.Data, &p); err != nil {
+				continue
+			}
+			go c.applyRemoteOrganizerItemUpdate(p)
+
+		case MsgOrganizerItemRemoved:
+			var p OrganizerDeletePayload
+			if err := json.Unmarshal(env.Data, &p); err != nil {
+				continue
+			}
+			go c.applyRemoteOrganizerItemRemove(p)
+
+		case MsgOrganizerItemsReordered:
+			var p OrganizerReorderPayload
+			if err := json.Unmarshal(env.Data, &p); err != nil {
+				continue
+			}
+			go c.applyRemoteOrganizerItemsReorder(p)
 		}
 	}
 }
@@ -329,8 +386,27 @@ func (c *Client) subscribeLocal(ctx context.Context) {
 			if !ok {
 				return
 			}
-			if evt.Type == events.EventRequestCaptured {
+			switch evt.Type {
+			case events.EventRequestCaptured:
 				c.forwardRequest(evt.Data)
+			case events.EventOrganizerFolderCreated:
+				c.forwardOrganizerEvent(MsgOrganizerFolderCreated, evt.Data)
+			case events.EventOrganizerFolderUpdated:
+				c.forwardOrganizerEvent(MsgOrganizerFolderUpdated, evt.Data)
+			case events.EventOrganizerFolderDeleted:
+				c.forwardOrganizerDelete(MsgOrganizerFolderDeleted, evt.Data)
+			case events.EventOrganizerFoldersReordered:
+				c.forwardOrganizerReorder(MsgOrganizerFoldersReordered, evt.Data, 0)
+			case events.EventOrganizerItemAdded:
+				c.forwardOrganizerEvent(MsgOrganizerItemAdded, evt.Data)
+			case events.EventOrganizerItemUpdated:
+				c.forwardOrganizerEvent(MsgOrganizerItemUpdated, evt.Data)
+			case events.EventOrganizerItemRemoved:
+				c.forwardOrganizerDelete(MsgOrganizerItemRemoved, evt.Data)
+			case events.EventOrganizerItemsReordered:
+				if m, ok := evt.Data.(map[string]int64); ok {
+					c.forwardOrganizerReorder(MsgOrganizerItemsReordered, nil, m["folder_id"])
+				}
 			}
 		}
 	}
@@ -444,6 +520,160 @@ func (c *Client) removeMember(userID string) {
 		}
 	}
 	c.members = filtered
+}
+
+// ─── Organizer forwarding helpers ────────────────────────────────────────────
+
+func (c *Client) forwardOrganizerEvent(msgType string, data interface{}) {
+	dataJSON, err := json.Marshal(data)
+	if err != nil {
+		return
+	}
+	c.sendMsg(msgType, OrganizerMutationPayload{UserID: c.cfg.UserID, Data: dataJSON})
+}
+
+func (c *Client) forwardOrganizerDelete(msgType string, data interface{}) {
+	// data should be map[string]int64{"id": ...}
+	if m, ok := data.(map[string]int64); ok {
+		c.sendMsg(msgType, OrganizerDeletePayload{UserID: c.cfg.UserID, ID: m["id"]})
+	}
+}
+
+func (c *Client) forwardOrganizerReorder(msgType string, data interface{}, folderID int64) {
+	var rawData json.RawMessage
+	if data != nil {
+		b, err := json.Marshal(data)
+		if err != nil {
+			return
+		}
+		rawData = b
+	}
+	c.sendMsg(msgType, OrganizerReorderPayload{UserID: c.cfg.UserID, FolderID: folderID, Data: rawData})
+}
+
+// ─── Organizer remote-apply helpers ──────────────────────────────────────────
+
+func (c *Client) applyRemoteOrganizerFolderCreate(p OrganizerMutationPayload) {
+	if c.db == nil {
+		return
+	}
+	var f storage.OrganizerFolder
+	if err := json.Unmarshal(p.Data, &f); err != nil {
+		return
+	}
+	f.ID = 0
+	if _, err := c.db.CreateOrganizerFolder(&f); err != nil {
+		slog.Warn("team client: failed to apply remote folder create", "err", err)
+		return
+	}
+	// Re-fetch to get the DB-assigned ID and timestamps.
+	flat, _ := c.db.ListOrganizerFolders()
+	c.bus.Publish(events.Event{Type: events.EventOrganizerFolderCreated, Data: flat})
+}
+
+func (c *Client) applyRemoteOrganizerFolderUpdate(p OrganizerMutationPayload) {
+	if c.db == nil {
+		return
+	}
+	var f storage.OrganizerFolder
+	if err := json.Unmarshal(p.Data, &f); err != nil {
+		return
+	}
+	if err := c.db.UpdateOrganizerFolder(&f); err != nil {
+		slog.Warn("team client: failed to apply remote folder update", "err", err)
+		return
+	}
+	updated, _ := c.db.GetOrganizerFolder(f.ID)
+	if updated != nil {
+		c.bus.Publish(events.Event{Type: events.EventOrganizerFolderUpdated, Data: updated})
+	}
+}
+
+func (c *Client) applyRemoteOrganizerFolderDelete(p OrganizerDeletePayload) {
+	if c.db == nil {
+		return
+	}
+	if err := c.db.DeleteOrganizerFolder(p.ID); err != nil {
+		slog.Warn("team client: failed to apply remote folder delete", "err", err)
+		return
+	}
+	c.bus.Publish(events.Event{Type: events.EventOrganizerFolderDeleted, Data: map[string]int64{"id": p.ID}})
+}
+
+func (c *Client) applyRemoteOrganizerFoldersReorder(p OrganizerReorderPayload) {
+	if c.db == nil {
+		return
+	}
+	var updates []storage.ReorderFolderUpdate
+	if err := json.Unmarshal(p.Data, &updates); err != nil {
+		return
+	}
+	if err := c.db.ReorderOrganizerFolders(updates); err != nil {
+		slog.Warn("team client: failed to apply remote folders reorder", "err", err)
+		return
+	}
+	c.bus.Publish(events.Event{Type: events.EventOrganizerFoldersReordered, Data: updates})
+}
+
+func (c *Client) applyRemoteOrganizerItemAdd(p OrganizerMutationPayload) {
+	if c.db == nil {
+		return
+	}
+	var item storage.OrganizerItem
+	if err := json.Unmarshal(p.Data, &item); err != nil {
+		return
+	}
+	item.ID = 0
+	if _, err := c.db.AddOrganizerItem(&item); err != nil {
+		slog.Warn("team client: failed to apply remote item add", "err", err)
+		return
+	}
+	items, _ := c.db.ListOrganizerItems(item.FolderID)
+	c.bus.Publish(events.Event{Type: events.EventOrganizerItemAdded, Data: map[string]interface{}{
+		"folder_id": item.FolderID,
+		"items":     items,
+	}})
+}
+
+func (c *Client) applyRemoteOrganizerItemUpdate(p OrganizerMutationPayload) {
+	if c.db == nil {
+		return
+	}
+	var item storage.OrganizerItem
+	if err := json.Unmarshal(p.Data, &item); err != nil {
+		return
+	}
+	if err := c.db.UpdateOrganizerItem(&item); err != nil {
+		slog.Warn("team client: failed to apply remote item update", "err", err)
+		return
+	}
+	c.bus.Publish(events.Event{Type: events.EventOrganizerItemUpdated, Data: &item})
+}
+
+func (c *Client) applyRemoteOrganizerItemRemove(p OrganizerDeletePayload) {
+	if c.db == nil {
+		return
+	}
+	if err := c.db.RemoveOrganizerItem(p.ID); err != nil {
+		slog.Warn("team client: failed to apply remote item remove", "err", err)
+		return
+	}
+	c.bus.Publish(events.Event{Type: events.EventOrganizerItemRemoved, Data: map[string]int64{"id": p.ID}})
+}
+
+func (c *Client) applyRemoteOrganizerItemsReorder(p OrganizerReorderPayload) {
+	if c.db == nil {
+		return
+	}
+	var updates []storage.ReorderItemUpdate
+	if err := json.Unmarshal(p.Data, &updates); err != nil {
+		return
+	}
+	if err := c.db.ReorderOrganizerItems(updates); err != nil {
+		slog.Warn("team client: failed to apply remote items reorder", "err", err)
+		return
+	}
+	c.bus.Publish(events.Event{Type: events.EventOrganizerItemsReordered, Data: map[string]int64{"folder_id": p.FolderID}})
 }
 
 // AuthError is returned when the server rejects the team.auth message.

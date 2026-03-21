@@ -130,5 +130,33 @@ CREATE INDEX IF NOT EXISTS idx_ws_frames_session ON websocket_frames(session_id)
 	_, _ = db.Exec(`ALTER TABLE requests ADD COLUMN user_id TEXT NOT NULL DEFAULT ''`)
 	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_req_user ON requests(user_id)`)
 
+	// v3 migration: Organizer folders and items.
+	_, _ = db.Exec(`
+CREATE TABLE IF NOT EXISTS organizer_folders (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    parent_id  INTEGER REFERENCES organizer_folders(id),
+    name       TEXT    NOT NULL DEFAULT 'New Folder',
+    color      TEXT    NOT NULL DEFAULT 'teal',
+    icon       TEXT    NOT NULL DEFAULT 'Folder',
+    note       TEXT    NOT NULL DEFAULT '',
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`)
+	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_org_folders_parent ON organizer_folders(parent_id)`)
+	_, _ = db.Exec(`
+CREATE TABLE IF NOT EXISTS organizer_items (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    folder_id  INTEGER NOT NULL REFERENCES organizer_folders(id) ON DELETE CASCADE,
+    request_id INTEGER NOT NULL REFERENCES requests(id) ON DELETE CASCADE,
+    note       TEXT    NOT NULL DEFAULT '',
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(folder_id, request_id)
+)`)
+	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_org_items_folder  ON organizer_items(folder_id)`)
+	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_org_items_request ON organizer_items(request_id)`)
+
 	return nil
 }
