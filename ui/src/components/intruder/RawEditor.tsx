@@ -1,5 +1,5 @@
 import { useRef, useCallback, useState } from 'react'
-import { ChevronDown, Tag, XCircle } from 'lucide-react'
+import { ChevronDown, Tag, XCircle, Plus } from 'lucide-react'
 import { decodeBodyBytes, type RawBody } from '@/lib/httpBodies'
 import type { Request } from '@/api/client'
 
@@ -117,22 +117,26 @@ export function RawEditor({ value, onChange }: Props) {
     onChange(value.replace(/§([^§]*)§/g, '$1'))
   }, [value, onChange])
 
+  const handleAddMark = useCallback(() => {
+    const ta = textareaRef.current
+    if (!ta) return
+    const { selectionStart: start, selectionEnd: end } = ta
+    const next = value.slice(0, start) + '§' + value.slice(start, end) + '§' + value.slice(end)
+    onChange(next)
+    requestAnimationFrame(() => {
+      ta.selectionStart = start + 1
+      ta.selectionEnd = end + 1
+      ta.focus()
+    })
+  }, [value, onChange])
+
   // Ctrl+M or Cmd+M: wrap selection in §§
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'm') {
       e.preventDefault()
-      const ta = textareaRef.current
-      if (!ta) return
-      const { selectionStart: start, selectionEnd: end } = ta
-      const next = value.slice(0, start) + '§' + value.slice(start, end) + '§' + value.slice(end)
-      onChange(next)
-      // Restore cursor after React re-render
-      requestAnimationFrame(() => {
-        ta.selectionStart = start + 1
-        ta.selectionEnd = end + 1
-      })
+      handleAddMark()
     }
-  }, [value, onChange])
+  }, [handleAddMark])
 
   return (
     <div className="flex flex-col gap-2 h-full">
@@ -163,6 +167,16 @@ export function RawEditor({ value, onChange }: Props) {
             </div>
           )}
         </div>
+
+        <button
+          type="button"
+          onClick={handleAddMark}
+          title="Wrap selection in §§ markers (⌘M)"
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded border border-border text-xs text-muted-foreground hover:text-foreground hover:border-zinc-500 transition-colors"
+        >
+          <Plus size={12} />
+          Add Mark
+        </button>
 
         <button
           type="button"
