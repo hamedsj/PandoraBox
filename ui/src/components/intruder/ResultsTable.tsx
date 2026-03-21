@@ -1,9 +1,11 @@
 import { useState, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { ChevronUp, ChevronDown, Loader2, RotateCcw, GitBranch, FolderPlus, Link, Copy, Terminal, Code2, Crosshair } from 'lucide-react'
+import { ChevronUp, ChevronDown, Loader2, RotateCcw, GitBranch, FolderPlus, Link, Copy, Terminal, Code2, Crosshair, Filter } from 'lucide-react'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import { ResultInspectorPanel } from './ResultInspectorPanel'
+import { IntruderFilterModal, defaultIntruderFilters } from './IntruderFilterModal'
+import type { IntruderFilters } from './IntruderFilterModal'
 import { AddToFlowModal } from '@/components/flows/AddToFlowModal'
 import { AddToOrganizerModal } from '@/components/organizer/AddToOrganizerModal'
 import { useContextMenu } from '@/hooks/useContextMenu'
@@ -22,15 +24,66 @@ interface Props {
   markerCount: number
 }
 
-function filterResults(results: AttackResult[], statusFilter: string, minLen: string, maxLen: string): AttackResult[] {
+function countActiveFilters(f: IntruderFilters): number {
+  return [
+    f.search,
+    !f.caseInsensitive,
+    f.useRegex,
+    f.negativeSearch,
+    f.statusCodes.length > 0,
+    f.minLen,
+    f.maxLen,
+    f.minTime,
+    f.maxTime,
+    f.errors !== 'all',
+  ].filter(Boolean).length
+}
+
+function applyFilters(results: AttackResult[], f: IntruderFilters): AttackResult[] {
   return results.filter((r) => {
-    if (statusFilter) {
-      const codes = statusFilter.split(',').map((s) => s.trim()).filter(Boolean)
+    // Errors filter
+    const hasError = !!r.error
+    if (f.errors === 'only' && !hasError) return false
+    if (f.errors === 'hide' && hasError) return false
+
+    // Status codes
+    if (f.statusCodes.length > 0) {
       if (r.status == null) return false
-      if (!codes.some((c) => String(r.status).startsWith(c.replace(/x/gi, '')))) return false
+      const code = String(r.status)
+      const matches = f.statusCodes.some((chip) => {
+        const prefix = chip[0]
+        return code[0] === prefix
+      })
+      if (!matches) return false
     }
-    if (minLen && r.length != null && r.length < Number(minLen)) return false
-    if (maxLen && r.length != null && r.length > Number(maxLen)) return false
+
+    // Length range
+    if (f.minLen && (r.length == null || r.length < Number(f.minLen))) return false
+    if (f.maxLen && (r.length == null || r.length > Number(f.maxLen))) return false
+
+    // Time range
+    if (f.minTime && r.time < Number(f.minTime)) return false
+    if (f.maxTime && r.time > Number(f.maxTime)) return false
+
+    // Payload search
+    if (f.search) {
+      const payloadText = r.payloads.join(' ')
+      let match: boolean
+      if (f.useRegex) {
+        try {
+          const re = new RegExp(f.search, f.caseInsensitive ? 'i' : '')
+          match = re.test(payloadText)
+        } catch {
+          match = false
+        }
+      } else {
+        const hay = f.caseInsensitive ? payloadText.toLowerCase() : payloadText
+        const needle = f.caseInsensitive ? f.search.toLowerCase() : f.search
+        match = hay.includes(needle)
+      }
+      if (f.negativeSearch ? match : !match) return false
+    }
+
     return true
   })
 }
@@ -45,9 +98,9 @@ export function ResultsTable({ results, markerCount }: Props) {
   // Sorting / filtering
   const [sortKey, setSortKey] = useState<SortKey>('index')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
-  const [statusFilter, setStatusFilter] = useState('')
-  const [minLen, setMinLen] = useState('')
-  const [maxLen, setMaxLen] = useState('')
+  const [filters, setFilters] = useState<IntruderFilters>(defaultIntruderFilters)
+  const [filterOpen, setFilterOpen] = useState(false)
+  const activeFilterCount = countActiveFilters(filters)
 
   // Context menu
   const { open: menuOpen, openMenu, close: closeMenu, menuRef } = useContextMenu()
@@ -84,7 +137,7 @@ export function ResultsTable({ results, markerCount }: Props) {
   }
 
   const filtered = useMemo(() => {
-    const f = filterResults(results, statusFilter, minLen, maxLen)
+    const f = applyFilters(results, filters)
     return [...f].sort((a, b) => {
       let diff = 0
       if (sortKey === 'index') diff = a.index - b.index
@@ -93,7 +146,7 @@ export function ResultsTable({ results, markerCount }: Props) {
       else if (sortKey === 'time') diff = a.time - b.time
       return sortDir === 'asc' ? diff : -diff
     })
-  }, [results, statusFilter, minLen, maxLen, sortKey, sortDir])
+  }, [results, filters, sortKey, sortDir])
 
   const rowVirtualizer = useVirtualizer({
     count: filtered.length,
@@ -135,29 +188,32 @@ export function ResultsTable({ results, markerCount }: Props) {
     <div className="flex h-full gap-0 overflow-hidden">
       {/* Table side */}
       <div className={`flex flex-col min-w-0 overflow-hidden transition-all duration-200 ${inspected ? 'flex-[0_0_55%]' : 'flex-1'}`}>
-        {/* Filters */}
-        <div className="flex items-center gap-2 flex-wrap shrink-0 pb-2">
-          <input
-            type="text"
-            placeholder="Status (e.g. 200, 5xx)"
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="rounded-md border border-border bg-background px-2 py-1 text-xs w-40 focus:outline-none focus:ring-1 focus:ring-primary"
-          />
-          <input
-            type="number"
-            placeholder="Min length"
-            value={minLen}
-            onChange={(e) => setMinLen(e.target.value)}
-            className="rounded-md border border-border bg-background px-2 py-1 text-xs w-28 focus:outline-none focus:ring-1 focus:ring-primary"
-          />
-          <input
-            type="number"
-            placeholder="Max length"
-            value={maxLen}
-            onChange={(e) => setMaxLen(e.target.value)}
-            className="rounded-md border border-border bg-background px-2 py-1 text-xs w-28 focus:outline-none focus:ring-1 focus:ring-primary"
-          />
+        {/* Filter bar */}
+        <div className="flex items-center gap-2 shrink-0 pb-2">
+          <button
+            onClick={() => setFilterOpen(true)}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-medium transition-colors ${
+              activeFilterCount > 0
+                ? 'border-primary bg-primary/10 text-primary hover:bg-primary/20'
+                : 'border-border text-muted-foreground hover:text-foreground hover:border-zinc-500'
+            }`}
+          >
+            <Filter size={12} />
+            Filter
+            {activeFilterCount > 0 && (
+              <span className="bg-primary text-primary-foreground text-[10px] font-semibold px-1.5 py-px rounded-full leading-tight">
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
+          {activeFilterCount > 0 && (
+            <button
+              onClick={() => setFilters(defaultIntruderFilters)}
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Reset
+            </button>
+          )}
           <span className="text-xs text-muted-foreground ml-auto">
             {filtered.length.toLocaleString()} / {results.length.toLocaleString()}
           </span>
@@ -399,6 +455,13 @@ export function ResultsTable({ results, markerCount }: Props) {
           />
         </>
       )}
+
+      <IntruderFilterModal
+        isOpen={filterOpen}
+        onClose={() => setFilterOpen(false)}
+        filters={filters}
+        onApply={setFilters}
+      />
     </div>
   )
 }
