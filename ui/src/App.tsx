@@ -9,6 +9,7 @@ import { SitemapPage } from '@/pages/SitemapPage'
 import { MatchReplacePage } from '@/pages/MatchReplacePage'
 import { FlowsPage } from '@/pages/FlowsPage'
 import { OrganizerPage } from '@/pages/OrganizerPage'
+import { IntruderPage } from '@/pages/IntruderPage'
 import { ThemeProvider } from '@/components/ThemeProvider'
 import { LauncherPage } from '@/pages/LauncherPage'
 
@@ -35,6 +36,7 @@ export default function App() {
             <Route path="/replay" element={<ReplayPage />} />
             <Route path="/flows" element={<FlowsPage />} />
             <Route path="/organizer" element={<OrganizerPage />} />
+            <Route path="/intruder" element={<IntruderPage />} />
             <Route path="/sitemap" element={<SitemapPage />} />
             <Route path="/scope" element={<ScopePage />} />
             <Route path="/match-replace" element={<MatchReplacePage />} />

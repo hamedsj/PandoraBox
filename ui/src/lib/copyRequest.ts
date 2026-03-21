@@ -25,7 +25,7 @@ export function copyURL(req: Request): void {
   navigator.clipboard.writeText(buildURL(req)).catch(console.error)
 }
 
-export function copyRawRequest(req: Request): void {
+export function buildRawHTTP(req: Request): string {
   const headers = parseHeaders(req.headers)
   let raw = `${req.method} ${req.path}${req.query ? '?' + req.query : ''} HTTP/1.1\r\n`
   raw += `Host: ${displayHost(req.host, req.scheme)}\r\n`
@@ -35,7 +35,11 @@ export function copyRawRequest(req: Request): void {
   }
   raw += '\r\n'
   raw += getBody(req)
-  navigator.clipboard.writeText(raw).catch(console.error)
+  return raw
+}
+
+export function copyRawRequest(req: Request): void {
+  navigator.clipboard.writeText(buildRawHTTP(req)).catch(console.error)
 }
 
 export function copyAsCurl(req: Request): void {

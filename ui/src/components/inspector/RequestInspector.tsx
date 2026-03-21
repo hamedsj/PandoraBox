@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useContextMenu } from '@/hooks/useContextMenu'
 import { useProxyStore } from '@/store/proxy'
 import { api } from '@/api/client'
@@ -8,7 +9,7 @@ import { StatusBadge } from '@/components/common/StatusBadge'
 import { CodeViewer } from '@/components/common/CodeViewer'
 import { AddToFlowModal } from '@/components/flows/AddToFlowModal'
 import { AddToOrganizerModal } from '@/components/organizer/AddToOrganizerModal'
-import { X, Copy, PanelBottomOpen, PanelRightOpen, Highlighter, RotateCcw, Trash2, GitBranch, FolderPlus, Target, Link, Terminal, Code2 } from 'lucide-react'
+import { X, Copy, PanelBottomOpen, PanelRightOpen, Highlighter, RotateCcw, Trash2, GitBranch, FolderPlus, Target, Link, Terminal, Code2, Crosshair } from 'lucide-react'
 import { copyURL, copyRawRequest, copyAsCurl, copyAsFetch } from '@/lib/copyRequest'
 import { displayHost } from '@/lib/utils'
 import { cn } from '@/lib/utils'
@@ -17,6 +18,7 @@ import { presentBody } from '@/lib/bodyPresentation'
 import { useWorkspaceStore } from '@/store/workspace'
 import { parseRequestTags, REQUEST_TAG_HIGHLIGHTED } from '@/lib/requestTags'
 import { toast } from 'sonner'
+import { useIntruderStore } from '@/store/intruder'
 
 type Tab = 'request' | 'response'
 
@@ -47,6 +49,7 @@ export function RequestInspector({ edge = 'left' }: { edge?: 'left' | 'top' | 'n
   const [requestBody, setRequestBody] = useState<DecodedBody | null>(null)
   const [responseBody, setResponseBody] = useState<DecodedBody | null>(null)
 
+  const navigate = useNavigate()
   const { open: contextMenuOpen, openMenu, close: closeContextMenu, menuRef } = useContextMenu()
   const [addToFlowOpen, setAddToFlowOpen] = useState(false)
   const [addToOrganizerOpen, setAddToOrganizerOpen] = useState(false)
@@ -254,6 +257,14 @@ export function RequestInspector({ edge = 'left' }: { edge?: 'left' | 'top' | 'n
               Send to Replay
             </button>
           )}
+
+          <button
+            onClick={() => { useIntruderStore.getState().addSession(req); navigate('/intruder'); closeContextMenu() }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-muted"
+          >
+            <Crosshair size={14} />
+            Send to Intruder
+          </button>
 
           <button
             onClick={() => { setAddToFlowOpen(true); closeContextMenu() }}

@@ -1,6 +1,7 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useContextMenu } from '@/hooks/useContextMenu'
-import { GripVertical, StickyNote, X, Highlighter, RotateCcw, Trash2, GitBranch, FolderPlus, Target, Link, Copy, Terminal, Code2 } from 'lucide-react'
+import { GripVertical, StickyNote, X, Highlighter, RotateCcw, Trash2, GitBranch, FolderPlus, Target, Link, Copy, Terminal, Code2, Crosshair } from 'lucide-react'
 import { copyURL, copyRawRequest, copyAsCurl, copyAsFetch } from '@/lib/copyRequest'
 import { displayHost } from '@/lib/utils'
 import { useSortable } from '@dnd-kit/sortable'
@@ -15,6 +16,7 @@ import { AddToOrganizerModal } from '@/components/organizer/AddToOrganizerModal'
 import { api, type ScopeRule } from '@/api/client'
 import { useProxyStore } from '@/store/proxy'
 import { useOrganizerStore } from '@/store/organizer'
+import { useIntruderStore } from '@/store/intruder'
 import { parseRequestTags, REQUEST_TAG_HIGHLIGHTED } from '@/lib/requestTags'
 import type { OrganizerItem, OrganizerColor } from '@/api/client'
 
@@ -48,6 +50,7 @@ interface Props {
 }
 
 export function ItemCard({ item, selected, folderColor, onSelect, onRemove, onNoteChange, onNoteSave, sortable = true }: Props) {
+  const navigate = useNavigate()
   const [showNote, setShowNote] = useState(false)
   const { open: contextMenuOpen, openMenu, close: closeContextMenu, menuRef } = useContextMenu()
   const [addToFlowOpen, setAddToFlowOpen] = useState(false)
@@ -230,6 +233,14 @@ export function ItemCard({ item, selected, folderColor, onSelect, onRemove, onNo
                   Send to Replay
                 </button>
               )}
+
+              <button
+                onClick={() => { useIntruderStore.getState().addSession(req); navigate('/intruder'); closeContextMenu() }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-muted"
+              >
+                <Crosshair size={14} />
+                Send to Intruder
+              </button>
 
               <button
                 onClick={() => { setAddToFlowOpen(true); closeContextMenu() }}

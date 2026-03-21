@@ -1,10 +1,11 @@
 import { NavLink } from 'react-router-dom'
-import { Globe, Shield, RotateCcw, Settings, Sun, Moon, Target, Network, Replace, GitBranch, Terminal, Wifi, WifiOff, Loader2, FolderOpen } from 'lucide-react'
+import { Globe, Shield, RotateCcw, Settings, Sun, Moon, Target, Network, Replace, GitBranch, Terminal, Wifi, WifiOff, Loader2, FolderOpen, Crosshair } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useProxyStore } from '@/store/proxy'
 import { useThemeStore } from '@/store/theme'
 import { useConsoleStore } from '@/store/console'
 import { useTeamStore } from '@/store/team'
+import { useIntruderStore } from '@/store/intruder'
 import { TeamPresence } from '@/components/team/TeamPresence'
 import { ProjectSwitcher } from './ProjectSwitcher'
 import { useEffect, useState } from 'react'
@@ -16,6 +17,7 @@ const navItems = [
   { to: '/match-replace', label: 'Match & Replace', icon: Replace },
   { to: '/sitemap', label: 'SiteMap', icon: Network },
   { to: '/replay', label: 'Replay', icon: RotateCcw },
+  { to: '/intruder', label: 'Intruder', icon: Crosshair },
   { to: '/flows', label: 'Flows', icon: GitBranch },
   { to: '/organizer', label: 'Organizer', icon: FolderOpen },
   { to: '/settings', label: 'Settings', icon: Settings },
@@ -27,7 +29,9 @@ export function Sidebar() {
   const { mode, setMode } = useThemeStore()
   const { toggle: toggleConsole, unread, isOpen: consoleOpen } = useConsoleStore()
   const syncStatus = useTeamStore((s) => s.syncStatus)
+  const intruderAttentionTick = useIntruderStore((s) => s.intruderAttentionTick)
   const [blinkReplay, setBlinkReplay] = useState(false)
+  const [blinkIntruder, setBlinkIntruder] = useState(false)
 
   useEffect(() => {
     if (replayAttentionTick === 0) return
@@ -39,6 +43,17 @@ export function Sidebar() {
       window.clearTimeout(timeout)
     }
   }, [replayAttentionTick])
+
+  useEffect(() => {
+    if (intruderAttentionTick === 0) return
+    setBlinkIntruder(false)
+    const frame = window.requestAnimationFrame(() => setBlinkIntruder(true))
+    const timeout = window.setTimeout(() => setBlinkIntruder(false), 950)
+    return () => {
+      window.cancelAnimationFrame(frame)
+      window.clearTimeout(timeout)
+    }
+  }, [intruderAttentionTick])
 
   return (
     <aside className="w-56 flex flex-col py-3 border-r border-border bg-card gap-1">
@@ -65,6 +80,7 @@ export function Sidebar() {
               cn(
                 'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all text-sm',
                 to === '/replay' && blinkReplay && 'replay-attention',
+                to === '/intruder' && blinkIntruder && 'replay-attention',
                 isActive
                   ? 'bg-primary/20 text-primary font-medium'
                   : 'text-muted-foreground hover:text-foreground hover:bg-muted'

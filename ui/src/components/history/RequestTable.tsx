@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useContextMenu } from '@/hooks/useContextMenu'
 import { useProxyStore } from '@/store/proxy'
 import { useRequests } from '@/hooks/useRequests'
@@ -8,7 +9,7 @@ import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { Checkbox } from '@/components/ui/Checkbox'
 import { cn } from '@/lib/utils'
 import { api, type Request, type ScopeRule } from '@/api/client'
-import { Globe, Filter, RotateCcw, Trash2, ChevronUp, ChevronDown, Target, GitBranch, Highlighter, Sparkles, FolderPlus, Copy, Link, Terminal, Code2 } from 'lucide-react'
+import { Globe, Filter, RotateCcw, Trash2, ChevronUp, ChevronDown, Target, GitBranch, Highlighter, Sparkles, FolderPlus, Copy, Link, Terminal, Code2, Crosshair } from 'lucide-react'
 import { copyURL, copyRawRequest, copyAsCurl, copyAsFetch } from '@/lib/copyRequest'
 import { displayHost } from '@/lib/utils'
 import { UserDot } from '@/components/team/UserDot'
@@ -20,6 +21,7 @@ import { countActiveFilters, filterRequests, isWebSocket } from '@/lib/requestFi
 import { parseRequestTags, REQUEST_TAG_HIGHLIGHTED } from '@/lib/requestTags'
 import { subscribeShortcutAction } from '@/lib/shortcuts'
 import { Select } from '@/components/ui/Select'
+import { useIntruderStore } from '@/store/intruder'
 
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -576,6 +578,7 @@ function RequestRow({
   onRemoveFromReplay: () => void
   onToggleHighlight: () => void
 }) {
+  const navigate = useNavigate()
   const project = useProxyStore((s) => s.project)
   const setProject = useProxyStore((s) => s.setProject)
   const { open: contextMenuOpen, openMenu, close: closeContextMenu, menuRef } = useContextMenu()
@@ -700,6 +703,14 @@ function RequestRow({
               Send to Replay
             </button>
           )}
+
+          <button
+            onClick={(e) => { e.stopPropagation(); useIntruderStore.getState().addSession(req); navigate('/intruder'); closeContextMenu() }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-muted"
+          >
+            <Crosshair size={14} />
+            Send to Intruder
+          </button>
 
           <button
             onClick={(e) => { e.stopPropagation(); setAddToFlowOpen(true); closeContextMenu() }}
