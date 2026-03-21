@@ -1,11 +1,12 @@
 import { NavLink } from 'react-router-dom'
-import { Globe, Shield, RotateCcw, Settings, Sun, Moon, Target, Network, Replace, GitBranch, Terminal, Wifi, WifiOff, Loader2, FolderOpen, Crosshair } from 'lucide-react'
+import { Globe, Shield, RotateCcw, Settings, Sun, Moon, Target, Network, Replace, GitBranch, Terminal, Wifi, WifiOff, Loader2, FolderOpen, Crosshair, RadioTower } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useProxyStore } from '@/store/proxy'
 import { useThemeStore } from '@/store/theme'
 import { useConsoleStore } from '@/store/console'
 import { useTeamStore } from '@/store/team'
 import { useIntruderStore } from '@/store/intruder'
+import { useCollaboratorStore } from '@/store/collaborator'
 import { TeamPresence } from '@/components/team/TeamPresence'
 import { ProjectSwitcher } from './ProjectSwitcher'
 import { useEffect, useState } from 'react'
@@ -18,6 +19,7 @@ const navItems = [
   { to: '/sitemap', label: 'SiteMap', icon: Network },
   { to: '/replay', label: 'Replay', icon: RotateCcw },
   { to: '/intruder', label: 'Intruder', icon: Crosshair },
+  { to: '/collaborator', label: 'Collaborator', icon: RadioTower },
   { to: '/flows', label: 'Flows', icon: GitBranch },
   { to: '/organizer', label: 'Organizer', icon: FolderOpen },
   { to: '/settings', label: 'Settings', icon: Settings },
@@ -30,8 +32,10 @@ export function Sidebar() {
   const { toggle: toggleConsole, unread, isOpen: consoleOpen } = useConsoleStore()
   const syncStatus = useTeamStore((s) => s.syncStatus)
   const intruderAttentionTick = useIntruderStore((s) => s.intruderAttentionTick)
+  const collaboratorAttentionTick = useCollaboratorStore((s) => s.collaboratorAttentionTick)
   const [blinkReplay, setBlinkReplay] = useState(false)
   const [blinkIntruder, setBlinkIntruder] = useState(false)
+  const [blinkCollaborator, setBlinkCollaborator] = useState(false)
 
   useEffect(() => {
     if (replayAttentionTick === 0) return
@@ -54,6 +58,17 @@ export function Sidebar() {
       window.clearTimeout(timeout)
     }
   }, [intruderAttentionTick])
+
+  useEffect(() => {
+    if (collaboratorAttentionTick === 0) return
+    setBlinkCollaborator(false)
+    const frame = window.requestAnimationFrame(() => setBlinkCollaborator(true))
+    const timeout = window.setTimeout(() => setBlinkCollaborator(false), 950)
+    return () => {
+      window.cancelAnimationFrame(frame)
+      window.clearTimeout(timeout)
+    }
+  }, [collaboratorAttentionTick])
 
   return (
     <aside className="w-56 flex flex-col py-3 border-r border-border bg-card gap-1">
@@ -81,6 +96,7 @@ export function Sidebar() {
                 'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all text-sm',
                 to === '/replay' && blinkReplay && 'replay-attention',
                 to === '/intruder' && blinkIntruder && 'replay-attention',
+                to === '/collaborator' && blinkCollaborator && 'replay-attention',
                 isActive
                   ? 'bg-primary/20 text-primary font-medium'
                   : 'text-muted-foreground hover:text-foreground hover:bg-muted'
