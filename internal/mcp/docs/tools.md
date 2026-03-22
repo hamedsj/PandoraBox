@@ -67,6 +67,7 @@ Arguments:
 - `search`
 - `limit`
 - `offset`
+- `user_id` — filter by team member user ID (team mode only)
 
 Returns a `requests` array and `total`.
 
@@ -78,6 +79,7 @@ Arguments:
 
 - `query` required
 - `limit`
+- `user_id` — filter by team member user ID (team mode only)
 
 ### `get_request`
 
@@ -354,6 +356,7 @@ Arguments:
 - `status_min`
 - `status_max`
 - `in_scope_only`
+- `user_id` — restrict the sitemap to one team member's traffic (team mode only)
 
 This is the MCP-friendly version of the UI SiteMap.
 
@@ -399,3 +402,347 @@ To patch several project settings together:
 1. `get_project`
 2. merge the intended changes
 3. `update_project`
+
+## Organizer
+
+The Organizer lets you group captured requests into named, color-coded folders — useful for tracking findings, noting interesting requests, or organizing a pentest by host or vulnerability class.
+
+Folders are nested (tree structure). Items are references to captured requests stored inside a folder.
+
+### `organizer_list_folders`
+
+Lists all folders as a nested tree plus a flat array for easier lookup.
+
+Arguments:
+
+- `include_items` — boolean; if true, each folder includes its items (requests) inline
+
+### `organizer_create_folder`
+
+Creates a new folder.
+
+Arguments:
+
+- `name`
+- `color` — one of: `teal`, `blue`, `purple`, `indigo`, `pink`, `red`, `orange`, `yellow`, `green`, `cyan`
+- `icon` — one of: `Folder`, `FolderOpen`, `Star`, `Bookmark`, `Flag`, `Target`, `Zap`, `Shield`, `Bug`, `FlaskConical`, `Lock`, `Globe`, `Code`, `Database`, `Server`
+- `note` — markdown note for this folder
+- `parent_id` — parent folder ID (omit for root)
+- `sort_order`
+
+### `organizer_update_folder`
+
+Updates an existing folder.
+
+Arguments:
+
+- `id` required
+- `name`
+- `color`
+- `icon`
+- `note`
+- `parent_id` — pass `-1` to move folder to root
+- `sort_order`
+
+### `organizer_delete_folder`
+
+Deletes a folder and all its descendants.
+
+Arguments:
+
+- `id` required
+
+### `organizer_reorder_folders`
+
+Reorders folders by setting explicit sort positions.
+
+Arguments:
+
+- `updates` required — JSON array of `{"id": <number>, "sort_order": <number>}` objects
+
+Example:
+
+```json
+{
+  "updates": "[{\"id\":1,\"sort_order\":0},{\"id\":2,\"sort_order\":1}]"
+}
+```
+
+### `organizer_add_item`
+
+Adds a captured request to a folder.
+
+Arguments:
+
+- `folder_id` required
+- `request_id` required
+- `note` — optional markdown note for this specific item
+- `sort_order`
+
+### `organizer_update_item`
+
+Updates the note or sort order of an existing item.
+
+Arguments:
+
+- `id` required — item ID (not request ID)
+- `note`
+- `sort_order`
+
+### `organizer_remove_item`
+
+Removes an item from its folder (does not delete the underlying request).
+
+Arguments:
+
+- `id` required — item ID
+
+### `organizer_list_items`
+
+Lists all items (with their full request records) in one folder.
+
+Arguments:
+
+- `folder_id` required
+
+## Intruder
+
+### `intruder_fuzz`
+
+Runs a fuzzing attack on a captured request. Place `§markers§` in the raw HTTP packet to mark injection points, supply payload lists, and choose an attack strategy. Waits for all variants to complete before returning results.
+
+Attack types:
+
+- `sniper` — iterates each marker one at a time through all payloads; uses first payload set; total = markers × payloads
+- `battering_ram` — inserts the same payload into every marker simultaneously; uses first payload set; total = payloads
+- `pitchfork` — parallel iteration, one set per marker, stops at the shortest set; total = min(set lengths)
+- `cluster_bomb` — cartesian product of all sets; total = product(set lengths)
+
+Arguments:
+
+- `request_id` required — ID of the base request (used for host/scheme routing)
+- `raw_b64` required — base64-encoded raw HTTP request with `§markers§` at injection points
+- `attack_type` — `"sniper"` (default), `"battering_ram"`, `"pitchfork"`, or `"cluster_bomb"`
+- `payloads_json` required — JSON array of string arrays, one inner array per marker. For `sniper`/`battering_ram` only the first array is used. Example: `[["admin","root"],["pass1","pass2"]]`
+- `concurrency` — max concurrent requests, 1–20, default 5
+
+Returns:
+
+```json
+{
+  "results": [
+    {
+      "index": 0,
+      "payloads": ["admin"],
+      "status": 200,
+      "length_bytes": 1024,
+      "time_ms": 45,
+      "error": ""
+    }
+  ],
+  "total": 10
+}
+```
+
+Typical workflow:
+
+1. `get_request` to retrieve the original request
+2. Decode the `raw` field, insert `§` around injection points, re-encode as base64
+3. `intruder_fuzz` with the modified base64 and your payload lists
+4. Inspect results for anomalous status codes or response lengths
+
+## Collaborator
+
+Collaborator integrates with interactsh to detect out-of-band interactions (DNS lookups, HTTP callbacks, SMTP, LDAP, etc.) triggered by injected payloads.
+
+### `collaborator_start`
+
+Starts a new Collaborator session. Registers a correlation ID with the interactsh server and returns a unique URL to embed in payloads.
+
+Arguments:
+
+- `server` — interactsh server hostname (default `"oast.pro"`); public options: `oast.pro`, `oast.live`, `oast.site`, `oast.online`, `oast.fun`, `oast.me`
+
+Returns:
+
+```json
+{
+  "session_id": "<uuid>",
+  "url": "<correlationId><nonce>.oast.pro",
+  "server": "oast.pro",
+  "correlation_id": "<20-char id>"
+}
+```
+
+Embed the returned `url` in your payloads (e.g. as an SSRF target, in a `Host:` header, in an XXE external entity, etc.).
+
+### `collaborator_poll`
+
+Polls the active session for new out-of-band interactions.
+
+Arguments:
+
+- `session_id` required — session ID returned by `collaborator_start`
+
+Returns:
+
+```json
+{
+  "interactions": [
+    {
+      "protocol": "dns",
+      "unique-id": "...",
+      "full-id": "...",
+      "q-type": "A",
+      "raw-request": "...",
+      "remote-address": "1.2.3.4",
+      "timestamp": "2024-01-15T10:00:00Z"
+    }
+  ],
+  "count": 1
+}
+```
+
+Call this repeatedly after sending payloads to detect callbacks.
+
+### `collaborator_stop`
+
+Stops a Collaborator session and deregisters from the interactsh server.
+
+Arguments:
+
+- `session_id` required
+
+Returns `{"success": true}`.
+
+### `collaborator_generate_url`
+
+Generates a fresh unique test URL for an existing session (same correlation ID, new random nonce). Use this to create distinct per-payload URLs so you can tell which injection point triggered an interaction.
+
+Arguments:
+
+- `session_id` required
+
+Returns `{"url": "<correlationId><newNonce>.oast.pro"}`.
+
+Typical Collaborator workflow:
+
+1. `collaborator_start` → get `session_id` and base `url`
+2. For each injection point, call `collaborator_generate_url` to get a unique URL
+3. Send payloads containing those URLs (via `replay_request`, `send_request`, or `intruder_fuzz`)
+4. `collaborator_poll` to detect which URLs were contacted and by what protocol
+
+## Team Collaboration
+
+These tools manage team sync — connecting to a shared team server, inspecting teammates' traffic, and listing members.
+
+### `team_status`
+
+Returns current team sync state, server URL, and connected members.
+
+Returns:
+
+```json
+{
+  "connected": true,
+  "status": "connected",
+  "server_url": "ws://myserver:7778",
+  "members": [
+    {"user_id": "abc123", "display_name": "Alice", "color": "teal", "online": true}
+  ]
+}
+```
+
+### `team_connect`
+
+Connects this instance to a team server. Credentials are saved for auto-reconnect.
+
+Arguments:
+
+- `server_url` required — WebSocket URL, e.g. `ws://host:7778`
+- `password` required
+- `display_name` — your visible name to teammates
+
+The connection is asynchronous. Call `team_status` shortly after to confirm `"status": "connected"`.
+
+### `team_disconnect`
+
+Disconnects from the team server and clears saved credentials.
+
+### `list_team_members`
+
+Lists all known team members (online and offline).
+
+### `get_team_member_traffic`
+
+Fetches captured requests for one team member.
+
+Arguments:
+
+- `user_id` required
+- `limit` — default 20
+- `host` — filter by host
+
+## Team Server Admin
+
+These tools are only available when PandoraBox is running in `--team-server` mode. On a normal client instance they return an error.
+
+### `team_server_status`
+
+Returns server uptime, current config, and connected member count.
+
+### `team_server_list_members`
+
+Lists all members (online and offline) with request counts and last-seen timestamps.
+
+### `team_server_kick_member`
+
+Forcibly disconnects a connected member.
+
+Arguments:
+
+- `user_id` required
+
+### `team_server_update_config`
+
+Updates the server's `pandorabox-server.json`. Port changes take effect after restart.
+
+Arguments:
+
+- `team_name`
+- `max_members`
+- `team_port` — WebSocket sync port (restart required to take effect)
+- `api_port` — REST/UI port (restart required to take effect)
+
+### `team_server_set_password`
+
+Changes the team server password. Existing connections are not dropped; the new password applies on next reconnect.
+
+Arguments:
+
+- `new_password` required — stored as bcrypt hash
+
+### `team_server_export_project`
+
+Exports the server's project data (`project.json` + `pandora.db`) as a base64-encoded ZIP archive.
+
+Returns:
+
+```json
+{
+  "zip_base64": "<base64>",
+  "size_bytes": 204800
+}
+```
+
+### `team_server_restart`
+
+Gracefully restarts the team server process (re-reads config). All clients will disconnect briefly and auto-reconnect.
+
+### `team_server_migrate_data`
+
+Moves the server's data directory to a new absolute path and updates the config.
+
+Arguments:
+
+- `new_data_dir` required
