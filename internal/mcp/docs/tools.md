@@ -65,9 +65,11 @@ Arguments:
 - `status_min`
 - `status_max`
 - `search`
-- `limit`
+- `content_type` — filter by response Content-Type substring (e.g. `"javascript"`, `"html"`)
+- `limit` — default 20; capped at 50 when `include_decoded_body` is true
 - `offset`
 - `user_id` — filter by team member user ID (team mode only)
+- `include_decoded_body` — boolean; if true, adds `decoded_response_body` (plain UTF-8 string, decompressed) to each result
 
 Returns a `requests` array and `total`.
 
@@ -88,6 +90,7 @@ Gets one full request record, including response details if present.
 Arguments:
 
 - `id` required
+- `decoded` — boolean; if true, adds `decoded_body` (plain UTF-8 string) to both the request and response objects; decompresses gzip/deflate automatically
 
 ### `get_websocket_session`
 
@@ -359,6 +362,138 @@ Arguments:
 - `user_id` — restrict the sitemap to one team member's traffic (team mode only)
 
 This is the MCP-friendly version of the UI SiteMap.
+
+## Response Analysis
+
+These tools work directly on captured response bodies and headers. They are designed for security research workflows: source code review, secret/pattern detection, and header auditing.
+
+### `get_request` with `decoded: true`
+
+When you need to read the response body as plain text, pass `decoded: true` to `get_request`. The result includes an extra `decoded_body` field on both the request and response objects — a UTF-8 string with gzip/deflate decompressed automatically.
+
+```json
+{
+  "decoded": true
+}
+```
+
+### `list_requests` with `content_type` and `include_decoded_body`
+
+Filter requests to a specific content type and return bodies inline:
+
+```json
+{
+  "content_type": "javascript",
+  "include_decoded_body": true,
+  "limit": 20
+}
+```
+
+Returns each request with a `decoded_response_body` field — UTF-8 text, decompressed.
+
+### `grep_responses`
+
+Searches response bodies across captured traffic using a regular expression. Supports context lines like `grep -C`.
+
+Arguments:
+
+- `pattern` required — regular expression
+- `host` — substring filter on host
+- `content_type` — substring filter on Content-Type (e.g. `"javascript"`)
+- `context_lines` — lines before/after each match (0–10, default 2)
+
+Returns up to 500 matches:
+
+```json
+{
+  "matches": [
+    {
+      "id": 42,
+      "host": "api.example.com",
+      "path": "/static/app.js",
+      "line": 17,
+      "column": 5,
+      "snippet": "...surrounding lines..."
+    }
+  ],
+  "total": 3
+}
+```
+
+Example — find hardcoded API keys in JS files:
+
+```json
+{
+  "pattern": "api[_-]?key\\s*[:=]\\s*['\"][A-Za-z0-9]{20,}",
+  "content_type": "javascript",
+  "context_lines": 2
+}
+```
+
+### `export_responses`
+
+Writes response bodies to the local filesystem, organized as `dest_dir/{host}/{path}`. Useful for offline code review or passing to external scanners.
+
+Arguments:
+
+- `dest_dir` required — local path to write files
+- `host` — filter by host
+- `content_type` — filter by Content-Type substring
+- `status_min`, `status_max` — filter by status code range
+- `decoded` — decompress gzip/deflate before writing (default `true`)
+
+Returns:
+
+```json
+{
+  "total_exported": 47,
+  "total_skipped": 2,
+  "exported": [
+    {"id": 12, "host": "app.example.com", "path": "/js/main.js", "local_path": "/tmp/out/app.example.com/js/main.js", "size": 84320}
+  ],
+  "skipped": [
+    {"id": 99, "host": "app.example.com", "path": "/img/logo.png", "reason": "no response"}
+  ]
+}
+```
+
+Example — export all JS for offline review:
+
+```json
+{
+  "dest_dir": "/tmp/js-review",
+  "content_type": "javascript",
+  "status_min": 200,
+  "status_max": 299
+}
+```
+
+### `get_response_headers_summary`
+
+Audits response headers across all captured traffic. Returns two views:
+
+1. `by_header` — every distinct header value grouped by header name (up to 100 examples per header)
+2. `missing_security_headers` — requests missing one or more security headers
+
+Security headers checked: `Content-Security-Policy`, `Strict-Transport-Security`, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`, `X-XSS-Protection`.
+
+Arguments:
+
+- `host` — filter by host
+
+Returns:
+
+```json
+{
+  "security_headers_checked": ["Content-Security-Policy", ...],
+  "by_header": {
+    "content-security-policy": [{"id": 5, "path": "/", "value": "default-src 'self'"}]
+  },
+  "missing_security_headers": [
+    {"id": 10, "host": "app.example.com", "path": "/dashboard", "missing": ["Content-Security-Policy", "Strict-Transport-Security"]}
+  ]
+}
+```
 
 ## Project Switching
 

@@ -50,15 +50,18 @@ func (s *Server) registerTools() {
 		mcp.WithNumber("status_min", mcp.Description("Minimum status code")),
 		mcp.WithNumber("status_max", mcp.Description("Maximum status code")),
 		mcp.WithString("search", mcp.Description("Search in host/path/query")),
+		mcp.WithString("content_type", mcp.Description("Filter by response Content-Type substring (e.g. \"javascript\", \"html\")")),
 		mcp.WithNumber("limit", mcp.Description("Max results (default 20)")),
 		mcp.WithNumber("offset", mcp.Description("Offset for pagination")),
 		mcp.WithString("user_id", mcp.Description("Filter by team member user ID (team mode only)")),
+		mcp.WithBoolean("include_decoded_body", mcp.Description("If true, add decoded_response_body to each result (caps limit at 50)")),
 	), s.toolListRequests)
 
 	// get_request
 	s.mcp.AddTool(mcp.NewTool("get_request",
 		mcp.WithDescription("Get full request and response details"),
 		mcp.WithNumber("id", mcp.Description("Request ID"), mcp.Required()),
+		mcp.WithBoolean("decoded", mcp.Description("If true, add decoded_body (UTF-8 string) to request and response, decompressing gzip/deflate")),
 	), s.toolGetRequest)
 
 	// get_websocket_session
@@ -376,9 +379,9 @@ func (s *Server) toolListRequests(ctx context.Context, req mcp.CallToolRequest) 
 	}
 	args := req.Params.Arguments
 
-	filter := storage.RequestFilter{
-		Limit: 20,
-	}
+	includeDecodedBody, _ := args["include_decoded_body"].(bool)
+
+	filter := storage.RequestFilter{Limit: 20}
 	if v, ok := args["host"].(string); ok {
 		filter.Host = v
 	}
@@ -387,6 +390,9 @@ func (s *Server) toolListRequests(ctx context.Context, req mcp.CallToolRequest) 
 	}
 	if v, ok := args["search"].(string); ok {
 		filter.Search = v
+	}
+	if v, ok := args["content_type"].(string); ok {
+		filter.ContentType = v
 	}
 	if v, ok := args["limit"].(float64); ok {
 		filter.Limit = int(v)
@@ -404,13 +410,44 @@ func (s *Server) toolListRequests(ctx context.Context, req mcp.CallToolRequest) 
 		filter.UserID = v
 	}
 
+	// Cap limit when decoded bodies are included to avoid huge payloads.
+	if includeDecodedBody && filter.Limit > 50 {
+		filter.Limit = 50
+	}
+
 	requests, total, err := s.getDB().ListRequests(filter)
 	if err != nil {
 		return nil, err
 	}
 
+	if !includeDecodedBody {
+		return jsonResult(map[string]interface{}{
+			"requests": requests,
+			"total":    total,
+		})
+	}
+
+	// Augment each result with a decoded response body by fetching full records.
+	type augmented struct {
+		*storage.Request
+		DecodedResponseBody string `json:"decoded_response_body,omitempty"`
+	}
+	aug := make([]augmented, 0, len(requests))
+	for _, r := range requests {
+		full, err := s.getDB().GetRequest(r.ID)
+		if err != nil || full == nil {
+			aug = append(aug, augmented{Request: r})
+			continue
+		}
+		var decoded string
+		if full.Response != nil {
+			decoded = toUTF8(decodeBody(full.Response.Body, full.Response.Headers))
+		}
+		aug = append(aug, augmented{Request: full, DecodedResponseBody: decoded})
+	}
+
 	return jsonResult(map[string]interface{}{
-		"requests": requests,
+		"requests": aug,
 		"total":    total,
 	})
 }
@@ -432,7 +469,26 @@ func (s *Server) toolGetRequest(ctx context.Context, req mcp.CallToolRequest) (*
 		return nil, fmt.Errorf("request not found")
 	}
 
-	return jsonResult(r)
+	decoded, _ := req.Params.Arguments["decoded"].(bool)
+	if !decoded {
+		return jsonResult(r)
+	}
+
+	// Build augmented result that includes plain-text decoded bodies.
+	data, _ := json.Marshal(r)
+	var m map[string]interface{}
+	_ = json.Unmarshal(data, &m)
+
+	m["decoded_body"] = toUTF8(r.Body)
+
+	if r.Response != nil {
+		decompressed := decodeBody(r.Response.Body, r.Response.Headers)
+		if respMap, ok := m["response"].(map[string]interface{}); ok {
+			respMap["decoded_body"] = toUTF8(decompressed)
+		}
+	}
+
+	return jsonResult(m)
 }
 
 func (s *Server) toolGetWebSocketSession(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {

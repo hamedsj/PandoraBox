@@ -7,14 +7,56 @@ import (
 )
 
 type RequestFilter struct {
-	Host      string
-	Method    string
-	StatusMin int
-	StatusMax int
-	Search    string
-	UserID    string // filter by team member; empty = all users
-	Limit     int
-	Offset    int
+	Host        string
+	Method      string
+	StatusMin   int
+	StatusMax   int
+	Search      string
+	UserID      string // filter by team member; empty = all users
+	ContentType string // substring match against response Content-Type header
+	Limit       int
+	Offset      int
+}
+
+// buildRequestsWhere constructs the WHERE clause and args shared by ListRequests
+// and ListRequestsWithBodies.
+func buildRequestsWhere(f RequestFilter) (string, []interface{}) {
+	var where []string
+	var args []interface{}
+
+	if f.Host != "" {
+		where = append(where, "r.host LIKE ?")
+		args = append(args, "%"+f.Host+"%")
+	}
+	if f.Method != "" {
+		where = append(where, "r.method = ?")
+		args = append(args, strings.ToUpper(f.Method))
+	}
+	if f.Search != "" {
+		where = append(where, "(r.host LIKE ? OR r.path LIKE ? OR r.query LIKE ?)")
+		args = append(args, "%"+f.Search+"%", "%"+f.Search+"%", "%"+f.Search+"%")
+	}
+	if f.StatusMin > 0 {
+		where = append(where, "resp.status_code >= ?")
+		args = append(args, f.StatusMin)
+	}
+	if f.StatusMax > 0 {
+		where = append(where, "resp.status_code <= ?")
+		args = append(args, f.StatusMax)
+	}
+	if f.UserID != "" {
+		where = append(where, "r.user_id = ?")
+		args = append(args, f.UserID)
+	}
+	if f.ContentType != "" {
+		where = append(where, "LOWER(COALESCE(resp.headers,'')) LIKE ?")
+		args = append(args, "%"+strings.ToLower(f.ContentType)+"%")
+	}
+
+	if len(where) == 0 {
+		return "", args
+	}
+	return "WHERE " + strings.Join(where, " AND "), args
 }
 
 func (db *DB) SaveRequest(r *Request) (int64, error) {
@@ -86,38 +128,7 @@ func (db *DB) ListRequests(f RequestFilter) ([]*Request, int, error) {
 		f.Limit = 50
 	}
 
-	var where []string
-	var args []interface{}
-
-	if f.Host != "" {
-		where = append(where, "r.host LIKE ?")
-		args = append(args, "%"+f.Host+"%")
-	}
-	if f.Method != "" {
-		where = append(where, "r.method = ?")
-		args = append(args, strings.ToUpper(f.Method))
-	}
-	if f.Search != "" {
-		where = append(where, "(r.host LIKE ? OR r.path LIKE ? OR r.query LIKE ?)")
-		args = append(args, "%"+f.Search+"%", "%"+f.Search+"%", "%"+f.Search+"%")
-	}
-	if f.StatusMin > 0 {
-		where = append(where, "resp.status_code >= ?")
-		args = append(args, f.StatusMin)
-	}
-	if f.StatusMax > 0 {
-		where = append(where, "resp.status_code <= ?")
-		args = append(args, f.StatusMax)
-	}
-	if f.UserID != "" {
-		where = append(where, "r.user_id = ?")
-		args = append(args, f.UserID)
-	}
-
-	whereClause := ""
-	if len(where) > 0 {
-		whereClause = "WHERE " + strings.Join(where, " AND ")
-	}
+	whereClause, args := buildRequestsWhere(f)
 
 	countQuery := fmt.Sprintf(`
 		SELECT COUNT(*) FROM requests r
@@ -175,6 +186,77 @@ func (db *DB) ListRequests(f RequestFilter) ([]*Request, int, error) {
 				SizeBytes:  sizeBytes.Int64,
 			}
 		}
+		requests = append(requests, r)
+	}
+	return requests, total, rows.Err()
+}
+
+// ListRequestsWithBodies is like ListRequests but also fetches the full response
+// headers and body. Only requests that have a response are returned.
+// This is intended for analysis tools (grep_responses, export_responses).
+func (db *DB) ListRequestsWithBodies(f RequestFilter) ([]*Request, int, error) {
+	if f.Limit <= 0 {
+		f.Limit = 50000
+	}
+
+	whereClause, args := buildRequestsWhere(f)
+
+	// Always restrict to requests that have a response.
+	if whereClause == "" {
+		whereClause = "WHERE resp.id IS NOT NULL"
+	} else {
+		whereClause += " AND resp.id IS NOT NULL"
+	}
+
+	countQuery := fmt.Sprintf(`
+		SELECT COUNT(*) FROM requests r
+		LEFT JOIN responses resp ON resp.request_id = r.id
+		%s`, whereClause)
+
+	var total int
+	if err := db.QueryRow(countQuery, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	query := fmt.Sprintf(`
+		SELECT r.id, r.method, r.scheme, r.host, r.path, r.query,
+		       r.headers, r.body, r.timestamp, r.tags, r.user_id,
+		       resp.id, resp.status_code, resp.status_text,
+		       resp.headers, resp.body, resp.duration_ms, resp.size_bytes
+		FROM requests r
+		LEFT JOIN responses resp ON resp.request_id = r.id
+		%s
+		ORDER BY r.timestamp DESC
+		LIMIT ? OFFSET ?`, whereClause)
+
+	args = append(args, f.Limit, f.Offset)
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var requests []*Request
+	for rows.Next() {
+		r := &Request{}
+		resp := &Response{}
+		var ts string
+		var respHeaders sql.NullString
+		var respBody []byte
+
+		if err := rows.Scan(
+			&r.ID, &r.Method, &r.Scheme, &r.Host, &r.Path, &r.Query,
+			&r.Headers, &r.Body, &ts, &r.Tags, &r.UserID,
+			&resp.ID, &resp.StatusCode, &resp.StatusText,
+			&respHeaders, &respBody, &resp.DurationMs, &resp.SizeBytes,
+		); err != nil {
+			return nil, 0, err
+		}
+		r.Timestamp = parseDBTime(ts)
+		resp.RequestID = r.ID
+		resp.Headers = respHeaders.String
+		resp.Body = respBody
+		r.Response = resp
 		requests = append(requests, r)
 	}
 	return requests, total, rows.Err()
