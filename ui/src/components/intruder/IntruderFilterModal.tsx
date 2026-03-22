@@ -110,6 +110,7 @@ export function IntruderFilterModal({ isOpen, onClose, filters, onApply }: Props
   return (
     <div
       ref={backdropRef}
+      data-modal-open="true"
       className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
       onClick={handleBackdrop}
     >

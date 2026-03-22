@@ -29,6 +29,9 @@ export function useKeyboardShortcuts() {
     if (!enabled) return
 
     function onKeyDown(event: KeyboardEvent) {
+      // Don't steal shortcuts from open modals — they handle their own keyboard events
+      if (document.querySelector('[data-modal-open="true"]')) return
+
       const actionId = (Object.entries(bindings) as [ShortcutActionId, string][])
         .find(([, binding]) => binding && matchesShortcut(event, binding))?.[0]
 
