@@ -133,3 +133,6 @@ coverage.html
 # Claude Code specific
 memory/
 plans/
+
+# Local prompts (not tracked in git)
+prompts/
