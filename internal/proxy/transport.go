@@ -84,7 +84,7 @@ func (p *Proxy) roundTrip(req *http.Request, scheme string) (*http.Response, *st
 	}
 
 	// Handle intercept queue
-	if p.intercept.IsEnabled() && p.intercept.Matches(req.Host, req.Method, req.URL.Path) {
+	if p.intercept.IsEnabled() && p.intercept.Matches(req.Host, req.Method, req.URL.Path, InterceptKindRequest) {
 		reqID, err := p.getDB().SaveRequest(captured)
 		if err != nil {
 			return nil, nil, err
@@ -189,7 +189,7 @@ func (p *Proxy) roundTrip(req *http.Request, scheme string) (*http.Response, *st
 	}
 
 	// Optionally intercept the response after upstream returns it.
-	if p.intercept.IsEnabled() && p.intercept.Matches(req.Host, req.Method, req.URL.Path) {
+	if p.intercept.IsEnabled() && p.intercept.Matches(req.Host, req.Method, req.URL.Path, InterceptKindResponse) {
 		db := p.getDB()
 		if captured.ID == 0 {
 			reqID, err := db.SaveRequest(captured)

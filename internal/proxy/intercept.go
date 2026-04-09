@@ -24,6 +24,7 @@ type InterceptFilter struct {
 	Host   string `json:"host"`   // case-insensitive substring match
 	Method string `json:"method"` // exact match (case-insensitive); empty = all
 	Path   string `json:"path"`   // substring match
+	Packet string `json:"packet"` // "both" | "request" | "response"
 }
 
 type pendingEntry struct {
@@ -140,6 +141,7 @@ func (q *InterceptQueue) ListPendingEntries() []PendingEntry {
 }
 
 func (q *InterceptQueue) SetFilter(f InterceptFilter) {
+	f.Packet = normalizePacketFilter(f.Packet)
 	q.mu.Lock()
 	q.filter = f
 	q.mu.Unlock()
@@ -148,15 +150,22 @@ func (q *InterceptQueue) SetFilter(f InterceptFilter) {
 func (q *InterceptQueue) GetFilter() InterceptFilter {
 	q.mu.RLock()
 	defer q.mu.RUnlock()
-	return q.filter
+	f := q.filter
+	f.Packet = normalizePacketFilter(f.Packet)
+	return f
 }
 
 // Matches returns true if the request should be held given the current filter.
 // An empty filter matches everything.
-func (q *InterceptQueue) Matches(host, method, path string) bool {
+func (q *InterceptQueue) Matches(host, method, path string, kind InterceptKind) bool {
 	q.mu.RLock()
 	f := q.filter
 	q.mu.RUnlock()
+
+	packet := normalizePacketFilter(f.Packet)
+	if packet != "both" && packet != string(kind) {
+		return false
+	}
 
 	if f.Host != "" && !strings.Contains(strings.ToLower(host), strings.ToLower(f.Host)) {
 		return false
@@ -168,4 +177,17 @@ func (q *InterceptQueue) Matches(host, method, path string) bool {
 		return false
 	}
 	return true
+}
+
+func normalizePacketFilter(v string) string {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "", "both":
+		return "both"
+	case "request":
+		return "request"
+	case "response":
+		return "response"
+	default:
+		return "both"
+	}
 }

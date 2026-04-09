@@ -109,6 +109,7 @@ export interface InterceptFilter {
   host: string
   method: string
   path: string
+  packet: 'both' | 'request' | 'response'
 }
 
 export interface InterceptQueueItem {

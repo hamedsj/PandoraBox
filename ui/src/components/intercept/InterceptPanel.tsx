@@ -4,6 +4,7 @@ import { registerHttpLanguage, httpTokenRules } from '@/lib/httpLanguage'
 import { api } from '@/api/client'
 import type { InterceptFilter, InterceptQueueItem } from '@/api/client'
 import { decodeBodyForDisplay } from '@/lib/httpBodies'
+import { getRawRequestText } from '@/lib/rawHttp'
 import { useProxyStore } from '@/store/proxy'
 import { useThemeStore } from '@/store/theme'
 import { MethodBadge } from '@/components/common/MethodBadge'
@@ -22,10 +23,11 @@ export function InterceptPanel() {
 
   const [queue, setQueue] = useState<InterceptQueueItem[]>([])
   const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [responseViewTab, setResponseViewTab] = useState<'packet' | 'request'>('packet')
   const [editContent, setEditContent] = useState('')
   const [baseContent, setBaseContent] = useState('')
   const [filterOpen, setFilterOpen] = useState(false)
-  const [interceptFilter, setInterceptFilter] = useState<InterceptFilter>({ host: '', method: '', path: '' })
+  const [interceptFilter, setInterceptFilter] = useState<InterceptFilter>({ host: '', method: '', path: '', packet: 'both' })
 
   const editContentRef = useRef(editContent)
   useEffect(() => { editContentRef.current = editContent }, [editContent])
@@ -38,7 +40,7 @@ export function InterceptPanel() {
 
   // Load filter on mount
   useEffect(() => {
-    api.intercept.getFilter().then(setInterceptFilter).catch(console.error)
+    api.intercept.getFilter().then((f) => setInterceptFilter(normalizeFilter(f))).catch(console.error)
   }, [])
 
   async function fetchQueue() {
@@ -71,6 +73,10 @@ export function InterceptPanel() {
     }
   }, [queue, selectedId])
 
+  useEffect(() => {
+    setResponseViewTab('packet')
+  }, [selectedId, selected?.kind])
+
   // Populate editor when selection changes
   useEffect(() => {
     let cancelled = false
@@ -85,10 +91,11 @@ export function InterceptPanel() {
 
       const item = queue.find((q) => q.request_id === selectedId)
       if (!item) return
-      const sig = `${item.kind}:${item.request_id}:${item.raw}`
+      const requestRaw = getRawRequestText(item.request)
+      const sig = `${item.kind}:${item.request_id}:${item.raw}:${requestRaw}:${responseViewTab}`
       if (loadedPacketSigRef.current === sig) return
 
-      const content = await buildEditorPacket(item)
+      const content = await buildEditorPacket(item, responseViewTab)
       if (cancelled) return
       loadedPacketSigRef.current = sig
       setBaseContent(content)
@@ -101,7 +108,7 @@ export function InterceptPanel() {
       cancelled = true
     }
     // refresh on queue updates, but don't clobber edits for unchanged packet
-  }, [queue, selectedId])
+  }, [queue, selectedId, responseViewTab])
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -176,7 +183,9 @@ export function InterceptPanel() {
 
   async function forward(id: number) {
     const content = editContentRef.current
-    const shouldModify = selected?.request_id === id && content !== baseContentRef.current
+    const isSelected = selected?.request_id === id
+    const canEditHeldPacket = selected?.kind !== 'response' || responseViewTab === 'packet'
+    const shouldModify = Boolean(isSelected && canEditHeldPacket && content !== baseContentRef.current)
     if (shouldModify) {
       await api.intercept.modify(id, safeBase64(content))
     } else {
@@ -197,12 +206,13 @@ export function InterceptPanel() {
   }
 
   async function applyFilter(f: InterceptFilter) {
-    await api.intercept.setFilter(f)
-    setInterceptFilter(f)
+    const normalized = normalizeFilter(f)
+    await api.intercept.setFilter(normalized)
+    setInterceptFilter(normalized)
     setFilterOpen(false)
   }
 
-  const isFilterActive = !!(interceptFilter.host || interceptFilter.method || interceptFilter.path)
+  const isFilterActive = !!(interceptFilter.host || interceptFilter.method || interceptFilter.path || interceptFilter.packet !== 'both')
 
   const defineTheme: BeforeMount = (monaco) => {
     registerHttpLanguage(monaco)
@@ -255,7 +265,7 @@ export function InterceptPanel() {
           Filter
           {isFilterActive && (
             <span className="bg-primary text-primary-foreground text-[10px] px-1 rounded-full leading-4 font-semibold">
-              {[interceptFilter.host, interceptFilter.method, interceptFilter.path].filter(Boolean).length}
+              {[interceptFilter.host, interceptFilter.method, interceptFilter.path, interceptFilter.packet !== 'both' ? 'packet' : ''].filter(Boolean).length}
             </span>
           )}
         </button>
@@ -324,6 +334,32 @@ export function InterceptPanel() {
             <>
               {/* Editor toolbar */}
               <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border flex-shrink-0 bg-muted/20">
+                {selected.kind === 'response' && (
+                  <div className="flex items-center gap-1 mr-1">
+                    <button
+                      onClick={() => setResponseViewTab('request')}
+                      className={cn(
+                        'px-2 py-0.5 rounded text-xs font-medium border transition-colors',
+                        responseViewTab === 'request'
+                          ? 'bg-primary/20 border-primary text-primary'
+                          : 'bg-transparent border-border text-muted-foreground hover:text-foreground hover:border-muted-foreground',
+                      )}
+                    >
+                      Request
+                    </button>
+                    <button
+                      onClick={() => setResponseViewTab('packet')}
+                      className={cn(
+                        'px-2 py-0.5 rounded text-xs font-medium border transition-colors',
+                        responseViewTab === 'packet'
+                          ? 'bg-primary/20 border-primary text-primary'
+                          : 'bg-transparent border-border text-muted-foreground hover:text-foreground hover:border-muted-foreground',
+                      )}
+                    >
+                      Response
+                    </button>
+                  </div>
+                )}
                 <span className="text-xs text-muted-foreground font-mono">#{selected.request_id}</span>
                 <MethodBadge method={selected.kind === 'response' ? 'RESP' : selected.request.method} />
                 <span className="text-xs font-mono text-muted-foreground truncate min-w-0">
@@ -360,6 +396,7 @@ export function InterceptPanel() {
                     minimap: { enabled: false },
                     lineNumbers: 'on',
                     wordWrap: 'on',
+                    readOnly: selected.kind === 'response' && responseViewTab === 'request',
                     fontSize,
                     fontFamily: 'var(--font-mono, monospace)',
                     padding: { top: 12, bottom: 12 },
@@ -456,7 +493,11 @@ function parseHeaderMap(headText: string): { statusLine: string; headerLines: st
   return { statusLine, headerLines, headersJSON: JSON.stringify(headers) }
 }
 
-async function buildEditorPacket(item: InterceptQueueItem): Promise<string> {
+async function buildEditorPacket(item: InterceptQueueItem, responseViewTab: 'packet' | 'request'): Promise<string> {
+  if (item.kind === 'response' && responseViewTab === 'request') {
+    return getRawRequestText(item.request)
+  }
+
   const rawText = fromBase64(item.raw)
   if (item.kind !== 'response') return rawText
 
@@ -493,5 +534,15 @@ function safeBase64(str: string): string {
     return btoa(binary)
   } catch {
     return btoa(str)
+  }
+}
+
+function normalizeFilter(filter: InterceptFilter): InterceptFilter {
+  const packet = filter.packet === 'request' || filter.packet === 'response' ? filter.packet : 'both'
+  return {
+    host: filter.host ?? '',
+    method: filter.method ?? '',
+    path: filter.path ?? '',
+    packet,
   }
 }

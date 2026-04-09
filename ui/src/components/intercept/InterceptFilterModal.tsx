@@ -4,6 +4,11 @@ import { cn } from '@/lib/utils'
 import { X, Filter } from 'lucide-react'
 
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'] as const
+const PACKETS = [
+  { value: 'both', label: 'Both' },
+  { value: 'request', label: 'Requests' },
+  { value: 'response', label: 'Responses' },
+] as const
 
 export function InterceptFilterModal({
   isOpen,
@@ -20,14 +25,14 @@ export function InterceptFilterModal({
   const backdropRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (isOpen) setLocal(filter)
-  }, [isOpen])
+    if (isOpen) setLocal(normalizeFilter(filter))
+  }, [filter, isOpen])
 
   useEffect(() => {
     if (!isOpen) return
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') onApply(local)
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') onApply(normalizeFilter(local))
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
@@ -35,7 +40,7 @@ export function InterceptFilterModal({
 
   if (!isOpen) return null
 
-  const isActive = !!(local.host || local.method || local.path)
+  const isActive = !!(local.host || local.method || local.path || local.packet !== 'both')
 
   const handleBackdrop = (e: React.MouseEvent) => {
     if (e.target === backdropRef.current) onClose()
@@ -72,9 +77,32 @@ export function InterceptFilterModal({
         {/* Body */}
         <div className="p-5 space-y-5">
           <p className="text-xs text-muted-foreground">
-            Only hold requests matching <span className="font-medium text-foreground">all</span> specified conditions.
+            Only hold packets matching <span className="font-medium text-foreground">all</span> specified conditions.
             Leave a field empty to match any value.
           </p>
+
+          {/* Packet type */}
+          <div>
+            <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2.5 block">
+              Packet Type
+            </label>
+            <div className="flex flex-wrap gap-1.5">
+              {PACKETS.map((packet) => (
+                <button
+                  key={packet.value}
+                  onClick={() => setLocal((l) => ({ ...l, packet: packet.value }))}
+                  className={cn(
+                    'px-2.5 py-1 rounded-md text-xs font-medium border transition-colors',
+                    local.packet === packet.value
+                      ? 'bg-primary/20 border-primary text-primary'
+                      : 'bg-transparent border-border text-muted-foreground hover:border-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  {packet.label}
+                </button>
+              ))}
+            </div>
+          </div>
 
           {/* Method */}
           <div>
@@ -128,7 +156,7 @@ export function InterceptFilterModal({
         {/* Footer */}
         <div className="flex items-center justify-between px-5 py-3 border-t border-border bg-muted/20 rounded-b-xl">
           <button
-            onClick={() => setLocal({ host: '', method: '', path: '' })}
+            onClick={() => setLocal({ host: '', method: '', path: '', packet: 'both' })}
             className="text-xs text-muted-foreground hover:text-foreground transition-colors"
           >
             Clear All
@@ -142,7 +170,7 @@ export function InterceptFilterModal({
               Cancel
             </button>
             <button
-              onClick={() => onApply(local)}
+              onClick={() => onApply(normalizeFilter(local))}
               className="px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-medium transition-colors"
             >
               Apply
@@ -153,6 +181,15 @@ export function InterceptFilterModal({
       </div>
     </div>
   )
+}
+
+function normalizeFilter(filter: InterceptFilter): InterceptFilter {
+  return {
+    host: filter.host ?? '',
+    method: filter.method ?? '',
+    path: filter.path ?? '',
+    packet: filter.packet === 'request' || filter.packet === 'response' ? filter.packet : 'both',
+  }
 }
 
 function FieldInput({
