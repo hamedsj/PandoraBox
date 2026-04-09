@@ -111,6 +111,13 @@ export interface InterceptFilter {
   path: string
 }
 
+export interface InterceptQueueItem {
+  request_id: number
+  kind: 'request' | 'response'
+  raw: string // base64 raw HTTP packet (request or response)
+  request: Request
+}
+
 export interface RecentProject {
   path: string
   name: string
@@ -315,7 +322,7 @@ export const api = {
       get<{ session: WebSocketSession | null; frames: WebSocketFrame[] | null }>(`/requests/${id}/ws-frames`),
   },
   intercept: {
-    queue: () => get<{ queue: Request[] }>('/intercept/queue'),
+    queue: () => get<{ queue: InterceptQueueItem[] }>('/intercept/queue'),
     toggle: (enabled: boolean) => put<{ enabled: boolean }>('/intercept/toggle', { enabled }),
     forward: (id: number) => post<{ success: boolean }>(`/intercept/forward/${id}`),
     forwardAll: () => post<{ forwarded: number }>('/intercept/forward-all'),

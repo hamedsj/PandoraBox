@@ -94,10 +94,10 @@ func (p *Proxy) roundTrip(req *http.Request, scheme string) (*http.Response, *st
 
 		p.bus.Publish(events.Event{
 			Type: events.EventInterceptHeld,
-			Data: map[string]interface{}{"request_id": reqID},
+			Data: map[string]interface{}{"request_id": reqID, "kind": "request"},
 		})
 
-		decisionCh := p.intercept.Hold(reqID, rawReq)
+		decisionCh := p.intercept.HoldRequest(reqID, rawReq)
 		decision := <-decisionCh
 
 		if decision.Drop {
@@ -114,7 +114,7 @@ func (p *Proxy) roundTrip(req *http.Request, scheme string) (*http.Response, *st
 
 		p.bus.Publish(events.Event{
 			Type: events.EventInterceptResolved,
-			Data: map[string]interface{}{"request_id": reqID},
+			Data: map[string]interface{}{"request_id": reqID, "kind": "request"},
 		})
 	}
 
@@ -186,6 +186,47 @@ func (p *Proxy) roundTrip(req *http.Request, scheme string) (*http.Response, *st
 			resp.Header = newHeaders
 			respBodyBytes = newBody
 		}
+	}
+
+	// Optionally intercept the response after upstream returns it.
+	if p.intercept.IsEnabled() && p.intercept.Matches(req.Host, req.Method, req.URL.Path) {
+		db := p.getDB()
+		if captured.ID == 0 {
+			reqID, err := db.SaveRequest(captured)
+			if err != nil {
+				return nil, nil, err
+			}
+			captured.ID = reqID
+			p.requestCount.Add(1)
+		}
+
+		resp.Body = io.NopCloser(bytes.NewReader(respBodyBytes))
+		rawResp, _ := httputil.DumpResponse(resp, true)
+
+		p.bus.Publish(events.Event{
+			Type: events.EventInterceptHeld,
+			Data: map[string]interface{}{"request_id": captured.ID, "kind": "response"},
+		})
+
+		decisionCh := p.intercept.HoldResponse(captured.ID, rawResp)
+		decision := <-decisionCh
+
+		if decision.Drop {
+			return nil, captured, fmt.Errorf("response dropped")
+		}
+		if len(decision.ModifiedRaw) > 0 {
+			modResp, err := http.ReadResponse(bufio.NewReader(bytes.NewReader(decision.ModifiedRaw)), req)
+			if err == nil {
+				resp = modResp
+				respBodyBytes, _ = io.ReadAll(resp.Body)
+				resp.Body.Close()
+			}
+		}
+
+		p.bus.Publish(events.Event{
+			Type: events.EventInterceptResolved,
+			Data: map[string]interface{}{"request_id": captured.ID, "kind": "response"},
+		})
 	}
 
 	resp.Body = io.NopCloser(bytes.NewReader(respBodyBytes))

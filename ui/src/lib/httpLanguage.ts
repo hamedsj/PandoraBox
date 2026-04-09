@@ -13,12 +13,22 @@ export function registerHttpLanguage(monaco: typeof Monaco): void {
     tokenizer: {
       // ── Request line ────────────────────────────────────────────────────────
       root: [
+        // Response status line
+        [/^HTTP\/\S+/, { token: 'http.version', next: '@after_http_version' }],
         [
           /^(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS|CONNECT|TRACE|PROPFIND|PROPPATCH|MKCOL|COPY|MOVE|LOCK|UNLOCK)\b/,
           { token: 'http.method', next: '@after_method' },
         ],
         // Unrecognised first line — treat as header block
         [/.*$/, { token: '', next: '@headers' }],
+      ],
+
+      after_http_version: [
+        [/[ \t]+/, ''],
+        [/\d{3}/, { token: 'http.status' }],
+        [/[ \t]+/, ''],
+        [/[^\r\n]+/, { token: 'http.status.text', next: '@headers' }],
+        [/$/, { token: '', next: '@headers' }],
       ],
 
       after_method: [
@@ -150,6 +160,8 @@ export function httpTokenRules(mode: 'dark' | 'light'): Monaco.editor.ITokenThem
       { token: 'http.method',         foreground: '7ee787', fontStyle: 'bold' },
       { token: 'http.url',            foreground: '79c0ff' },
       { token: 'http.version',        foreground: '8b949e' },
+      { token: 'http.status',         foreground: 'ffa657', fontStyle: 'bold' },
+      { token: 'http.status.text',    foreground: 'cdd9e5' },
       { token: 'http.header.name',    foreground: 'ffa657' },
       { token: 'http.header.colon',   foreground: '6e7681' },
       { token: 'http.header.value',   foreground: 'cdd9e5' },
@@ -180,6 +192,8 @@ export function httpTokenRules(mode: 'dark' | 'light'): Monaco.editor.ITokenThem
     { token: 'http.method',         foreground: '116329', fontStyle: 'bold' },
     { token: 'http.url',            foreground: '0550ae' },
     { token: 'http.version',        foreground: '6e7781' },
+    { token: 'http.status',         foreground: '953800', fontStyle: 'bold' },
+    { token: 'http.status.text',    foreground: '1f2328' },
     { token: 'http.header.name',    foreground: '953800' },
     { token: 'http.header.colon',   foreground: '6e7781' },
     { token: 'http.header.value',   foreground: '1f2328' },

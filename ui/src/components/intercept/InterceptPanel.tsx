@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import Editor, { type BeforeMount } from '@monaco-editor/react'
 import { registerHttpLanguage, httpTokenRules } from '@/lib/httpLanguage'
 import { api } from '@/api/client'
-import type { InterceptFilter, Request } from '@/api/client'
+import type { InterceptFilter, InterceptQueueItem } from '@/api/client'
+import { decodeBodyForDisplay } from '@/lib/httpBodies'
 import { useProxyStore } from '@/store/proxy'
 import { useThemeStore } from '@/store/theme'
 import { MethodBadge } from '@/components/common/MethodBadge'
@@ -19,17 +20,21 @@ export function InterceptPanel() {
   const mode = useThemeStore((s) => s.mode)
   const fontSize = useThemeStore((s) => s.fontSize)
 
-  const [queue, setQueue] = useState<Request[]>([])
+  const [queue, setQueue] = useState<InterceptQueueItem[]>([])
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [editContent, setEditContent] = useState('')
+  const [baseContent, setBaseContent] = useState('')
   const [filterOpen, setFilterOpen] = useState(false)
   const [interceptFilter, setInterceptFilter] = useState<InterceptFilter>({ host: '', method: '', path: '' })
 
   const editContentRef = useRef(editContent)
   useEffect(() => { editContentRef.current = editContent }, [editContent])
+  const baseContentRef = useRef(baseContent)
+  useEffect(() => { baseContentRef.current = baseContent }, [baseContent])
+  const loadedPacketSigRef = useRef('')
 
   const interceptEnabled = status?.intercept_enabled ?? false
-  const selected = queue.find((r) => r.id === selectedId) ?? null
+  const selected = queue.find((q) => q.request_id === selectedId) ?? null
 
   // Load filter on mount
   useEffect(() => {
@@ -50,21 +55,53 @@ export function InterceptPanel() {
   // Auto-select the first request when the queue goes from empty to non-empty
   useEffect(() => {
     if (selectedId === null && queue.length > 0) {
-      setSelectedId(queue[0].id)
+      setSelectedId(queue[0].request_id)
+    }
+  }, [queue, selectedId])
+
+  // Keep selection valid as queue changes from polling/external actions.
+  useEffect(() => {
+    if (selectedId === null) return
+    if (queue.length === 0) {
+      setSelectedId(null)
+      return
+    }
+    if (!queue.some((q) => q.request_id === selectedId)) {
+      setSelectedId(queue[0].request_id)
     }
   }, [queue, selectedId])
 
   // Populate editor when selection changes
   useEffect(() => {
-    if (selectedId === null) {
-      setEditContent('')
-      return
+    let cancelled = false
+
+    async function loadEditorContent() {
+      if (selectedId === null) {
+        loadedPacketSigRef.current = ''
+        setBaseContent('')
+        setEditContent('')
+        return
+      }
+
+      const item = queue.find((q) => q.request_id === selectedId)
+      if (!item) return
+      const sig = `${item.kind}:${item.request_id}:${item.raw}`
+      if (loadedPacketSigRef.current === sig) return
+
+      const content = await buildEditorPacket(item)
+      if (cancelled) return
+      loadedPacketSigRef.current = sig
+      setBaseContent(content)
+      setEditContent(content)
     }
-    const req = queue.find((r) => r.id === selectedId)
-    if (req) setEditContent(buildRawRequest(req))
-    // intentionally not including queue in deps — only reset on selection change
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId])
+
+    loadEditorContent().catch(console.error)
+
+    return () => {
+      cancelled = true
+    }
+    // refresh on queue updates, but don't clobber edits for unchanged packet
+  }, [queue, selectedId])
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -79,26 +116,26 @@ export function InterceptPanel() {
       }
       if (actionId === 'intercept.selectPrev') {
         if (queue.length === 0) return
-        const idx = queue.findIndex((r) => r.id === selectedId)
+        const idx = queue.findIndex((q) => q.request_id === selectedId)
         const next = queue[idx <= 0 ? 0 : idx - 1]
-        if (next) setSelectedId(next.id)
+        if (next) setSelectedId(next.request_id)
         return
       }
       if (actionId === 'intercept.selectNext') {
         if (queue.length === 0) return
-        const idx = queue.findIndex((r) => r.id === selectedId)
+        const idx = queue.findIndex((q) => q.request_id === selectedId)
         const next = queue[idx < 0 ? 0 : Math.min(queue.length - 1, idx + 1)]
-        if (next) setSelectedId(next.id)
+        if (next) setSelectedId(next.request_id)
         return
       }
       if (!selected) return
       if (actionId === 'common.sendSelectedToReplay') {
-        addToReplay(selected)
+        addToReplay(selected.request)
         navigate('/replay')
       } else if (actionId === 'intercept.forwardSelected' || actionId === 'intercept.applyAndForward') {
-        forward(selected.id).catch(console.error)
+        forward(selected.request_id).catch(console.error)
       } else if (actionId === 'intercept.dropSelected') {
-        drop(selected.id).catch(console.error)
+        drop(selected.request_id).catch(console.error)
       }
     })
   }, [addToReplay, navigate, queue, selected, selectedId])
@@ -110,7 +147,9 @@ export function InterceptPanel() {
       const currentEdit = editContentRef.current
       if (currentId !== null) {
         try {
-          await api.intercept.modify(currentId, safeBase64(currentEdit))
+          if (currentEdit !== baseContentRef.current) {
+            await api.intercept.modify(currentId, safeBase64(currentEdit))
+          }
         } catch {
           // request may have already been resolved; ignore
         }
@@ -126,18 +165,19 @@ export function InterceptPanel() {
     await fetchQueue()
   }
 
-  function pickNext(resolvedId: number, currentQueue: Request[]): number | null {
-    const idx = currentQueue.findIndex((r) => r.id === resolvedId)
-    const remaining = currentQueue.filter((r) => r.id !== resolvedId)
+  function pickNext(resolvedId: number, currentQueue: InterceptQueueItem[]): number | null {
+    const idx = currentQueue.findIndex((q) => q.request_id === resolvedId)
+    const remaining = currentQueue.filter((q) => q.request_id !== resolvedId)
     if (remaining.length === 0) return null
     // prefer the item that was after the resolved one; fall back to the last item
     const next = remaining[Math.min(idx, remaining.length - 1)]
-    return next?.id ?? null
+    return next?.request_id ?? null
   }
 
   async function forward(id: number) {
     const content = editContentRef.current
-    if (content) {
+    const shouldModify = selected?.request_id === id && content !== baseContentRef.current
+    if (shouldModify) {
       await api.intercept.modify(id, safeBase64(content))
     } else {
       await api.intercept.forward(id)
@@ -252,26 +292,26 @@ export function InterceptPanel() {
         <div className="w-64 flex-shrink-0 border-r border-border overflow-y-auto">
           {queue.length === 0 ? (
             <div className="flex items-center justify-center h-24 text-muted-foreground text-xs px-4 text-center">
-              {interceptEnabled ? 'Waiting for requests…' : 'Intercept is disabled'}
+              {interceptEnabled ? 'Waiting for packets…' : 'Intercept is disabled'}
             </div>
           ) : (
-            queue.map((req) => (
+            queue.map((item) => (
               <button
-                key={req.id}
-                onClick={() => setSelectedId(req.id)}
+                key={`${item.kind}:${item.request_id}`}
+                onClick={() => setSelectedId(item.request_id)}
                 className={cn(
                   'w-full text-left px-3 py-2.5 border-b border-border/50 transition-colors',
-                  selectedId === req.id
+                  selectedId === item.request_id
                     ? 'bg-primary/10 border-l-2 border-l-primary'
                     : 'hover:bg-muted/30 border-l-2 border-l-transparent',
                 )}
               >
                 <div className="flex items-center gap-2 mb-0.5">
-                  <MethodBadge method={req.method} />
-                  <span className="text-xs font-mono text-muted-foreground truncate">{displayHost(req.host, req.scheme)}</span>
+                  <MethodBadge method={item.kind === 'response' ? 'RESP' : item.request.method} />
+                  <span className="text-xs font-mono text-muted-foreground truncate">{displayHost(item.request.host, item.request.scheme)}</span>
                 </div>
                 <div className="text-xs font-mono text-muted-foreground/60 truncate pl-0.5">
-                  {req.path || '/'}
+                  {item.request.path || '/'}
                 </div>
               </button>
             ))
@@ -284,21 +324,21 @@ export function InterceptPanel() {
             <>
               {/* Editor toolbar */}
               <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border flex-shrink-0 bg-muted/20">
-                <span className="text-xs text-muted-foreground font-mono">#{selected.id}</span>
-                <MethodBadge method={selected.method} />
+                <span className="text-xs text-muted-foreground font-mono">#{selected.request_id}</span>
+                <MethodBadge method={selected.kind === 'response' ? 'RESP' : selected.request.method} />
                 <span className="text-xs font-mono text-muted-foreground truncate min-w-0">
-                  {displayHost(selected.host, selected.scheme)}{selected.path}{selected.query ? `?${selected.query}` : ''}
+                  {displayHost(selected.request.host, selected.request.scheme)}{selected.request.path}{selected.request.query ? `?${selected.request.query}` : ''}
                 </span>
                 <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
                   <button
-                    onClick={() => forward(selected.id).catch(console.error)}
+                    onClick={() => forward(selected.request_id).catch(console.error)}
                     className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-md bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 transition-colors font-medium"
                   >
                     <Check size={12} />
                     Forward
                   </button>
                   <button
-                    onClick={() => drop(selected.id).catch(console.error)}
+                    onClick={() => drop(selected.request_id).catch(console.error)}
                     className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-md bg-red-500/15 text-red-400 hover:bg-red-500/25 transition-colors font-medium"
                   >
                     <X size={12} />
@@ -345,9 +385,9 @@ export function InterceptPanel() {
               <span className="text-sm">
                 {interceptEnabled
                   ? queue.length > 0
-                    ? 'Select a request from the queue'
-                    : 'Waiting for requests…'
-                  : 'Enable intercept to capture requests'}
+                    ? 'Select a packet from the queue'
+                    : 'Waiting for packets…'
+                  : 'Enable intercept to capture packets'}
               </span>
             </div>
           )}
@@ -364,43 +404,94 @@ export function InterceptPanel() {
   )
 }
 
-function buildRawRequest(req: Request): string {
-  // Prefer the stored raw bytes (includes body)
-  if (req.raw) {
+function base64ToBytes(raw: string): Uint8Array {
+  const binary = atob(raw)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i)
+  return bytes
+}
+
+function fromBase64(raw: string): string {
+  try {
+    return new TextDecoder().decode(base64ToBytes(raw))
+  } catch {
     try {
-      return atob(req.raw)
+      return atob(raw)
     } catch {
-      // fall through to manual build
+      return ''
     }
   }
-  // Manual build (fallback, no body)
-  let headers: Record<string, string[]> = {}
-  try { headers = JSON.parse(req.headers) as Record<string, string[]> } catch { /* ignore */ }
+}
 
-  let raw = `${req.method} ${req.path}${req.query ? '?' + req.query : ''} HTTP/1.1\r\n`
-  raw += `Host: ${req.host}\r\n`
-  for (const [k, vs] of Object.entries(headers)) {
-    if (k.toLowerCase() === 'host') continue
-    for (const v of vs) raw += `${k}: ${v}\r\n`
-  }
-  raw += '\r\n'
-
-  if (req.body) {
-    if (typeof req.body === 'string') {
-      raw += req.body
-    } else if (Array.isArray(req.body)) {
-      raw += String.fromCharCode(...(req.body as number[]))
+function splitHttpMessage(bytes: Uint8Array): { head: Uint8Array; body: Uint8Array } {
+  for (let i = 0; i <= bytes.length - 4; i += 1) {
+    if (bytes[i] === 13 && bytes[i + 1] === 10 && bytes[i + 2] === 13 && bytes[i + 3] === 10) {
+      return { head: bytes.slice(0, i), body: bytes.slice(i + 4) }
     }
   }
+  for (let i = 0; i <= bytes.length - 2; i += 1) {
+    if (bytes[i] === 10 && bytes[i + 1] === 10) {
+      return { head: bytes.slice(0, i), body: bytes.slice(i + 2) }
+    }
+  }
+  return { head: bytes, body: new Uint8Array() }
+}
 
-  return raw
+function parseHeaderMap(headText: string): { statusLine: string; headerLines: string[]; headersJSON: string } {
+  const lines = headText.split(/\r?\n/)
+  const statusLine = lines[0] ?? ''
+  const headerLines = lines.slice(1)
+  const headers: Record<string, string[]> = {}
+
+  for (const line of headerLines) {
+    const idx = line.indexOf(':')
+    if (idx <= 0) continue
+    const name = line.slice(0, idx).trim()
+    const value = line.slice(idx + 1).trim()
+    if (!name) continue
+    if (!headers[name]) headers[name] = []
+    headers[name].push(value)
+  }
+
+  return { statusLine, headerLines, headersJSON: JSON.stringify(headers) }
+}
+
+async function buildEditorPacket(item: InterceptQueueItem): Promise<string> {
+  const rawText = fromBase64(item.raw)
+  if (item.kind !== 'response') return rawText
+
+  try {
+    const bytes = base64ToBytes(item.raw)
+    const { head, body } = splitHttpMessage(bytes)
+    const headText = new TextDecoder().decode(head)
+    const { statusLine, headerLines, headersJSON } = parseHeaderMap(headText)
+    const decoded = await decodeBodyForDisplay(Array.from(body), headersJSON)
+
+    // Keep opaque/binary responses untouched in editor.
+    if (decoded.isBinary || decoded.error || !decoded.wasCompressed) return rawText
+
+    const filteredHeaders = headerLines.filter((line) => {
+      const lower = line.toLowerCase()
+      return !lower.startsWith('content-encoding:') &&
+        !lower.startsWith('content-length:') &&
+        !lower.startsWith('transfer-encoding:')
+    })
+    const decodedLength = new TextEncoder().encode(decoded.text).length
+    filteredHeaders.push(`Content-Length: ${decodedLength}`)
+    filteredHeaders.push('X-PandoraBox-Decoded: true')
+    return `${statusLine}\r\n${filteredHeaders.join('\r\n')}\r\n\r\n${decoded.text}`
+  } catch {
+    return rawText
+  }
 }
 
 function safeBase64(str: string): string {
   try {
-    return btoa(str)
+    const bytes = new TextEncoder().encode(str)
+    let binary = ''
+    for (let i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i])
+    return btoa(binary)
   } catch {
-    // UTF-8 safe fallback
-    return btoa(unescape(encodeURIComponent(str)))
+    return btoa(str)
   }
 }

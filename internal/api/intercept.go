@@ -47,15 +47,20 @@ func (s *Server) interceptDropAll(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) interceptQueue(w http.ResponseWriter, r *http.Request) {
-	ids := s.intercept.ListPending()
-	requests := make([]interface{}, 0, len(ids))
-	for _, id := range ids {
-		req, err := s.getDB().GetRequest(id)
+	entries := s.intercept.ListPendingEntries()
+	items := make([]map[string]interface{}, 0, len(entries))
+	for _, entry := range entries {
+		req, err := s.getDB().GetRequest(entry.RequestID)
 		if err == nil && req != nil {
-			requests = append(requests, req)
+			items = append(items, map[string]interface{}{
+				"request_id": entry.RequestID,
+				"kind":       string(entry.Kind),
+				"raw":        base64.StdEncoding.EncodeToString(entry.Raw),
+				"request":    req,
+			})
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"queue": requests})
+	writeJSON(w, http.StatusOK, map[string]interface{}{"queue": items})
 }
 
 func (s *Server) interceptToggle(w http.ResponseWriter, r *http.Request) {

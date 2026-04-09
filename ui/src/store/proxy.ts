@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Request, Replay, ProxyStatus, ProjectInfo, FilterConfig, WebSocketFrame } from '@/api/client'
+import type { Request, Replay, ProxyStatus, ProjectInfo, FilterConfig, WebSocketFrame, InterceptQueueItem } from '@/api/client'
 
 export type { FilterConfig }
 
@@ -114,8 +114,8 @@ interface ProxyStore {
   clearReplay: () => void
 
   // Intercept
-  interceptQueue: Request[]
-  setInterceptQueue: (queue: Request[]) => void
+  interceptQueue: InterceptQueueItem[]
+  setInterceptQueue: (queue: InterceptQueueItem[]) => void
 
   // Filters (sourced from project.json, not localStorage)
   filters: RequestFilters
