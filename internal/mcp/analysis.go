@@ -6,7 +6,9 @@ import (
 	"compress/gzip"
 	"compress/zlib"
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -151,6 +153,50 @@ func safeFSName(s string) string {
 	return s
 }
 
+const maxFSComponentBytes = 255
+const exportNameHashHexLen = 16
+
+// fitFSComponent shortens an oversized single filesystem component to <=255
+// bytes. For final file names, it preserves the original extension when
+// possible using "<hash16><ext>".
+func fitFSComponent(name string, preserveExt bool) string {
+	if len([]byte(name)) <= maxFSComponentBytes {
+		return name
+	}
+
+	hash := sha256.Sum256([]byte(name))
+	shortHash := hex.EncodeToString(hash[:])[:exportNameHashHexLen]
+
+	if preserveExt {
+		ext := filepath.Ext(name)
+		if ext != "" {
+			ext = clipToBytes(ext, 64)
+			candidate := shortHash + ext
+			if len([]byte(candidate)) <= maxFSComponentBytes {
+				return candidate
+			}
+		}
+	}
+	return shortHash
+}
+
+func clipToBytes(s string, maxBytes int) string {
+	if len([]byte(s)) <= maxBytes {
+		return s
+	}
+	var b strings.Builder
+	used := 0
+	for _, r := range s {
+		n := len([]byte(string(r)))
+		if used+n > maxBytes {
+			break
+		}
+		b.WriteRune(r)
+		used += n
+	}
+	return b.String()
+}
+
 // safeFilePath converts a URL path into a relative filesystem path.
 func safeFilePath(urlPath string) string {
 	clean := filepath.ToSlash(filepath.Clean("/" + urlPath))
@@ -160,7 +206,7 @@ func safeFilePath(urlPath string) string {
 	}
 	parts := strings.Split(clean, "/")
 	for i, p := range parts {
-		parts[i] = safeFSName(p)
+		parts[i] = fitFSComponent(safeFSName(p), i == len(parts)-1)
 	}
 	return filepath.Join(parts...)
 }
@@ -267,7 +313,7 @@ func (s *Server) toolExportResponses(ctx context.Context, req mcp.CallToolReques
 		}
 
 		relPath := safeFilePath(r.Path)
-		localPath := filepath.Join(destDir, safeFSName(r.Host), relPath)
+		localPath := filepath.Join(destDir, fitFSComponent(safeFSName(r.Host), false), relPath)
 
 		// Resolve name collisions
 		if count := usedPaths[localPath]; count > 0 {
