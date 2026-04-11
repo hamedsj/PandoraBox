@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/http"
 	"net/url"
 	"sync"
 	"sync/atomic"
@@ -33,6 +34,9 @@ type Proxy struct {
 
 	upstreamMu  sync.RWMutex
 	upstreamURL *url.URL // nil = no upstream proxy
+	transportMu sync.Mutex
+	transport   *http.Transport
+	transportKey string
 
 	mrMu    sync.RWMutex
 	mrRules []proj.MatchReplaceRule
@@ -99,6 +103,14 @@ func (p *Proxy) ApplyConfig(port int, interceptEnabled bool, upstreamURL string)
 	p.upstreamMu.Lock()
 	p.upstreamURL = parsed
 	p.upstreamMu.Unlock()
+
+	p.transportMu.Lock()
+	if p.transport != nil {
+		p.transport.CloseIdleConnections()
+	}
+	p.transport = nil
+	p.transportKey = ""
+	p.transportMu.Unlock()
 }
 
 func (p *Proxy) Start(ctx context.Context) error {
@@ -184,6 +196,13 @@ func (p *Proxy) Stop() {
 		p.listener.Close()
 		p.running = false
 	}
+	p.transportMu.Lock()
+	if p.transport != nil {
+		p.transport.CloseIdleConnections()
+	}
+	p.transport = nil
+	p.transportKey = ""
+	p.transportMu.Unlock()
 	p.mwRunner.Stop()
 }
 

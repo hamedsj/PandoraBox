@@ -10,19 +10,60 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"time"
 
 	"golang.org/x/net/proxy"
 )
 
 // makeTransport returns an http.Transport configured to route through the
-// upstream proxy (if any). Called for every HTTP/HTTPS round-trip.
+// upstream proxy (if any). The transport is reused to preserve connection
+// behavior close to a browser (keep-alive + pooled TLS sessions).
 func (p *Proxy) makeTransport() *http.Transport {
-	t := &http.Transport{DisableCompression: true}
+	p.transportMu.Lock()
+	defer p.transportMu.Unlock()
+
 	p.upstreamMu.RLock()
 	u := p.upstreamURL
 	p.upstreamMu.RUnlock()
+
+	key := ""
+	if u != nil {
+		key = u.String()
+	}
+
+	if p.transport != nil && p.transportKey == key {
+		return p.transport
+	}
+	if p.transport != nil {
+		p.transport.CloseIdleConnections()
+		p.transport = nil
+		p.transportKey = ""
+	}
+
+	dialer := &net.Dialer{
+		Timeout:   15 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
+	t := &http.Transport{
+		Proxy:                 nil,
+		DialContext:           dialer.DialContext,
+		DisableCompression:    true,
+		ForceAttemptHTTP2:     false,
+		MaxIdleConns:          200,
+		MaxIdleConnsPerHost:   50,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+		TLSClientConfig: &tls.Config{
+			MinVersion: tls.VersionTLS12,
+			NextProtos: []string{"http/1.1"},
+		},
+	}
+
 	if u == nil {
-		return t
+		p.transport = t
+		p.transportKey = key
+		return p.transport
 	}
 
 	switch u.Scheme {
@@ -41,7 +82,9 @@ func (p *Proxy) makeTransport() *http.Transport {
 	default:
 		slog.Warn("Unknown upstream proxy scheme", "scheme", u.Scheme)
 	}
-	return t
+	p.transport = t
+	p.transportKey = key
+	return p.transport
 }
 
 // dialTCP establishes a TCP connection to host (host:port), routing through the
