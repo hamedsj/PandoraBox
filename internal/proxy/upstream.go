@@ -2,10 +2,12 @@ package proxy
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -75,18 +77,57 @@ func (d *dualTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if req.URL.Scheme != "https" {
 		return d.h1t.RoundTrip(req)
 	}
+
+	// Normalize the host: strip the default HTTPS port (443) so that the h2
+	// :authority pseudo-header is "host" not "host:443". Chrome always omits
+	// the default port. Some Cloudflare endpoints return 400 when they see
+	// :authority with the redundant port included.
+	req = normalizeRequestHost(req, "https")
+
+	// Buffer the request body before the h2 attempt so we can replay it over
+	// h1 if h2 returns an application-level error (e.g. 400 from Cloudflare's
+	// challenge endpoint, or a transport-level failure after the body is read).
+	var bodyBuf []byte
+	if req.Body != nil && req.Body != http.NoBody {
+		var err error
+		bodyBuf, err = io.ReadAll(req.Body)
+		if err != nil {
+			return nil, fmt.Errorf("read request body: %w", err)
+		}
+		req.Body.Close()
+		req.Body = io.NopCloser(bytes.NewReader(bodyBuf))
+		req.ContentLength = int64(len(bodyBuf))
+	}
+
+	resetBody := func() {
+		if bodyBuf != nil {
+			req.Body = io.NopCloser(bytes.NewReader(bodyBuf))
+			req.ContentLength = int64(len(bodyBuf))
+		}
+	}
+
 	// Convert to fhttp.Request for the Chrome h2 transport.
 	freq := toFHTTPRequest(req)
 	fresp, err := d.h2t.RoundTrip(freq)
 	if err != nil && isALPNError(err) {
 		// Server doesn't support h2 — retry over h1. The h1 transport also
 		// advertises ["h2","http/1.1"] in ALPN so the JA4 still matches Chrome.
+		resetBody()
 		return d.h1t.RoundTrip(req)
 	}
 	if err != nil {
 		return nil, err
 	}
-	return fromFHTTPResponse(fresp, req), nil
+	resp := fromFHTTPResponse(fresp, req)
+	// If h2 returns 400 with no Cf-Ray, the server rejected the h2 framing
+	// itself (Cloudflare edge drops). Retry over h1 where TLS is negotiated
+	// but framing is plain HTTP/1.1.
+	if resp.StatusCode == 400 && resp.Header.Get("Cf-Ray") == "-" {
+		resp.Body.Close()
+		resetBody()
+		return d.h1t.RoundTrip(req)
+	}
+	return resp, nil
 }
 
 func (d *dualTransport) CloseIdleConnections() {
@@ -98,6 +139,48 @@ func (d *dualTransport) CloseIdleConnections() {
 // the h2 transport returns when the server negotiates http/1.1 instead of h2.
 func isALPNError(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "unexpected ALPN protocol")
+}
+
+// normalizeRequestHost returns a shallow copy of req with the default port
+// stripped from req.URL.Host and req.Host so that the h2 :authority
+// pseudo-header matches what Chrome sends (no redundant port for standard
+// ports). A new *http.Request is returned; the original is not modified.
+func normalizeRequestHost(req *http.Request, scheme string) *http.Request {
+	defaultPort := "443"
+	if scheme == "http" {
+		defaultPort = "80"
+	}
+	stripPort := func(hostport string) string {
+		h, p, err := net.SplitHostPort(hostport)
+		if err != nil {
+			return hostport // already no port
+		}
+		if p == defaultPort {
+			return h
+		}
+		return hostport
+	}
+
+	// Only copy if there's actually something to change.
+	newHost := stripPort(req.Host)
+	newURLHost := ""
+	if req.URL != nil {
+		newURLHost = stripPort(req.URL.Host)
+	}
+	if newHost == req.Host && (req.URL == nil || newURLHost == req.URL.Host) {
+		return req
+	}
+
+	r2 := new(http.Request)
+	*r2 = *req
+	r2.Host = newHost
+	if req.URL != nil {
+		u2 := new(url.URL)
+		*u2 = *req.URL
+		u2.Host = newURLHost
+		r2.URL = u2
+	}
+	return r2
 }
 
 // toFHTTPRequest converts a standard net/http request to a bogdanfinn/fhttp
