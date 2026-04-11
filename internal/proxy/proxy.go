@@ -32,10 +32,10 @@ type Proxy struct {
 	dbMu sync.RWMutex
 	db   *storage.DB
 
-	upstreamMu  sync.RWMutex
-	upstreamURL *url.URL // nil = no upstream proxy
-	transportMu sync.Mutex
-	transport   *http.Transport
+	upstreamMu   sync.RWMutex
+	upstreamURL  *url.URL // nil = no upstream proxy
+	transportMu  sync.Mutex
+	transport    http.RoundTripper
 	transportKey string
 
 	mrMu    sync.RWMutex
@@ -106,7 +106,7 @@ func (p *Proxy) ApplyConfig(port int, interceptEnabled bool, upstreamURL string)
 
 	p.transportMu.Lock()
 	if p.transport != nil {
-		p.transport.CloseIdleConnections()
+		closeIdleConns(p.transport)
 	}
 	p.transport = nil
 	p.transportKey = ""
@@ -198,7 +198,7 @@ func (p *Proxy) Stop() {
 	}
 	p.transportMu.Lock()
 	if p.transport != nil {
-		p.transport.CloseIdleConnections()
+		closeIdleConns(p.transport)
 	}
 	p.transport = nil
 	p.transportKey = ""
@@ -222,4 +222,14 @@ func (p *Proxy) getMiddlewareRunner() *MiddlewareRunner {
 	p.mwMu.RLock()
 	defer p.mwMu.RUnlock()
 	return p.mwRunner
+}
+
+// closeIdleConns calls CloseIdleConnections on rt if it implements the method.
+func closeIdleConns(rt http.RoundTripper) {
+	type idleCloser interface {
+		CloseIdleConnections()
+	}
+	if c, ok := rt.(idleCloser); ok {
+		c.CloseIdleConnections()
+	}
 }
