@@ -16,6 +16,27 @@ import (
 	"golang.org/x/net/proxy"
 )
 
+// chromeSpec is the Chrome ClientHello spec with ALPN forced to http/1.1.
+// Built once at startup: get the full Chrome spec, then patch out h2 from
+// the ALPN extension. This preserves the JA3/JA4 fingerprint (cipher suites,
+// extensions list, curves, GREASE) while preventing h2 negotiation.
+//
+// h2 must be excluded because Go's http.Transport performs a (*tls.Conn) type
+// assertion when upgrading a connection to h2, which panics on *utls.UConn.
+var chromeSpec = func() utls.ClientHelloSpec {
+	spec, err := utls.UTLSIdToSpec(utls.HelloChrome_Auto)
+	if err != nil {
+		panic("utls: failed to load Chrome spec: " + err.Error())
+	}
+	for _, ext := range spec.Extensions {
+		if alpn, ok := ext.(*utls.ALPNExtension); ok {
+			alpn.AlpnProtocols = []string{"http/1.1"}
+			break
+		}
+	}
+	return spec
+}()
+
 // chromeTLSDial wraps an existing TCP connection with a uTLS handshake
 // impersonating Chrome's ClientHello. This makes PandoraBox's TLS fingerprint
 // (JA3/JA4) indistinguishable from a real Chrome browser, defeating
@@ -23,7 +44,11 @@ import (
 func chromeTLSDial(ctx context.Context, tcpConn net.Conn, host string) (net.Conn, error) {
 	uconn := utls.UClient(tcpConn, &utls.Config{
 		ServerName: host,
-	}, utls.HelloChrome_Auto)
+	}, utls.HelloCustom)
+	if err := uconn.ApplyPreset(&chromeSpec); err != nil {
+		tcpConn.Close()
+		return nil, fmt.Errorf("utls apply preset: %w", err)
+	}
 	if err := uconn.HandshakeContext(ctx); err != nil {
 		tcpConn.Close()
 		return nil, err
