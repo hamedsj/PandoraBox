@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useContextMenu } from '@/hooks/useContextMenu'
 import { useProxyStore } from '@/store/proxy'
@@ -7,16 +7,16 @@ import { api } from '@/api/client'
 import type { Request, ScopeRule } from '@/api/client'
 import { MethodBadge } from '@/components/common/MethodBadge'
 import { StatusBadge } from '@/components/common/StatusBadge'
-import { CodeViewer } from '@/components/common/CodeViewer'
+import { BodyViewer } from '@/components/common/BodyViewer'
 import { AddToFlowModal } from '@/components/flows/AddToFlowModal'
 import { AddToOrganizerModal } from '@/components/organizer/AddToOrganizerModal'
-import { X, Copy, PanelBottomOpen, PanelRightOpen, Highlighter, RotateCcw, Trash2, GitBranch, FolderPlus, Target, Link, Terminal, Code2, Crosshair } from 'lucide-react'
+import { X, Copy, PanelBottomOpen, PanelRightOpen, Highlighter, RotateCcw, Trash2, GitBranch, FolderPlus, Target, Link, Terminal, Code2, Crosshair, Search, Regex, CaseSensitive } from 'lucide-react'
 import { copyURL, copyRawRequest, copyAsCurl, copyAsFetch } from '@/lib/copyRequest'
 import { displayHost } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import { decodeBodyBytes, decodeBodyForDisplay, type DecodedBody, type RawBody } from '@/lib/httpBodies'
-import { presentBody } from '@/lib/bodyPresentation'
 import { HeadersView } from '@/components/common/HeadersView'
+import { buildHighlightRegex, type HighlightSpec } from '@/components/common/Highlight'
 import { useWorkspaceStore } from '@/store/workspace'
 import { parseRequestTags, REQUEST_TAG_HIGHLIGHTED } from '@/lib/requestTags'
 import { toast } from 'sonner'
@@ -38,19 +38,46 @@ export function RequestInspector({ edge = 'left' }: { edge?: 'left' | 'top' | 'n
   const { selectedRequestId, setSelectedRequestId } = useProxyStore()
   const inspectorPosition = useWorkspaceStore((state) => state.inspectorPosition)
   const setInspectorPosition = useWorkspaceStore((state) => state.setInspectorPosition)
+  // Persisted in the workspace store so they survive the inspector unmounting
+  // when you navigate to another view and back.
+  const activeTab = useWorkspaceStore((state) => state.inspectorTab)
+  const setActiveTab = useWorkspaceStore((state) => state.setInspectorTab)
+  const bodyMode = useWorkspaceStore((state) => state.inspectorBodyMode)
+  const setBodyMode = useWorkspaceStore((state) => state.setInspectorBodyMode)
   const project = useProxyStore((s) => s.project)
   const setProject = useProxyStore((s) => s.setProject)
   const replayQueue = useProxyStore((s) => s.replayQueue)
+  const filters = useProxyStore((s) => s.filters)
   const addToReplay = useProxyStore((s) => s.addToReplay)
   const removeRequestFromReplay = useProxyStore((s) => s.removeRequestFromReplay)
   const updateRequest = useProxyStore((s) => s.updateRequest)
 
   const [req, setReq] = useState<Request | null>(null)
-  const [activeTab, setActiveTab] = useState<Tab>('request')
-  const [copiedMsg, setCopiedMsg] = useState('')
   const [requestBody, setRequestBody] = useState<DecodedBody | null>(null)
   const [responseBody, setResponseBody] = useState<DecodedBody | null>(null)
   const [selectedText, setSelectedText] = useState('')
+  const [findOpen, setFindOpen] = useState(false)
+  const [findTerm, setFindTerm] = useState('')
+  const [findCaseSensitive, setFindCaseSensitive] = useState(false)
+  const [findRegex, setFindRegex] = useState(false)
+  const findInputRef = useRef<HTMLInputElement | null>(null)
+
+  // Opens the find bar and focuses it. Bound to Ctrl/Cmd+F (see CodeViewer +
+  // the container key handler) so it replaces Monaco's built-in find widget.
+  const openFind = useCallback(() => {
+    setFindOpen(true)
+    requestAnimationFrame(() => {
+      findInputRef.current?.focus()
+      findInputRef.current?.select()
+    })
+  }, [])
+
+  function handleInspectorKeyDown(e: React.KeyboardEvent) {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') {
+      e.preventDefault()
+      openFind()
+    }
+  }
 
   const navigate = useNavigate()
   const sendToConverter = useConverterStore((s) => s.sendToConverter)
@@ -76,7 +103,8 @@ export function RequestInspector({ edge = 'left' }: { edge?: 'left' | 'top' | 'n
       return
     }
 
-    setActiveTab('request')
+    // Active tab is intentionally NOT reset here, so a response-first workflow
+    // keeps the Response tab selected as you click through requests.
 
     let cancelled = false
     decodeBodyForDisplay(req.body, req.headers).then((body) => {
@@ -93,6 +121,13 @@ export function RequestInspector({ edge = 'left' }: { edge?: 'left' | 'top' | 'n
 
   const highlighted = req ? parseRequestTags(req).includes(REQUEST_TAG_HIGHLIGHTED) : false
   const inReplay = req ? replayQueue.some((e) => e.request.id === req.id) : false
+
+  // Reflect the active history search so the matched term is highlighted and
+  // revealed in the opened request/response.
+  const highlightSpec = useMemo<HighlightSpec | null>(() => {
+    if (!filters.search || filters.negativeSearch) return null
+    return { term: filters.search, caseInsensitive: filters.caseInsensitive, useRegex: filters.useRegex }
+  }, [filters.search, filters.negativeSearch, filters.caseInsensitive, filters.useRegex])
 
   function handleContextMenu(e: React.MouseEvent) {
     if (!req) return
@@ -150,11 +185,36 @@ export function RequestInspector({ edge = 'left' }: { edge?: 'left' | 'top' | 'n
   const headers = tryParseHeaders(req.headers)
   const respHeaders = req.response ? tryParseHeaders(req.response.headers) : {}
 
-  function copyRaw() {
-    const raw = buildRawRequest(req!)
-    navigator.clipboard.writeText(raw).catch(console.error)
-    setCopiedMsg('Copied!')
-    setTimeout(() => setCopiedMsg(''), 2000)
+  // Find-in-message: searches headers + body of the active tab. When the find
+  // bar is empty it falls back to the active history search highlight.
+  const findSpec: HighlightSpec | null = findTerm
+    ? { term: findTerm, caseInsensitive: !findCaseSensitive, useRegex: findRegex }
+    : null
+  const effectiveHighlight = findSpec ?? highlightSpec
+  const findMatchCount = (() => {
+    const re = buildHighlightRegex(findSpec)
+    if (!re) return 0
+    const parts: string[] =
+      activeTab === 'request'
+        ? [headersToText(headers), requestBody?.text ?? '']
+        : [headersToText(respHeaders), responseBody?.text ?? '']
+    let count = 0
+    for (const p of parts) {
+      const m = p.match(re)
+      if (m) count += m.length
+    }
+    return count
+  })()
+
+  function copyMessage() {
+    const raw =
+      activeTab === 'response' && req!.response
+        ? buildRawResponse(req!.response, responseBody?.text ?? '')
+        : buildRawRequest(req!)
+    navigator.clipboard
+      .writeText(raw)
+      .then(() => toast.success(`Copied raw ${activeTab}`))
+      .catch(() => toast.error('Copy failed'))
   }
 
   return (
@@ -165,6 +225,7 @@ export function RequestInspector({ edge = 'left' }: { edge?: 'left' | 'top' | 'n
         edge === 'top' && 'border-t border-border'
       )}
       onContextMenu={handleContextMenu}
+      onKeyDown={handleInspectorKeyDown}
     >
       {/* Header */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-border">
@@ -175,6 +236,16 @@ export function RequestInspector({ edge = 'left' }: { edge?: 'left' | 'top' | 'n
           {req.query ? <span className="text-muted-foreground/60">?{req.query}</span> : null}
         </span>
         <button
+          onClick={() => (findOpen ? setFindOpen(false) : openFind())}
+          title="Find in request/response (⌘F)"
+          className={cn(
+            'p-1 transition-colors',
+            findOpen ? 'text-primary' : 'text-muted-foreground hover:text-foreground',
+          )}
+        >
+          <Search size={14} />
+        </button>
+        <button
           onClick={() => setInspectorPosition(inspectorPosition === 'right' ? 'bottom' : 'right')}
           title={inspectorPosition === 'right' ? 'Move viewer to bottom' : 'Move viewer to side'}
           className="p-1 text-muted-foreground hover:text-foreground transition-colors"
@@ -182,13 +253,12 @@ export function RequestInspector({ edge = 'left' }: { edge?: 'left' | 'top' | 'n
           {inspectorPosition === 'right' ? <PanelBottomOpen size={14} /> : <PanelRightOpen size={14} />}
         </button>
         <button
-          onClick={copyRaw}
-          title="Copy raw request"
+          onClick={copyMessage}
+          title={`Copy raw ${activeTab}`}
           className="p-1 text-muted-foreground hover:text-foreground transition-colors"
         >
           <Copy size={14} />
         </button>
-        {copiedMsg && <span className="text-xs text-primary">{copiedMsg}</span>}
         <button
           onClick={() => setSelectedRequestId(null)}
           className="p-1 text-muted-foreground hover:text-foreground transition-colors"
@@ -218,12 +288,67 @@ export function RequestInspector({ edge = 'left' }: { edge?: 'left' | 'top' | 'n
         ))}
       </div>
 
+      {/* Find bar */}
+      {findOpen && (
+        <div className="flex items-center gap-1.5 border-b border-border bg-card px-3 py-1.5">
+          <Search size={13} className="shrink-0 text-muted-foreground" />
+          <input
+            ref={findInputRef}
+            autoFocus
+            value={findTerm}
+            onChange={(e) => setFindTerm(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Escape') { setFindTerm(''); setFindOpen(false) } }}
+            placeholder="Find in headers and body…"
+            spellCheck={false}
+            className={cn(
+              'flex-1 bg-transparent py-0.5 text-xs placeholder:text-muted-foreground focus:outline-none',
+              findRegex && 'font-mono',
+            )}
+          />
+          {findTerm && (
+            <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+              {findMatchCount} {findMatchCount === 1 ? 'match' : 'matches'}
+            </span>
+          )}
+          <button
+            onClick={() => setFindCaseSensitive((v) => !v)}
+            title={findCaseSensitive ? 'Case-sensitive' : 'Case-insensitive'}
+            className={cn('rounded p-1 transition-colors', findCaseSensitive ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:text-foreground')}
+          >
+            <CaseSensitive size={13} />
+          </button>
+          <button
+            onClick={() => setFindRegex((v) => !v)}
+            title="Regular expression"
+            className={cn('rounded p-1 transition-colors', findRegex ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:text-foreground')}
+          >
+            <Regex size={13} />
+          </button>
+          <button
+            onClick={() => { setFindTerm(''); setFindOpen(false) }}
+            title="Close find"
+            className="rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <X size={13} />
+          </button>
+        </div>
+      )}
+
       {/* Content */}
       <div className="flex-1 overflow-auto p-3 space-y-3">
         {activeTab === 'request' ? (
           <>
-            <HeadersView headers={headers} />
-            {requestBody && <BodySection title="Body" body={requestBody} />}
+            <HeadersView headers={headers} highlight={effectiveHighlight} />
+            {requestBody && (
+              <BodyViewer
+                body={requestBody}
+                highlight={effectiveHighlight}
+                onRequestFind={openFind}
+                mode={bodyMode}
+                onModeChange={setBodyMode}
+                viewStateKey={`insp-req-${req.id}`}
+              />
+            )}
           </>
         ) : req.response ? (
           <>
@@ -232,8 +357,17 @@ export function RequestInspector({ edge = 'left' }: { edge?: 'left' | 'top' | 'n
               <span className="text-muted-foreground font-mono text-xs">{req.response.status_text}</span>
               <span className="ml-auto text-muted-foreground text-xs">{req.response.duration_ms}ms · {formatBytes(req.response.size_bytes)}</span>
             </div>
-            <HeadersView headers={respHeaders} />
-            {responseBody && <BodySection title="Body" body={responseBody} />}
+            <HeadersView headers={respHeaders} highlight={effectiveHighlight} />
+            {responseBody && (
+              <BodyViewer
+                body={responseBody}
+                highlight={effectiveHighlight}
+                onRequestFind={openFind}
+                mode={bodyMode}
+                onModeChange={setBodyMode}
+                viewStateKey={`insp-res-${req.id}`}
+              />
+            )}
           </>
         ) : (
           <div className="text-muted-foreground text-sm">No response</div>
@@ -379,100 +513,12 @@ export function RequestInspector({ edge = 'left' }: { edge?: 'left' | 'top' | 'n
 }
 
 
-function BodySection({ title, body }: { title: string; body: DecodedBody }) {
-  const presentation = presentBody(body)
-  const isEmpty = presentation.text.trim().length === 0
-  const graphQL = presentation.graphQL
-
-  return (
-    <div>
-      <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
-        <span className="font-medium uppercase tracking-wide">{title}</span>
-        <span className="rounded-full border border-border px-2 py-0.5 font-mono">
-          {body.contentType}
-        </span>
-        <span className="rounded-full border border-border px-2 py-0.5 font-mono">
-          {presentation.label}
-        </span>
-        {body.wasCompressed && (
-          <span className="rounded-full border border-border px-2 py-0.5 font-mono">
-            decoded {body.encoding || 'compressed'}
-          </span>
-        )}
-        {body.isBinary && (
-          <span className="rounded-full border border-border px-2 py-0.5 font-mono">
-            binary preview
-          </span>
-        )}
-      </div>
-      {body.error && (
-        <div className="mb-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
-          {body.error}
-        </div>
-      )}
-      {presentation.formatted && (
-        <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-primary/80">
-          {graphQL ? 'graphql view' : 'prettified view'}
-        </div>
-      )}
-      {isEmpty ? (
-        <div className="rounded-xl border border-dashed border-border bg-muted/30 px-4 py-6 text-sm text-muted-foreground">
-          Empty body
-        </div>
-      ) : graphQL ? (
-        <div className="space-y-3 rounded-xl border border-primary/20 bg-primary/[0.035] p-3">
-          <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
-            <span className="rounded-full border border-primary/25 bg-primary/10 px-2 py-0.5 font-semibold uppercase tracking-[0.16em] text-primary">
-              {graphQL.operationName || 'anonymous'}
-            </span>
-            <span>{graphQL.transport === 'json' ? 'JSON GraphQL request' : 'Raw GraphQL request'}</span>
-          </div>
-          <CodeViewer
-            value={graphQL.formattedQuery}
-            language="graphql"
-            maxHeight={560}
-            minHeight={180}
-          />
-          {graphQL.variablesText && (
-            <div>
-              <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                Variables
-              </div>
-              <CodeViewer
-                value={graphQL.variablesText}
-                language="json"
-                maxHeight={320}
-                minHeight={120}
-              />
-            </div>
-          )}
-          {graphQL.extensionsText && (
-            <div>
-              <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                Extensions
-              </div>
-              <CodeViewer
-                value={graphQL.extensionsText}
-                language="json"
-                maxHeight={320}
-                minHeight={120}
-              />
-            </div>
-          )}
-        </div>
-      ) : (
-        <CodeViewer
-          value={presentation.text}
-          language={presentation.language}
-          maxHeight={2000}
-        />
-      )}
-    </div>
-  )
-}
-
 function tryParseHeaders(h: string): Record<string, string[]> {
   try { return JSON.parse(h) as Record<string, string[]> } catch { return {} }
+}
+
+function headersToText(h: Record<string, string[]>): string {
+  return Object.entries(h).map(([k, vs]) => `${k}: ${vs.join(', ')}`).join('\n')
 }
 
 function formatBytes(n: number): string {
@@ -491,5 +537,17 @@ function buildRawRequest(req: Request): string {
   }
   raw += '\r\n'
   if (req.body) raw += decodeBodyBytes(req.body as RawBody)
+  return raw
+}
+
+function buildRawResponse(resp: NonNullable<Request['response']>, bodyText: string): string {
+  const headers = tryParseHeaders(resp.headers)
+  const statusText = resp.status_text?.trim() || ''
+  let raw = `HTTP/1.1 ${resp.status_code} ${statusText}`.trimEnd() + '\r\n'
+  for (const [k, vs] of Object.entries(headers)) {
+    for (const v of vs) raw += `${k}: ${v}\r\n`
+  }
+  raw += '\r\n'
+  raw += bodyText
   return raw
 }

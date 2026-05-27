@@ -84,23 +84,35 @@ export function registerHttpLanguage(monaco: typeof Monaco): void {
         [/$/, { token: '', next: '@headers' }],
       ],
 
-      // ── Body — auto-detects JSON / XML / form-urlencoded ────────────────────
+      // ── Body — auto-detects JSON / XML / GraphQL / form-urlencoded ──────────
       body: [
         // Raw GraphQL documents
         [/^\s*(query|mutation|subscription|fragment)\b/, { token: 'graphql.keyword', next: '@graphql' }],
-        // JSON object
+        // JSON object / array
         [/^\s*\{/, { token: 'delimiter.curly', next: '@json_object' }],
-        // JSON array
         [/^\s*\[/, { token: 'delimiter.square', next: '@json_array' }],
         // XML / HTML (lookahead — don't consume the '<')
         [/^\s*(?=<)/, { token: '', next: '@xml' }],
-        // Form URL-encoded: key=value&key2=value2
-        // Match a key (non-empty, stops at =, &, newline, whitespace-only lines)
+        // Form URL-encoded — only when the body actually begins with `key=`.
+        // The lookahead keeps arbitrary text, JWTs, base64 and JSON scalars from
+        // being mis-colored as form pairs.
+        [/^\s*(?=[^\s=&]+=)/, { token: '', next: '@form' }],
+        // Anything else: opaque text, no misleading tokenization.
+        [/.*/, { token: '', next: '@text_body' }],
+      ],
+
+      // ── Form URL-encoded: key=value&key2=value2 ─────────────────────────────
+      form: [
         [/[^=&\n\r\s][^=&\n\r]*(?==)/, 'form.key'],
         [/=/, 'form.eq'],
         [/[^&\n\r]+/, 'form.value'],
         [/&/, 'form.sep'],
         [/\s+/, ''],
+      ],
+
+      // ── Opaque text body — neutral, no keyword/operator coloring ────────────
+      text_body: [
+        [/.*/, ''],
       ],
 
       // ── JSON ────────────────────────────────────────────────────────────────

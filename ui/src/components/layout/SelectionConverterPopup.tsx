@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { ArrowRight, Check, Copy, Replace, X } from 'lucide-react'
 import { api } from '@/api/client'
 import type { ConverterAlgorithm } from '@/api/client'
 import { useProxyStore } from '@/store/proxy'
@@ -7,13 +8,8 @@ import { useConverterStore } from '@/store/converter'
 import { cn } from '@/lib/utils'
 import { Select } from '@/components/ui/Select'
 
-type PopupState = {
-  text: string
-  x: number
-  y: number
-  canReplace?: boolean
-}
-
+type Anchor = { x: number; y: number }
+type PopupState = { text: string; anchor: Anchor; canReplace: boolean }
 type ConverterSelectionDetail = {
   text: string
   x: number
@@ -22,290 +18,298 @@ type ConverterSelectionDetail = {
   replaceSelection?: (nextText: string) => void
 }
 
+const POPUP_WIDTH = 360
+const SHOW_DELAY = 140 // wait for the selection to settle before showing
+const PREVIEW_DELAY = 220 // debounce live preview
+const EDGE_PAD = 12
+
+/**
+ * Floating quick-convert popup. It is intentionally driven ONLY by selections
+ * inside the app's code/body editors (the `pandora:converter-selection` event
+ * emitted by CodeViewer). It deliberately does NOT listen to global document
+ * selections, so it never appears over unrelated UI chrome. Non-editor text
+ * (e.g. headers) still reaches the converter via the right-click menu.
+ */
 export function SelectionConverterPopup() {
   const navigate = useNavigate()
   const project = useProxyStore((s) => s.project)
   const sendToConverter = useConverterStore((s) => s.sendToConverter)
+
   const [popup, setPopup] = useState<PopupState | null>(null)
+  const [pos, setPos] = useState<{ left: number; top: number }>({ left: -9999, top: -9999 })
+  const [mode, setMode] = useState<'algorithm' | 'stack'>('algorithm')
   const [algorithm, setAlgorithm] = useState('base64_decode')
   const [stackId, setStackId] = useState('')
-  const [preview, setPreview] = useState('')
-  const [showPreview, setShowPreview] = useState(false)
-  const [busy, setBusy] = useState(false)
   const [algorithms, setAlgorithms] = useState<ConverterAlgorithm[]>([])
-  const holdPopupUntilRef = useRef(0)
+  const [preview, setPreview] = useState('')
+  const [previewError, setPreviewError] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [copied, setCopied] = useState(false)
+
   const popupRef = useRef<HTMLDivElement | null>(null)
   const popupOpenRef = useRef(false)
   const replaceSelectionRef = useRef<((nextText: string) => void) | null>(null)
+  const showTimerRef = useRef<number | undefined>(undefined)
+  const pendingDetailRef = useRef<ConverterSelectionDetail | null>(null)
 
   const stacks = project?.converter?.stacks ?? []
   const hasStacks = stacks.length > 0
 
   useEffect(() => {
-    if (!hasStacks) {
-      setStackId('')
-      return
-    }
-    if (!stackId || !stacks.some((s) => s.id === stackId)) {
-      setStackId(stacks[0].id)
-    }
-  }, [hasStacks, stackId, stacks])
-
-  useEffect(() => {
     api.converter.get().then((r) => {
-      setAlgorithms(r.algorithms ?? [])
-      if ((r.algorithms ?? []).length > 0) {
-        setAlgorithm((r.algorithms ?? [])[0].id)
-      }
+      const algs = r.algorithms ?? []
+      setAlgorithms(algs)
+      setAlgorithm((cur) => (algs.some((a) => a.id === cur) ? cur : algs[0]?.id ?? cur))
     }).catch(console.error)
   }, [])
 
   useEffect(() => {
-    popupOpenRef.current = Boolean(popup)
-    if (!popup) {
-      replaceSelectionRef.current = null
+    if (!hasStacks) {
+      setStackId('')
+      setMode((m) => (m === 'stack' ? 'algorithm' : m))
+      return
     }
-  }, [popup])
+    if (!stackId || !stacks.some((s) => s.id === stackId)) setStackId(stacks[0].id)
+  }, [hasStacks, stackId, stacks])
 
   useEffect(() => {
-    const onPointerDown = (event: MouseEvent) => {
+    popupOpenRef.current = Boolean(popup)
+    if (!popup) replaceSelectionRef.current = null
+  }, [popup])
+
+  // Only source of truth: selections inside CodeViewer editors.
+  useEffect(() => {
+    const onSelection = (event: Event) => {
+      const detail = (event as CustomEvent<ConverterSelectionDetail | null>).detail
+      // Empty selection / editor blur: cancel a pending show, but leave an open
+      // popup alone so the user can interact with it (closing is handled by
+      // outside-click / Escape).
+      if (!detail || !detail.text?.trim()) {
+        window.clearTimeout(showTimerRef.current)
+        return
+      }
+      pendingDetailRef.current = detail
+      window.clearTimeout(showTimerRef.current)
+      showTimerRef.current = window.setTimeout(() => {
+        const d = pendingDetailRef.current
+        if (!d) return
+        replaceSelectionRef.current = d.replaceSelection ?? null
+        setPreview('')
+        setPreviewError(false)
+        setPos({ left: -9999, top: -9999 })
+        setPopup({
+          text: d.text.slice(0, 25000),
+          anchor: { x: d.x, y: d.y },
+          canReplace: Boolean(d.canReplace && d.replaceSelection),
+        })
+      }, SHOW_DELAY)
+    }
+
+    window.addEventListener('pandora:converter-selection', onSelection as EventListener)
+    return () => {
+      window.removeEventListener('pandora:converter-selection', onSelection as EventListener)
+      window.clearTimeout(showTimerRef.current)
+    }
+  }, [])
+
+  // Dismissal.
+  useEffect(() => {
+    const onDown = (event: MouseEvent) => {
       if (!popupOpenRef.current) return
       const target = event.target as Element | null
       if (!target) return
-      const insidePopup = Boolean(popupRef.current?.contains(target))
-      const insideRadixMenu = Boolean(target.closest('[data-radix-popper-content-wrapper]'))
-      if (!insidePopup && !insideRadixMenu) {
-        setPopup(null)
-      }
+      if (popupRef.current?.contains(target)) return
+      if (target.closest('[data-radix-popper-content-wrapper]')) return
+      setPopup(null)
     }
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setPopup(null)
-      }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && popupOpenRef.current) setPopup(null)
     }
-
-    document.addEventListener('mousedown', onPointerDown)
-    document.addEventListener('keydown', onKeyDown)
+    const onResize = () => setPopup(null)
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    window.addEventListener('resize', onResize)
     return () => {
-      document.removeEventListener('mousedown', onPointerDown)
-      document.removeEventListener('keydown', onKeyDown)
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+      window.removeEventListener('resize', onResize)
     }
   }, [])
 
+  // Live, debounced preview.
   useEffect(() => {
-    const onCodeViewerSelection = (event: Event) => {
-      const custom = event as CustomEvent<ConverterSelectionDetail | null>
-      const detail = custom.detail
-      if (!detail || !detail.text?.trim()) {
-        if (!popupOpenRef.current) {
-          replaceSelectionRef.current = null
-        }
-        return
+    if (!popup) return
+    let cancelled = false
+    const t = window.setTimeout(async () => {
+      setBusy(true)
+      try {
+        const r =
+          mode === 'stack' && stackId
+            ? await api.converter.runStack({ input: popup.text, stack_id: stackId })
+            : await api.converter.transform({ input: popup.text, algorithm })
+        if (!cancelled) { setPreview(r.output); setPreviewError(false) }
+      } catch (e) {
+        if (!cancelled) { setPreview(e instanceof Error ? e.message : 'Conversion failed'); setPreviewError(true) }
+      } finally {
+        if (!cancelled) setBusy(false)
       }
-      holdPopupUntilRef.current = Date.now() + 600
-      setPreview('')
-      setShowPreview(false)
-      replaceSelectionRef.current = detail.replaceSelection ?? null
-      setPopup({
-        text: detail.text.slice(0, 25000),
-        x: Math.min(window.innerWidth - 360, Math.max(12, detail.x)),
-        y: Math.min(window.innerHeight - 220, Math.max(12, detail.y)),
-        canReplace: Boolean(detail.canReplace && detail.replaceSelection),
-      })
+    }, PREVIEW_DELAY)
+    return () => { cancelled = true; window.clearTimeout(t) }
+  }, [popup, mode, algorithm, stackId])
+
+  // Measure-and-place: clamp horizontally, flip above when there's no room below.
+  useLayoutEffect(() => {
+    if (!popup || !popupRef.current) return
+    const el = popupRef.current
+    const w = el.offsetWidth || POPUP_WIDTH
+    const h = el.offsetHeight
+    let left = Math.min(Math.max(EDGE_PAD, popup.anchor.x), window.innerWidth - w - EDGE_PAD)
+    let top = popup.anchor.y
+    if (top + h + EDGE_PAD > window.innerHeight) {
+      const above = popup.anchor.y - h - 28 // anchor sits just below the selection line
+      top = above >= EDGE_PAD ? above : Math.max(EDGE_PAD, window.innerHeight - h - EDGE_PAD)
     }
+    setPos({ left, top })
+  }, [popup, preview, busy, mode, algorithms.length, hasStacks])
 
-    const onSelection = () => {
-      if (Date.now() < holdPopupUntilRef.current) {
-        return
-      }
-      const sel = window.getSelection()
-      if (!sel || sel.isCollapsed) {
-        // Keep popup stable while user interacts with popup/dropdowns;
-        // outside click / Escape handles closing.
-        if (!popupOpenRef.current) setPopup(null)
-        return
-      }
-      const text = sel.toString()
-      if (!text.trim()) {
-        setPopup(null)
-        return
-      }
-      const range = sel.rangeCount > 0 ? sel.getRangeAt(0) : null
-      if (!range) return
-      const rect = range.getBoundingClientRect()
-      if (!rect || (rect.width === 0 && rect.height === 0)) return
-
-      const anchor = sel.anchorNode instanceof Element ? sel.anchorNode : sel.anchorNode?.parentElement
-      const isMonaco = Boolean(anchor?.closest('.monaco-editor'))
-      if (isMonaco) {
-        // Monaco selections are handled via pandora:converter-selection
-        // so we can keep replace-capable metadata.
-        return
-      }
-      if (!isMonaco && anchor && (anchor.closest('input, textarea, [contenteditable="true"]'))) {
-        setPopup(null)
-        return
-      }
-      holdPopupUntilRef.current = 0
-
-      setPreview('')
-      setShowPreview(false)
-      setPopup({
-        text: text.slice(0, 25000),
-        x: Math.min(window.innerWidth - 360, Math.max(12, rect.left)),
-        y: Math.min(window.innerHeight - 220, Math.max(12, rect.bottom + 8)),
-        canReplace: false,
-      })
-    }
-
-    document.addEventListener('mouseup', onSelection)
-    document.addEventListener('keyup', onSelection)
-    document.addEventListener('selectionchange', onSelection)
-    window.addEventListener('pandora:converter-selection', onCodeViewerSelection as EventListener)
-    return () => {
-      document.removeEventListener('mouseup', onSelection)
-      document.removeEventListener('keyup', onSelection)
-      document.removeEventListener('selectionchange', onSelection)
-      window.removeEventListener('pandora:converter-selection', onCodeViewerSelection as EventListener)
-    }
-  }, [])
-
-  const selectedSummary = useMemo(() => {
-    if (!popup) return ''
-    const s = popup.text.replace(/\s+/g, ' ').trim()
-    return s.length > 96 ? `${s.slice(0, 96)}…` : s
-  }, [popup])
+  const selectedSummary = useMemo(
+    () => (popup ? popup.text.replace(/\s+/g, ' ').trim() : ''),
+    [popup],
+  )
 
   if (!popup) return null
-  const selectedText = popup.text
 
-  async function runQuickPreview() {
-    setBusy(true)
-    try {
-      const r = await api.converter.transform({ input: selectedText, algorithm })
-      setPreview(r.output)
-      setShowPreview(true)
-    } catch (e) {
-      setPreview(e instanceof Error ? e.message : 'Failed')
-      setShowPreview(true)
-    } finally {
-      setBusy(false)
-    }
+  const copyResult = () => {
+    navigator.clipboard.writeText(preview).then(() => {
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1200)
+    }).catch(() => {})
   }
-
-  async function runStackPreview() {
-    if (!stackId) return
-    setBusy(true)
-    try {
-      const r = await api.converter.runStack({ input: selectedText, stack_id: stackId })
-      setPreview(r.output)
-      setShowPreview(true)
-    } catch (e) {
-      setPreview(e instanceof Error ? e.message : 'Failed')
-      setShowPreview(true)
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function replaceSelectionWithQuick() {
+  const doReplace = () => {
     const replacer = replaceSelectionRef.current
-    if (!replacer) return
-    setBusy(true)
-    try {
-      const r = await api.converter.transform({ input: selectedText, algorithm })
-      replacer(r.output)
-      setPreview(r.output)
-      setShowPreview(true)
+    if (replacer && !previewError && preview) {
+      replacer(preview)
       setPopup(null)
-    } catch (e) {
-      setPreview(e instanceof Error ? e.message : 'Failed')
-      setShowPreview(true)
-    } finally {
-      setBusy(false)
     }
+  }
+  const openInConverter = () => {
+    sendToConverter(popup.text, mode === 'algorithm' ? algorithm : undefined)
+    navigate('/converter')
+    setPopup(null)
   }
 
   return (
     <div
       ref={popupRef}
-      className="fixed z-[80] w-[340px] rounded-xl border border-border bg-card shadow-2xl p-3 space-y-2"
-      style={{ left: popup.x, top: popup.y }}
+      className="fixed z-[80] w-[360px] overflow-hidden rounded-xl border border-border bg-card shadow-2xl"
+      style={{ left: pos.left, top: pos.top }}
       onMouseDown={(e) => e.stopPropagation()}
     >
-      <div className="text-[11px] text-muted-foreground">Selected text</div>
-      <div className="text-xs font-mono text-foreground/90 bg-muted/30 border border-border/60 rounded-md p-2 break-all">{selectedSummary}</div>
-
-      <div className="flex items-center gap-2">
+      {/* Header */}
+      <div className="flex items-center gap-2 border-b border-border px-3 py-2">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Convert</span>
+        <span className="rounded-full bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+          {popup.text.length} chars
+        </span>
         <button
-          onClick={() => {
-            sendToConverter(selectedText, algorithm)
-            navigate('/converter')
-            setPopup(null)
-          }}
-          className="px-2.5 py-1.5 rounded-md text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90"
+          onClick={() => setPopup(null)}
+          className="ml-auto rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+          title="Close"
         >
-          Send to Converter
+          <X size={13} />
+        </button>
+      </div>
+
+      <div className="space-y-2 p-3">
+        {/* Selected snippet */}
+        <div className="line-clamp-2 break-all rounded-md border border-border/60 bg-muted/30 p-2 font-mono text-[11px] text-foreground/80">
+          {selectedSummary}
+        </div>
+
+        {/* Mode toggle + input */}
+        {hasStacks && (
+          <div className="flex items-center rounded-lg border border-border bg-background p-0.5 text-[11px]">
+            {(['algorithm', 'stack'] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => setMode(m)}
+                className={cn(
+                  'flex-1 rounded-md py-1 font-medium capitalize transition-colors',
+                  mode === m ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {mode === 'algorithm' ? (
+          <Select
+            value={algorithm}
+            onChange={setAlgorithm}
+            options={algorithms.map((a) => ({ value: a.id, label: a.label }))}
+            className="h-8"
+            searchable
+            searchPlaceholder="Search algorithms…"
+          />
+        ) : (
+          <Select
+            value={stackId}
+            onChange={setStackId}
+            options={stacks.map((s) => ({ value: s.id, label: s.name }))}
+            placeholder="Select stack"
+            className="h-8"
+          />
+        )}
+
+        {/* Result */}
+        <div>
+          <div className="mb-1 flex items-center justify-between">
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+              Result{busy ? ' · …' : ''}
+            </span>
+            {preview && !previewError && (
+              <button
+                onClick={copyResult}
+                className="flex items-center gap-1 text-[10px] text-muted-foreground transition-colors hover:text-foreground"
+              >
+                {copied ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
+                {copied ? 'Copied' : 'Copy'}
+              </button>
+            )}
+          </div>
+          <div
+            className={cn(
+              'max-h-28 overflow-auto whitespace-pre-wrap break-all rounded-md border p-2 font-mono text-[11px]',
+              previewError
+                ? 'border-red-500/40 bg-red-500/10 text-red-300'
+                : 'border-border bg-background text-foreground',
+            )}
+          >
+            {preview || (busy ? '' : '—')}
+          </div>
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div className="flex items-center gap-2 border-t border-border px-3 py-2.5">
+        <button
+          onClick={openInConverter}
+          className="flex items-center gap-1 rounded-md bg-primary px-2.5 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+        >
+          Open in Converter <ArrowRight size={12} />
         </button>
         {popup.canReplace && (
           <button
-            onClick={() => replaceSelectionWithQuick().catch(console.error)}
-            disabled={busy}
-            className={cn('px-2.5 py-1.5 rounded-md text-xs font-medium border border-border hover:text-foreground', busy ? 'opacity-60 text-muted-foreground' : 'text-foreground')}
+            onClick={doReplace}
+            disabled={busy || previewError || !preview}
+            className="flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Replace Selection
+            <Replace size={12} /> Replace
           </button>
         )}
       </div>
-
-      <div className="grid grid-cols-[1fr_auto] gap-2">
-        <Select
-          value={algorithm}
-          onChange={setAlgorithm}
-          options={algorithms.map((a) => ({ value: a.id, label: a.label }))}
-          className="h-[30px]"
-          searchable
-          searchPlaceholder="Search algorithms..."
-        />
-        <button
-          onClick={() => runQuickPreview().catch(console.error)}
-          disabled={busy}
-          className={cn('px-2.5 py-1.5 rounded-md text-xs border border-border text-muted-foreground hover:text-foreground', busy && 'opacity-60')}
-        >
-          Run
-        </button>
-      </div>
-
-      <div className="grid grid-cols-[1fr_auto] gap-2">
-        <Select
-          value={stackId}
-          onChange={setStackId}
-          options={
-            hasStacks
-              ? stacks.map((s) => ({ value: s.id, label: s.name }))
-              : [{ value: '', label: 'No ConvertStacks' }]
-          }
-          placeholder="Select stack"
-          className="h-[30px]"
-          disabled={!hasStacks}
-        />
-        <button
-          onClick={() => runStackPreview().catch(console.error)}
-          disabled={busy || !stackId}
-          className={cn('px-2.5 py-1.5 rounded-md text-xs border border-border text-muted-foreground hover:text-foreground', (busy || !stackId) && 'opacity-60')}
-        >
-          Stack
-        </button>
-      </div>
-
-      {showPreview && (
-        <textarea
-          value={preview}
-          readOnly
-          className="w-full h-24 bg-background border border-border rounded-md p-2 text-xs font-mono resize-none"
-        />
-      )}
     </div>
   )
 }

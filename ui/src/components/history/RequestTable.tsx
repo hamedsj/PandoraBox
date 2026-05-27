@@ -9,7 +9,7 @@ import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { Checkbox } from '@/components/ui/Checkbox'
 import { cn } from '@/lib/utils'
 import { api, type Request, type ScopeRule } from '@/api/client'
-import { Globe, Filter, RotateCcw, Trash2, ChevronUp, ChevronDown, Target, GitBranch, Highlighter, Sparkles, FolderPlus, Copy, Link, Terminal, Code2, Crosshair } from 'lucide-react'
+import { Globe, Filter, RotateCcw, Trash2, ChevronUp, ChevronDown, Target, GitBranch, Highlighter, Sparkles, FolderPlus, Copy, Link, Terminal, Code2, Crosshair, Search, X, Regex, CaseSensitive } from 'lucide-react'
 import { copyURL, copyRawRequest, copyAsCurl, copyAsFetch } from '@/lib/copyRequest'
 import { displayHost } from '@/lib/utils'
 import { UserDot } from '@/components/team/UserDot'
@@ -17,7 +17,8 @@ import { useTeamStore } from '@/store/team'
 import { FilterModal } from './FilterModal'
 import { AddToFlowModal } from '@/components/flows/AddToFlowModal'
 import { AddToOrganizerModal } from '@/components/organizer/AddToOrganizerModal'
-import { countActiveFilters, filterRequests, isWebSocket } from '@/lib/requestFilters'
+import { countActiveFilters, filterRequests, isWebSocket, searchMatchScopes } from '@/lib/requestFilters'
+import { Highlight, type HighlightSpec } from '@/components/common/Highlight'
 import { parseRequestTags, REQUEST_TAG_HIGHLIGHTED } from '@/lib/requestTags'
 import { subscribeShortcutAction } from '@/lib/shortcuts'
 import { Select } from '@/components/ui/Select'
@@ -119,6 +120,28 @@ export function RequestTable({
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false)
   const [busyAction, setBusyAction] = useState<'highlight' | 'delete' | 'clear' | null>(null)
+  const [searchDraft, setSearchDraft] = useState(filters.search)
+
+  // Keep the quick-search box in sync when the term changes elsewhere
+  // (advanced modal, Reset All, project switch).
+  useEffect(() => { setSearchDraft(filters.search) }, [filters.search])
+
+  const searchRegexError = useMemo(() => {
+    if (!filters.useRegex || !searchDraft) return null
+    try { new RegExp(searchDraft); return null } catch (e) { return (e as Error).message }
+  }, [filters.useRegex, searchDraft])
+
+  // Debounce the live search into the store so typing stays smooth on large
+  // histories. An invalid regex is not applied (it would just show 0 results).
+  useEffect(() => {
+    if (searchRegexError) return
+    const t = window.setTimeout(() => {
+      if (searchDraft !== useProxyStore.getState().filters.search) {
+        setFilters({ search: searchDraft })
+      }
+    }, 120)
+    return () => window.clearTimeout(t)
+  }, [searchDraft, setFilters, searchRegexError])
 
   useEffect(() => {
     return subscribeShortcutAction((actionId) => {
@@ -224,6 +247,12 @@ export function RequestTable({
   const allVisibleSelected = filteredRequests.length > 0 && filteredRequests.every((req) => selectedIdSet.has(req.id))
   const someVisibleSelected = filteredRequests.some((req) => selectedIdSet.has(req.id))
   const activeFilterCount = countActiveFilters(filters)
+
+  // Only highlight on a positive search (inverted results have no match to show).
+  const highlightSpec = useMemo<HighlightSpec | null>(() => {
+    if (!filters.search || filters.negativeSearch) return null
+    return { term: filters.search, caseInsensitive: filters.caseInsensitive, useRegex: filters.useRegex }
+  }, [filters.search, filters.negativeSearch, filters.caseInsensitive, filters.useRegex])
 
   function handleSort(column: SortColumn) {
     if (sortColumn === column) {
@@ -349,6 +378,57 @@ export function RequestTable({
             </span>
           )}
         </button>
+
+        {/* Always-visible live search */}
+        <div
+          className={cn(
+            'flex items-center gap-1.5 rounded-md border bg-background px-2 transition-colors',
+            searchRegexError ? 'border-red-500/60' : 'border-border focus-within:border-primary',
+          )}
+        >
+          <Search size={14} className="shrink-0 text-muted-foreground" />
+          <input
+            value={searchDraft}
+            onChange={(e) => setSearchDraft(e.target.value)}
+            placeholder={filters.searchScope.length === 0 ? 'Search all fields…' : 'Search selected fields…'}
+            spellCheck={false}
+            className={cn(
+              'w-52 bg-transparent py-1.5 text-sm placeholder:text-muted-foreground focus:outline-none',
+              filters.useRegex && 'font-mono',
+            )}
+          />
+          {searchDraft && (
+            <button
+              onClick={() => setSearchDraft('')}
+              title="Clear search"
+              className="text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <X size={13} />
+            </button>
+          )}
+          <div className="mx-0.5 h-4 w-px bg-border" />
+          <button
+            onClick={() => setFilters({ caseInsensitive: !filters.caseInsensitive })}
+            title={filters.caseInsensitive ? 'Case-insensitive — click for case-sensitive' : 'Case-sensitive — click for case-insensitive'}
+            className={cn(
+              'rounded p-1 transition-colors',
+              !filters.caseInsensitive ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            <CaseSensitive size={14} />
+          </button>
+          <button
+            onClick={() => setFilters({ useRegex: !filters.useRegex })}
+            title="Regular expression"
+            className={cn(
+              'rounded p-1 transition-colors',
+              filters.useRegex ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            <Regex size={14} />
+          </button>
+        </div>
+        {searchRegexError && <span className="text-xs text-red-400">invalid regex</span>}
 
         {historyTab === 'http' && (
           <Select
@@ -485,10 +565,20 @@ export function RequestTable({
             </tr>
           </thead>
           <tbody>
-            {filteredRequests.map((req) => (
+            {filteredRequests.map((req) => {
+              let matchBadge: string | null = null
+              if (highlightSpec) {
+                const s = searchMatchScopes(req, filters)
+                const inBody = s.reqBody || s.resBody
+                const inHdr = s.reqHeaders || s.resHeaders
+                if (inBody || inHdr) matchBadge = inBody && inHdr ? 'hdr+body' : inBody ? 'body' : 'headers'
+              }
+              return (
               <RequestRow
                 key={req.id}
                 req={req}
+                highlight={highlightSpec}
+                matchBadge={matchBadge}
                 selected={req.id === selectedRequestId}
                 checked={selectedIdSet.has(req.id)}
                 highlighted={isHighlighted(req)}
@@ -506,7 +596,8 @@ export function RequestTable({
                   }
                 }}
               />
-            ))}
+              )
+            })}
           </tbody>
         </table>
 
@@ -557,6 +648,8 @@ export { AddToFlowModal }
 
 function RequestRow({
   req,
+  highlight,
+  matchBadge,
   selected,
   checked,
   highlighted,
@@ -568,6 +661,8 @@ function RequestRow({
   onToggleHighlight,
 }: {
   req: Request
+  highlight: HighlightSpec | null
+  matchBadge: string | null
   selected: boolean
   checked: boolean
   highlighted: boolean
@@ -640,14 +735,24 @@ function RequestRow({
           )}
         </td>
         <td className="min-w-0 w-[160px] max-w-[160px] px-3 py-1.5 font-mono text-xs text-muted-foreground">
-          <div className="truncate">{displayHost(req.host, req.scheme)}</div>
+          <div className="truncate"><Highlight text={displayHost(req.host, req.scheme)} spec={highlight} /></div>
         </td>
         <td className="min-w-0 w-[140px] px-3 py-1.5 font-mono text-xs">
-          <div className="truncate text-foreground">{displayPath}</div>
+          <div className="flex items-center gap-1.5">
+            <span className="truncate text-foreground"><Highlight text={displayPath} spec={highlight} /></span>
+            {matchBadge && (
+              <span
+                className="shrink-0 rounded-full border border-amber-400/40 bg-amber-400/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-300"
+                title="Search matched outside the URL"
+              >
+                {matchBadge}
+              </span>
+            )}
+          </div>
         </td>
         <td className="min-w-0 w-[140px] px-3 py-1.5 font-mono text-xs text-muted-foreground">
           <div className="truncate">
-            {displayQuery ? <span className="opacity-60">{displayQuery}</span> : <span className="text-muted-foreground">—</span>}
+            {displayQuery ? <span className="opacity-60"><Highlight text={displayQuery} spec={highlight} /></span> : <span className="text-muted-foreground">—</span>}
           </div>
         </td>
         <td className="hidden px-3 py-1.5 text-right font-mono text-xs text-muted-foreground min-[900px]:table-cell">

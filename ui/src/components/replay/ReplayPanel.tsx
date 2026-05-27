@@ -1,16 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
-import Editor, { type BeforeMount, type OnMount } from '@monaco-editor/react'
 import type { editor as MonacoEditor } from 'monaco-editor'
 import { api } from '@/api/client'
 import type { Replay, Request, Response } from '@/api/client'
 import { useProxyStore, type ReplayQueueItem } from '@/store/proxy'
 import { useReplayStore } from '@/store/replay'
-import { useThemeStore } from '@/store/theme'
 import { MethodBadge } from '@/components/common/MethodBadge'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import { CodeViewer } from '@/components/common/CodeViewer'
 import { GraphQLEditorPanel } from '@/components/graphql/GraphQLEditorPanel'
-import { registerHttpLanguage, httpTokenRules } from '@/lib/httpLanguage'
 import { Send, RotateCcw, Trash2, Plus, FileCode2, ChevronLeft, ChevronRight, CopyPlus, Paperclip } from 'lucide-react'
 import { subscribeShortcutAction } from '@/lib/shortcuts'
 import { decodeBodyForDisplay, type DecodedBody } from '@/lib/httpBodies'
@@ -22,20 +19,10 @@ import { useContextMenu } from '@/hooks/useContextMenu'
 import { useConverterStore } from '@/store/converter'
 import { useNavigate } from 'react-router-dom'
 
-type ConverterSelectionDetail = {
-  text: string
-  x: number
-  y: number
-  canReplace?: boolean
-  replaceSelection?: (nextText: string) => void
-}
-
 export function ReplayPanel() {
   const navigate = useNavigate()
   const { replayQueue, removeFromReplay, duplicateReplayItem, clearReplay } = useProxyStore()
   const autoContentLength = useReplayStore((state) => state.autoContentLength)
-  const mode = useThemeStore((state) => state.mode)
-  const fontSize = useThemeStore((state) => state.fontSize)
   const sendToConverter = useConverterStore((state) => state.sendToConverter)
   const { open: contextMenuOpen, openMenu, close: closeContextMenu, menuRef } = useContextMenu()
 
@@ -261,72 +248,6 @@ export function ReplayPanel() {
     return `${displayHost(selectedReq.host, selectedReq.scheme)}${selectedReq.path}${selectedReq.query ? `?${selectedReq.query}` : ''}`
   }, [selectedReq])
 
-  const defineTheme: BeforeMount = (monaco) => {
-    registerHttpLanguage(monaco)
-    monaco.editor.defineTheme('replay-dark', {
-      base: 'vs-dark',
-      inherit: true,
-      rules: httpTokenRules('dark'),
-      colors: { 'editor.background': '#0d1117' },
-    })
-    monaco.editor.defineTheme('replay-light', {
-      base: 'vs',
-      inherit: true,
-      rules: httpTokenRules('light'),
-      colors: {},
-    })
-  }
-
-  const onMount: OnMount = (editor) => {
-    editorRef.current = editor
-    const emitSelection = () => {
-      const model = editor.getModel()
-      const selection = editor.getSelection()
-      if (!model || !selection || selection.isEmpty()) {
-        dispatchConverterSelection(null)
-        return
-      }
-      const text = model.getValueInRange(selection)
-      if (!text.trim()) {
-        dispatchConverterSelection(null)
-        return
-      }
-      const endPos = selection.getEndPosition()
-      const visiblePos = editor.getScrolledVisiblePosition(endPos)
-      const node = editor.getDomNode()
-      if (!visiblePos || !node) {
-        dispatchConverterSelection(null)
-        return
-      }
-      const rect = node.getBoundingClientRect()
-      dispatchConverterSelection({
-        text: text.slice(0, 25000),
-        x: rect.left + visiblePos.left,
-        y: rect.top + visiblePos.top + visiblePos.height + 8,
-        canReplace: true,
-        replaceSelection: (nextText: string) => {
-          const liveModel = editor.getModel()
-          const liveSelection = editor.getSelection()
-          if (!liveModel || !liveSelection) return
-          editor.executeEdits('converter-replace', [{
-            range: liveSelection,
-            text: nextText,
-            forceMoveMarkers: true,
-          }])
-          setRawRequest(liveModel.getValue())
-          editor.focus()
-        },
-      })
-    }
-
-    const selectionDisposable = editor.onDidChangeCursorSelection(emitSelection)
-    const blurDisposable = editor.onDidBlurEditorText(() => dispatchConverterSelection(null))
-    editor.onDidDispose(() => {
-      selectionDisposable.dispose()
-      blurDisposable.dispose()
-    })
-  }
-
   const readRequestSelection = () => {
     const editor = editorRef.current
     const model = editor?.getModel()
@@ -354,8 +275,6 @@ export function ReplayPanel() {
     setMenuSelection(selectedText.slice(0, 25000))
     openMenu(event)
   }
-
-  const editorTheme = mode === 'dark' ? 'replay-dark' : 'replay-light'
 
   return (
     <div className="flex h-full overflow-hidden">
@@ -521,38 +440,17 @@ export function ReplayPanel() {
                         includeFullPacket
                       />
                     ) : (
-                      <div className="overflow-hidden rounded-2xl border border-border bg-card/70">
-                        <div onContextMenuCapture={handleRequestContextMenuCapture}>
-                          <Editor
-                            height="420px"
-                            language="http-request"
-                            value={rawRequest}
-                            onChange={(value) => setRawRequest(value ?? '')}
-                            theme={editorTheme}
-                            beforeMount={defineTheme}
-                            options={{
-                              minimap: { enabled: false },
-                              lineNumbers: 'on',
-                              wordWrap: 'on',
-                              fontSize,
-                              fontFamily: 'var(--font-mono, monospace)',
-                              padding: { top: 12, bottom: 12 },
-                              scrollBeyondLastLine: false,
-                              automaticLayout: true,
-                              renderLineHighlight: 'line',
-                              overviewRulerLanes: 0,
-                              lineDecorationsWidth: 6,
-                              glyphMargin: false,
-                              scrollbar: {
-                                verticalScrollbarSize: 8,
-                                horizontalScrollbarSize: 8,
-                                alwaysConsumeMouseWheel: false,
-                              },
-                              contextmenu: false,
-                            }}
-                            onMount={onMount}
-                          />
-                        </div>
+                      <div onContextMenuCapture={handleRequestContextMenuCapture}>
+                        <CodeViewer
+                          value={rawRequest}
+                          language="http-request"
+                          readOnly={false}
+                          onChange={(value) => setRawRequest(value)}
+                          onEditorMount={(editor) => { editorRef.current = editor }}
+                          contextMenu={false}
+                          autoHeight={false}
+                          maxHeight={460}
+                        />
                       </div>
                     )}
                   </>
@@ -644,11 +542,6 @@ export function ReplayPanel() {
       )}
     </div>
   )
-}
-
-function dispatchConverterSelection(detail: ConverterSelectionDetail | null) {
-  if (typeof window === 'undefined') return
-  window.dispatchEvent(new CustomEvent('pandora:converter-selection', { detail }))
 }
 
 function buildRawResponsePacket(response: Response, bodyText: string): string {

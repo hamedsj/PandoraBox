@@ -137,3 +137,10 @@ input[type="range"]::-moz-range-track {
 .replay-attention {
   animation: replay-attention-blink 0.9s ease-in-out 1;
 }
+
+/* Search match highlight inside Monaco editors (CodeViewer). */
+.pandora-search-hit {
+  background-color: rgba(252, 211, 77, 0.4);
+  border-radius: 2px;
+  color: inherit;
+}

@@ -321,6 +321,21 @@ async function del<T>(path: string): Promise<T> {
 }
 
 export const api = {
+  // Decompress a base64 body using the Go backend (Brotli/zstd/gzip/deflate).
+  // Lets the browser UI read encodings the platform's DecompressionStream can't.
+  decode: async (data: string, encoding: string): Promise<{ base64: string }> => {
+    const res = await fetch(BASE + '/decode', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data, encoding }),
+    })
+    if (!res.ok) {
+      let msg = await res.text()
+      try { msg = (JSON.parse(msg) as { error?: string }).error || msg } catch { /* keep raw text */ }
+      throw new Error(msg)
+    }
+    return res.json() as Promise<{ base64: string }>
+  },
   proxy: {
     status: () => get<ProxyStatus>('/proxy/status'),
     start: () => post<{ success: boolean; port: number }>('/proxy/start'),

@@ -1,8 +1,10 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
-import { Check, ChevronDown, Copy } from 'lucide-react'
+import { Check, ChevronDown, Copy, CaseSensitive, Regex } from 'lucide-react'
 import { useProxyStore } from '@/store/proxy'
 import type { WebSocketFrame, WebSocketSession } from '@/api/client'
 import { cn } from '@/lib/utils'
+import { hexDump } from '@/lib/hex'
+import { Highlight, buildHighlightRegex, type HighlightSpec } from '@/components/common/Highlight'
 
 type PayloadTab = 'string' | 'hex' | 'base64' | 'raw'
 
@@ -91,39 +93,28 @@ function buildStringView(frame: WebSocketFrame, bytes: Uint8Array): PayloadStrin
   }
 }
 
-function hexDump(bytes: Uint8Array): string {
-  const rows: string[] = []
-
-  for (let i = 0; i < bytes.length; i += 16) {
-    const chunk = bytes.slice(i, i + 16)
-    const offset = i.toString(16).padStart(4, '0')
-    const hex = Array.from(chunk)
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join(' ')
-      .padEnd(16 * 3 - 1, ' ')
-    const ascii = Array.from(chunk)
-      .map((b) => (b >= 0x20 && b < 0x7f ? String.fromCharCode(b) : '.'))
-      .join('')
-    rows.push(`${offset}  ${hex}  |${ascii}|`)
-  }
-
-  return rows.join('\n')
-}
-
 function rawBytesView(bytes: Uint8Array): string {
   return JSON.stringify(Array.from(bytes))
 }
 
-function getPayloadViews(frame: WebSocketFrame): PayloadViews {
-  const bytes = payloadToBytes(frame.payload)
+// Payload views (hex/base64/raw/string) are derived from immutable frame bytes,
+// so cache them per frame object. Without this, every keystroke in the search
+// box rebuilt hex + base64 + raw for every frame.
+const viewsCache = new WeakMap<WebSocketFrame, PayloadViews>()
 
-  return {
+function getPayloadViews(frame: WebSocketFrame): PayloadViews {
+  const cached = viewsCache.get(frame)
+  if (cached) return cached
+  const bytes = payloadToBytes(frame.payload)
+  const views: PayloadViews = {
     bytes,
-    hex: hexDump(bytes),
+    hex: hexDump(bytes).text,
     base64: encodeBase64(bytes),
     raw: rawBytesView(bytes),
     string: buildStringView(frame, bytes),
   }
+  viewsCache.set(frame, views)
+  return views
 }
 
 function buildSearchableText(frame: WebSocketFrame, views: PayloadViews): string {
@@ -139,7 +130,7 @@ function buildSearchableText(frame: WebSocketFrame, views: PayloadViews): string
     parts.push(views.string.value)
   }
 
-  return parts.join('\n').toLowerCase()
+  return parts.join('\n')
 }
 
 function buildPreview(frame: WebSocketFrame, views: PayloadViews): string {
@@ -224,8 +215,27 @@ export function WSFramesPanel({
 
   const [dirFilter, setDirFilter] = useState<'all' | 'c2s' | 's2c'>('all')
   const [typeFilter, setTypeFilter] = useState<'all' | 'text' | 'binary' | 'control'>('all')
+  const [searchDraft, setSearchDraft] = useState('')
   const [search, setSearch] = useState('')
+  const [useRegex, setUseRegex] = useState(false)
+  const [caseSensitive, setCaseSensitive] = useState(false)
   const [expandedId, setExpandedId] = useState<number | null>(null)
+
+  // Debounce search so a chatty socket stays responsive while typing.
+  useEffect(() => {
+    const t = window.setTimeout(() => setSearch(searchDraft), 120)
+    return () => window.clearTimeout(t)
+  }, [searchDraft])
+
+  const searchSpec = useMemo<HighlightSpec | null>(
+    () => (search.trim() ? { term: search, caseInsensitive: !caseSensitive, useRegex } : null),
+    [search, caseSensitive, useRegex],
+  )
+  const searchRegex = useMemo(() => buildHighlightRegex(searchSpec), [searchSpec])
+  const searchRegexError = useMemo(() => {
+    if (!useRegex || !search.trim()) return null
+    try { new RegExp(search); return null } catch (e) { return (e as Error).message }
+  }, [useRegex, search])
 
   const listRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -255,16 +265,15 @@ export function WSFramesPanel({
       if (typeFilter === 'binary' && frame.opcode !== 2) return false
       if (typeFilter === 'control' && !isControl(frame.opcode)) return false
 
-      if (search.trim()) {
-        const views = getPayloadViews(frame)
-        if (!buildSearchableText(frame, views).includes(search.toLowerCase())) {
-          return false
-        }
+      if (searchRegex) {
+        const haystack = buildSearchableText(frame, getPayloadViews(frame))
+        searchRegex.lastIndex = 0
+        if (!searchRegex.test(haystack)) return false
       }
 
       return true
     })
-  }, [allFrames, dirFilter, typeFilter, search])
+  }, [allFrames, dirFilter, typeFilter, searchRegex])
 
   const totalBytes = allFrames.reduce((sum, frame) => sum + frame.length, 0)
   const isOpen = session ? session.closed_at === null : true
@@ -325,13 +334,38 @@ export function WSFramesPanel({
 
           <div className="mx-1 h-4 w-px bg-border" />
 
-          <input
-            type="text"
-            placeholder="Search hex, base64, or text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="h-8 min-w-[190px] flex-1 rounded-full border border-border bg-background/80 px-3 text-[11px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-          />
+          <div
+            className={cn(
+              'flex h-8 min-w-[190px] flex-1 items-center gap-1 rounded-full border bg-background/80 px-3 transition-colors',
+              searchRegexError ? 'border-red-500/60' : 'border-border focus-within:ring-1 focus-within:ring-primary',
+            )}
+          >
+            <input
+              type="text"
+              placeholder="Search hex, base64, or text"
+              value={searchDraft}
+              onChange={(e) => setSearchDraft(e.target.value)}
+              spellCheck={false}
+              className={cn(
+                'min-w-0 flex-1 bg-transparent text-[11px] text-foreground placeholder:text-muted-foreground focus:outline-none',
+                useRegex && 'font-mono',
+              )}
+            />
+            <button
+              onClick={() => setCaseSensitive((v) => !v)}
+              title={caseSensitive ? 'Case-sensitive' : 'Case-insensitive'}
+              className={cn('rounded p-0.5 transition-colors', caseSensitive ? 'text-primary' : 'text-muted-foreground hover:text-foreground')}
+            >
+              <CaseSensitive size={13} />
+            </button>
+            <button
+              onClick={() => setUseRegex((v) => !v)}
+              title="Regular expression"
+              className={cn('rounded p-0.5 transition-colors', useRegex ? 'text-primary' : 'text-muted-foreground hover:text-foreground')}
+            >
+              <Regex size={13} />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -350,6 +384,7 @@ export function WSFramesPanel({
               <FrameRow
                 key={frame.id}
                 frame={frame}
+                highlight={searchSpec}
                 expanded={expandedId === frame.id}
                 onToggle={() => setExpandedId(expandedId === frame.id ? null : frame.id)}
               />
@@ -374,10 +409,12 @@ export function WSFramesPanel({
 
 function FrameRow({
   frame,
+  highlight,
   expanded,
   onToggle,
 }: {
   frame: WebSocketFrame
+  highlight: HighlightSpec | null
   expanded: boolean
   onToggle: () => void
 }) {
@@ -539,7 +576,7 @@ function FrameRow({
                     wrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre',
                   )}
                 >
-                  {activePayload || '[empty payload]'}
+                  {activePayload ? <Highlight text={activePayload} spec={highlight} /> : '[empty payload]'}
                 </pre>
               </div>
             )}

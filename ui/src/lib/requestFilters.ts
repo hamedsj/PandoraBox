@@ -7,6 +7,36 @@ function bytesToText(body: RawBody): string {
   return decodeBodyBytes(body)
 }
 
+/**
+ * Per-request cache of the decoded, searchable text fields. Keyed by the
+ * Request object reference: when a response arrives, updateRequest replaces the
+ * object, so the stale entry is dropped and recomputed (and GC'd) automatically.
+ * This keeps live traffic + body-scope search from re-decoding every body on
+ * each keystroke/recompute.
+ */
+interface SearchableFields {
+  reqHeaders: string
+  reqBody: string
+  resHeaders: string
+  resBody: string
+}
+
+const searchableCache = new WeakMap<Request, SearchableFields>()
+
+function searchableFields(req: Request): SearchableFields {
+  let cached = searchableCache.get(req)
+  if (!cached) {
+    cached = {
+      reqHeaders: parseHeaderText(req.headers),
+      reqBody: bytesToText(req.body),
+      resHeaders: parseHeaderText(req.response?.headers),
+      resBody: bytesToText(req.response?.body),
+    }
+    searchableCache.set(req, cached)
+  }
+  return cached
+}
+
 function parseHeaderText(headers: string | undefined): string {
   if (!headers) return ''
   try {
@@ -125,6 +155,45 @@ export function countActiveFilters(filters: RequestFilters): number {
   ].filter(Boolean).length
 }
 
+export interface MatchScopes {
+  host: boolean
+  path: boolean
+  query: boolean
+  reqHeaders: boolean
+  reqBody: boolean
+  resHeaders: boolean
+  resBody: boolean
+}
+
+/**
+ * Returns which fields the active search term matched for a request, honouring
+ * the configured search scope. Used to highlight matches and to badge matches
+ * that occurred in fields not visible in the table (headers/bodies).
+ */
+export function searchMatchScopes(req: Request, filters: RequestFilters): MatchScopes {
+  const empty: MatchScopes = {
+    host: false, path: false, query: false,
+    reqHeaders: false, reqBody: false, resHeaders: false, resBody: false,
+  }
+  if (!filters.search) return empty
+
+  const scopeEnabled = (field: string) =>
+    filters.searchScope.length === 0 || filters.searchScope.includes(field)
+  const fields = searchableFields(req)
+  const test = (field: string, value: string) =>
+    scopeEnabled(field) && !!value && matchesSearch(value, filters)
+
+  return {
+    host: test('host', req.host),
+    path: test('path', req.path),
+    query: test('query', req.query),
+    reqHeaders: test('req.headers', fields.reqHeaders),
+    reqBody: test('req.body', fields.reqBody),
+    resHeaders: test('res.headers', fields.resHeaders),
+    resBody: test('res.body', fields.resBody),
+  }
+}
+
 export function filterRequests(requests: Request[], filters: RequestFilters, scope?: ScopeConfig): Request[] {
   const showExtensions = splitPatterns(filters.extensionShow)
   const hideExtensions = splitPatterns(filters.extensionHide)
@@ -151,7 +220,7 @@ export function filterRequests(requests: Request[], filters: RequestFilters, sco
     }
 
     if (showTypes.length > 0 || hideTypes.length > 0) {
-      const responseHeaders = parseHeaderText(req.response?.headers)
+      const responseHeaders = searchableFields(req).resHeaders
       if (showTypes.length > 0 && !matchesContains(responseHeaders, showTypes)) return false
       if (hideTypes.length > 0 && matchesContains(responseHeaders, hideTypes)) return false
     }
@@ -160,14 +229,15 @@ export function filterRequests(requests: Request[], filters: RequestFilters, sco
       const scopeEnabled = (field: string) =>
         filters.searchScope.length === 0 || filters.searchScope.includes(field)
 
+      const fields = searchableFields(req)
       const candidates: string[] = []
       if (scopeEnabled('host')) candidates.push(req.host)
       if (scopeEnabled('path')) candidates.push(req.path)
       if (scopeEnabled('query') && req.query) candidates.push(req.query)
-      if (scopeEnabled('req.headers')) candidates.push(parseHeaderText(req.headers))
-      if (scopeEnabled('req.body')) candidates.push(bytesToText(req.body))
-      if (scopeEnabled('res.headers')) candidates.push(parseHeaderText(req.response?.headers))
-      if (scopeEnabled('res.body')) candidates.push(bytesToText(req.response?.body))
+      if (scopeEnabled('req.headers')) candidates.push(fields.reqHeaders)
+      if (scopeEnabled('req.body')) candidates.push(fields.reqBody)
+      if (scopeEnabled('res.headers')) candidates.push(fields.resHeaders)
+      if (scopeEnabled('res.body')) candidates.push(fields.resBody)
 
       const matches = candidates.some((candidate) => candidate && matchesSearch(candidate, filters))
       if (filters.negativeSearch ? matches : !matches) return false

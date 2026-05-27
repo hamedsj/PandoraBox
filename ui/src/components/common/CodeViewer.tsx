@@ -1,7 +1,9 @@
 import Editor, { useMonaco, type BeforeMount, type OnMount } from '@monaco-editor/react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import type { editor as MonacoEditorNS } from 'monaco-editor'
 import { useThemeStore } from '@/store/theme'
 import { registerHttpLanguage, httpTokenRules } from '@/lib/httpLanguage'
+import type { HighlightSpec } from '@/components/common/Highlight'
 
 interface CodeViewerProps {
   value: string
@@ -13,6 +15,32 @@ interface CodeViewerProps {
   autoHeight?: boolean
   scrollBeyondLastLine?: boolean
   extraBottomLines?: number
+  wordWrap?: 'on' | 'off'
+  /** When set, matches are highlighted and the first one is revealed. */
+  highlight?: HighlightSpec | null
+  /** Receives the underlying editor instance (e.g. for cursor inserts). */
+  onEditorMount?: (editor: MonacoEditorNS.IStandaloneCodeEditor) => void
+  /** Show Monaco's native right-click menu. Defaults to editable mode only. */
+  contextMenu?: boolean
+  /** When set, Ctrl/Cmd+F inside the editor calls this instead of opening
+   *  Monaco's built-in find widget. */
+  onRequestFind?: () => void
+  /** Stable key under which the editor's scroll/cursor (view state) is cached,
+   *  so it survives unmount/remount (e.g. navigating away and back). */
+  viewStateKey?: string
+}
+
+// Bounded cache of editor view states (scroll position, cursor, folding),
+// keyed by a caller-provided id. Restored on remount for the same key.
+const viewStateCache = new Map<string, MonacoEditorNS.ICodeEditorViewState>()
+function rememberViewState(key: string, state: MonacoEditorNS.ICodeEditorViewState | null) {
+  if (!state) return
+  viewStateCache.delete(key)
+  viewStateCache.set(key, state)
+  if (viewStateCache.size > 60) {
+    const oldest = viewStateCache.keys().next().value
+    if (oldest !== undefined) viewStateCache.delete(oldest)
+  }
 }
 
 type ConverterSelectionDetail = {
@@ -33,7 +61,18 @@ export function CodeViewer({
   autoHeight = true,
   scrollBeyondLastLine = !readOnly,
   extraBottomLines = 0,
+  wordWrap = 'on',
+  highlight,
+  onEditorMount,
+  contextMenu = !readOnly,
+  onRequestFind,
+  viewStateKey,
 }: CodeViewerProps) {
+  const editorRef = useRef<MonacoEditorNS.IStandaloneCodeEditor | null>(null)
+  const decorationsRef = useRef<MonacoEditorNS.IEditorDecorationsCollection | null>(null)
+  const onRequestFindRef = useRef(onRequestFind)
+  onRequestFindRef.current = onRequestFind
+  const [mountTick, setMountTick] = useState(0)
   const mode = useThemeStore((state) => state.mode)
   const variant = useThemeStore((state) => state.variant)
   const accentColor = useThemeStore((state) => state.accentColor)
@@ -48,18 +87,42 @@ export function CodeViewer({
     targetMonaco.editor.defineTheme(themeName, buildMonacoTheme(mode))
   }
 
+  // Re-define and re-apply the theme in place when mode/accent changes, instead
+  // of remounting the editor (which flashes and loses scroll/find state).
   useEffect(() => {
     if (!monaco || typeof window === 'undefined') return
     applyThemeDefinition(monaco)
+    monaco.editor.setTheme(themeName)
   }, [monaco, themeName, mode, variant, accentColor, fontFamily])
 
   const lineHeight = Math.round(resolvedTypography.fontSize * 1.65)
+
+  // Apply font changes live via updateOptions rather than remounting.
+  useEffect(() => {
+    editorRef.current?.updateOptions({
+      fontSize: resolvedTypography.fontSize,
+      fontFamily: resolvedTypography.fontFamily,
+      lineHeight,
+    })
+  }, [resolvedTypography.fontSize, resolvedTypography.fontFamily, lineHeight])
 
   useEffect(() => {
     setEditorHeight(minHeight)
   }, [language, resolvedTypography.fontSize, minHeight])
 
-  const onMount: OnMount = (editor) => {
+  const onMount: OnMount = (editor, monacoInstance) => {
+    editorRef.current = editor
+    decorationsRef.current = null
+    setMountTick((t) => t + 1)
+    onEditorMount?.(editor)
+
+    // Replace Monaco's built-in find widget with the app's own search when the
+    // host provides one (Ctrl/Cmd+F). The ref keeps it from going stale.
+    editor.addCommand(monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyCode.KeyF, () => {
+      if (onRequestFindRef.current) onRequestFindRef.current()
+      else editor.getAction('actions.find')?.run()
+    })
+
     const emitSelection = () => {
       const model = editor.getModel()
       const selection = editor.getSelection()
@@ -127,10 +190,46 @@ export function CodeViewer({
     })
   }
 
+  // Restore scroll/cursor on (re)mount and persist it on unmount / key change.
+  useEffect(() => {
+    const editor = editorRef.current
+    if (!editor || !viewStateKey) return
+    const cached = viewStateCache.get(viewStateKey)
+    if (cached) editor.restoreViewState(cached)
+    return () => {
+      rememberViewState(viewStateKey, editor.saveViewState())
+    }
+  }, [viewStateKey, mountTick])
+
+  // Highlight + reveal search matches inside the editor.
+  useEffect(() => {
+    const editor = editorRef.current
+    const model = editor?.getModel()
+    if (!editor || !model) return
+    if (!decorationsRef.current) decorationsRef.current = editor.createDecorationsCollection()
+    const collection = decorationsRef.current
+
+    if (!highlight || !highlight.term) {
+      collection.clear()
+      return
+    }
+    let matches: MonacoEditorNS.FindMatch[] = []
+    try {
+      matches = model.findMatches(highlight.term, true, highlight.useRegex, !highlight.caseInsensitive, null, false)
+    } catch {
+      collection.clear()
+      return
+    }
+    collection.set(matches.map((m) => ({ range: m.range, options: { inlineClassName: 'pandora-search-hit' } })))
+    if (matches.length > 0) editor.revealRangeInCenterIfOutsideViewport(matches[0].range)
+    // Depend on the spec's primitive fields, not the object: re-revealing on every
+    // render would fight the user's scrolling.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value, highlight?.term, highlight?.caseInsensitive, highlight?.useRegex, mountTick])
+
   return (
     <div className="overflow-hidden rounded-xl border border-border bg-card/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
       <Editor
-        key={`${themeName}-${resolvedTypography.fontFamily}-${resolvedTypography.fontSize}`}
         beforeMount={applyThemeDefinition}
         onMount={onMount}
         height={`${autoHeight ? editorHeight : maxHeight}px`}
@@ -146,9 +245,12 @@ export function CodeViewer({
           glyphMargin: false,
           folding: true,
           scrollBeyondLastLine,
-          wordWrap: 'on',
+          wordWrap,
           wrappingIndent: 'indent',
           automaticLayout: true,
+          // Render find/hover/suggest popups in a body-level portal so they are
+          // not clipped by the editor's rounded overflow-hidden wrapper.
+          fixedOverflowWidgets: true,
           fontSize: resolvedTypography.fontSize,
           lineHeight,
           fontFamily: resolvedTypography.fontFamily,
@@ -161,7 +263,7 @@ export function CodeViewer({
             horizontalScrollbarSize: 10,
             alwaysConsumeMouseWheel: false,
           },
-          contextmenu: !readOnly,
+          contextmenu: contextMenu,
         }}
       />
     </div>

@@ -6,6 +6,8 @@
  * the Monaco http-request language token colors.
  */
 
+import { Highlight, type HighlightSpec } from '@/components/common/Highlight'
+
 /** Parse a raw JSON headers string into a Record. Returns {} on failure. */
 export function parseHeadersJSON(raw: string | undefined): Record<string, string[]> {
   if (!raw) return {}
@@ -40,9 +42,10 @@ function CookieValue({ value }: { value: string }) {
 
 interface HeadersViewProps {
   headers: Record<string, string[]>
+  highlight?: HighlightSpec | null
 }
 
-export function HeadersView({ headers }: HeadersViewProps) {
+export function HeadersView({ headers, highlight }: HeadersViewProps) {
   const entries = Object.entries(headers)
   if (entries.length === 0) return null
 
@@ -52,7 +55,7 @@ export function HeadersView({ headers }: HeadersViewProps) {
         const isCookie = name.toLowerCase() === 'cookie' || name.toLowerCase() === 'set-cookie'
         return (
           <div key={name} className="font-mono text-xs leading-relaxed">
-            <span className="text-primary">{name}</span>
+            <span className="text-primary"><Highlight text={name} spec={highlight} /></span>
             <span className="text-muted-foreground">: </span>
             {isCookie
               ? values.map((v, i) => (
@@ -61,7 +64,7 @@ export function HeadersView({ headers }: HeadersViewProps) {
                     <CookieValue value={v} />
                   </span>
                 ))
-              : <span className="text-foreground">{values.join(', ')}</span>
+              : <span className="text-foreground"><Highlight text={values.join(', ')} spec={highlight} /></span>
             }
           </div>
         )

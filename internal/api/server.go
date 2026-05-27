@@ -151,6 +151,9 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/replay/{id}", s.getReplay)
 		r.Get("/replays", s.listReplays)
 
+		// Body decoding (Brotli/zstd/gzip/deflate) for the web UI
+		r.Post("/decode", s.decodeBody)
+
 		// Converter
 		r.Get("/converter", s.getConverterConfig)
 		r.Put("/converter", s.updateConverterConfig)

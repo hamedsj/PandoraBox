@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { defaultFilters, useProxyStore } from '@/store/proxy'
 import type { RequestFilters } from '@/store/proxy'
 import { cn } from '@/lib/utils'
@@ -162,15 +162,32 @@ export function FilterModal({ isOpen, onClose, externalFilters, onApply }: Filte
   const localRef = useRef(local)
   useEffect(() => { localRef.current = local }, [local])
 
+  // A search term that can't compile as a regex must not be applied — otherwise
+  // it silently matches nothing and looks like "0 results".
+  const regexError = useMemo(() => {
+    if (!local.useRegex || !local.search) return null
+    try { new RegExp(local.search); return null } catch (e) { return (e as Error).message }
+  }, [local.useRegex, local.search])
+
+  function isRegexValid(l: LocalFilters): boolean {
+    if (!l.useRegex || !l.search) return true
+    try { new RegExp(l.search); return true } catch { return false }
+  }
+
   useEffect(() => {
     if (!isOpen) return
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { setFilters(resolve(localRef.current)); onClose() }
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        const l = localRef.current
+        if (!isRegexValid(l)) return
+        if (onApply) onApply(resolve(l)); else setFilters(resolve(l))
+        onClose()
+      }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [isOpen, onClose, setFilters])
+  }, [isOpen, onClose, setFilters, onApply])
 
   function patch<K extends keyof LocalFilters>(key: K, value: LocalFilters[K]) {
     setLocal(prev => ({ ...prev, [key]: value }))
@@ -199,6 +216,7 @@ export function FilterModal({ isOpen, onClose, externalFilters, onApply }: Filte
   }
 
   const handleApply = () => {
+    if (regexError) return
     const resolved = resolve(local)
     if (onApply) { onApply(resolved) } else { setFilters(resolved) }
     onClose()
@@ -286,11 +304,19 @@ export function FilterModal({ isOpen, onClose, externalFilters, onApply }: Filte
             Reset All
           </button>
           <div className="flex items-center gap-2">
-            <span className="hidden sm:block text-xs text-muted-foreground select-none">⌘↵ to apply</span>
+            {regexError ? (
+              <span className="text-xs text-red-400">Invalid regex</span>
+            ) : (
+              <span className="hidden sm:block text-xs text-muted-foreground select-none">⌘↵ to apply</span>
+            )}
             <button onClick={onClose} className="px-3 py-1.5 rounded-md bg-muted hover:bg-muted/70 text-xs font-medium transition-colors">
               Cancel
             </button>
-            <button onClick={handleApply} className="px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-medium transition-colors">
+            <button
+              onClick={handleApply}
+              disabled={!!regexError}
+              className="px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+            >
               Apply
             </button>
           </div>

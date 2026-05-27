@@ -1,7 +1,11 @@
+import { api } from '@/api/client'
+
 export type RawBody = string | number[] | null | undefined
 
 export interface DecodedBody {
   text: string
+  /** Exact decoded (decompressed) bytes — source of truth for Raw and Hex views. */
+  bytes: Uint8Array
   isBinary: boolean
   wasCompressed: boolean
   encoding: string
@@ -63,58 +67,59 @@ function hexPreview(bytes: Uint8Array, limit = 256): string {
   return rows.join('\n')
 }
 
+/** Chunked base64 encode — safe for large bodies (avoids stack overflow from
+ *  spreading every byte into String.fromCharCode). */
+function bytesToBase64(bytes: Uint8Array): string {
+  if (bytes.length === 0) return ''
+  const chunkSize = 0x8000
+  let binary = ''
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize))
+  }
+  return btoa(binary)
+}
+
+async function inflateStream(bytes: Uint8Array, format: CompressionFormat): Promise<Uint8Array> {
+  const payload = bytes.buffer.slice(
+    bytes.byteOffset,
+    bytes.byteOffset + bytes.byteLength
+  ) as ArrayBuffer
+  const stream = new Blob([payload]).stream().pipeThrough(new DecompressionStream(format))
+  return new Uint8Array(await new Response(stream).arrayBuffer())
+}
+
 async function decompressBytes(bytes: Uint8Array, encoding: string): Promise<Uint8Array> {
   const normalized = encoding.trim().toLowerCase()
   if (!normalized || normalized === 'identity') return bytes
 
+  // Electron ships the native Go decoders for every encoding.
   if (typeof window !== 'undefined' && window.electron?.decodeBody) {
-    const sourceBase64 = btoa(String.fromCharCode(...bytes))
-    const result = await window.electron.decodeBody(sourceBase64, normalized)
-    if (result.base64) {
-      return bodyToBytes(result.base64)
-    }
-    if (result.error) {
-      throw new Error(result.error)
+    const result = await window.electron.decodeBody(bytesToBase64(bytes), normalized)
+    if (result.error) throw new Error(result.error)
+    if (result.base64 != null) return bodyToBytes(result.base64)
+  }
+
+  const encodings = normalized.split(',').map((value) => value.trim()).filter(Boolean)
+
+  // Fast path: gzip is reliably decodable in-browser with no network round-trip.
+  // Brotli, zstd, deflate variants and unknown encodings are delegated to the Go
+  // backend (/api/decode), which decodes every Content-Encoding the proxy emits.
+  const browserOnly = encodings.every((v) => v === 'identity' || v === 'gzip' || v === 'x-gzip')
+  if (browserOnly && typeof DecompressionStream !== 'undefined') {
+    try {
+      let decoded = bytes
+      for (const value of [...encodings].reverse()) {
+        if (value === 'identity') continue
+        decoded = await inflateStream(decoded, 'gzip')
+      }
+      return decoded
+    } catch {
+      // Fall through to the server decoder.
     }
   }
 
-  const encodings = normalized
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean)
-
-  let decoded = bytes
-  for (const value of encodings.reverse()) {
-    if (value === 'identity') continue
-
-    if (typeof DecompressionStream === 'undefined') {
-      throw new Error(`Compressed body decoding is unavailable for ${value} in this environment`)
-    }
-
-    let format: CompressionFormat
-    if (value === 'gzip' || value === 'x-gzip') {
-      format = 'gzip'
-    } else if (value === 'deflate') {
-      format = 'deflate'
-    } else if (value === 'br') {
-      throw new Error('Brotli decoding is unavailable in this environment')
-    } else if (value === 'zstd') {
-      throw new Error('Zstandard decoding is unavailable in this environment')
-    } else {
-      throw new Error(`Unsupported content-encoding: ${value}`)
-    }
-
-    const payload = decoded.buffer.slice(
-      decoded.byteOffset,
-      decoded.byteOffset + decoded.byteLength
-    ) as ArrayBuffer
-
-    const stream = new Blob([payload]).stream().pipeThrough(new DecompressionStream(format))
-    const decompressed = await new Response(stream).arrayBuffer()
-    decoded = new Uint8Array(decompressed)
-  }
-
-  return decoded
+  const { base64 } = await api.decode(bytesToBase64(bytes), normalized)
+  return bodyToBytes(base64)
 }
 
 export async function decodeBodyForDisplay(body: RawBody, headers: string | undefined): Promise<DecodedBody> {
@@ -126,6 +131,7 @@ export async function decodeBodyForDisplay(body: RawBody, headers: string | unde
   if (rawBytes.length === 0) {
     return {
       text: '',
+      bytes: rawBytes,
       isBinary: false,
       wasCompressed: false,
       encoding,
@@ -141,6 +147,7 @@ export async function decodeBodyForDisplay(body: RawBody, headers: string | unde
     if (!textual) {
       return {
         text: hexPreview(decodedBytes),
+        bytes: decodedBytes,
         isBinary: true,
         wasCompressed: Boolean(encoding),
         encoding,
@@ -150,6 +157,7 @@ export async function decodeBodyForDisplay(body: RawBody, headers: string | unde
 
     return {
       text: new TextDecoder(charset).decode(decodedBytes),
+      bytes: decodedBytes,
       isBinary: false,
       wasCompressed: Boolean(encoding),
       encoding,
@@ -159,6 +167,7 @@ export async function decodeBodyForDisplay(body: RawBody, headers: string | unde
     if (encoding) {
       return {
         text: '',
+        bytes: new Uint8Array(),
         isBinary: false,
         wasCompressed: true,
         encoding,
@@ -169,6 +178,7 @@ export async function decodeBodyForDisplay(body: RawBody, headers: string | unde
 
     return {
       text: looksTextual(contentType) ? new TextDecoder().decode(rawBytes) : hexPreview(rawBytes),
+      bytes: rawBytes,
       isBinary: !looksTextual(contentType),
       wasCompressed: Boolean(encoding),
       encoding,
