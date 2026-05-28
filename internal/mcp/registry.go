@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 // Package mcp — registry.go: the central, single source of truth for tool
 // registration and dispatch. Every PandoraBox MCP tool goes through Register():
 //

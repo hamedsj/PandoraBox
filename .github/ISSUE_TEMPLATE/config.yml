@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Feature discussions
+    url: https://github.com/hamedsj5/pandorabox/discussions
+    about: Discuss feature ideas before opening tracked work.
+  - name: Security reports
+    url: mailto:hsjbb123@gmail.com
+    about: Report vulnerabilities in PandoraBox privately.

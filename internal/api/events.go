@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 package api
 
 import "github.com/hamedsj5/pandorabox/internal/events"

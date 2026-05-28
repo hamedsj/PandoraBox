@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 // Package mcp — intruder.go: marker-driven request fuzzing.
 //
 // Two interfaces:

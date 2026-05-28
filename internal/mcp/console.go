@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 // Package mcp — console.go: captures `console.output` events emitted by the
 // Python middleware runner and flow execution, and exposes them through the
 // `console_get_output` tool with cursor-style pagination.

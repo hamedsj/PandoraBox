@@ -1,0 +1,56 @@
+PandoraBox
+Copyright 2026 PandoraBox Contributors
+
+This product includes software developed by the PandoraBox Contributors,
+licensed under the Apache License, Version 2.0.
+
+────────────────────────────────────────────────────────────────────────
+Third-party components — see each project for its full license text.
+────────────────────────────────────────────────────────────────────────
+
+Go modules (server, MITM proxy, MCP server, team sync):
+
+  github.com/andybalholm/brotli           — MIT License
+  github.com/bogdanfinn/fhttp             — BSD-3-Clause
+  github.com/bogdanfinn/utls              — BSD-3-Clause
+  github.com/go-chi/chi/v5                — MIT License
+  github.com/google/uuid                  — BSD-3-Clause
+  github.com/gorilla/websocket            — BSD-2-Clause
+  github.com/klauspost/compress           — Apache-2.0 / BSD-3-Clause
+  github.com/mark3labs/mcp-go             — MIT License
+  github.com/spf13/cobra                  — Apache-2.0
+  golang.org/x/crypto                     — BSD-3-Clause
+  golang.org/x/net                        — BSD-3-Clause
+  modernc.org/sqlite                      — BSD-3-Clause
+
+UI (React app, Electron shell):
+
+  Electron                                — MIT License
+  React, React DOM                        — MIT License
+  React Router                            — MIT License
+  TanStack Table, TanStack Virtual        — MIT License
+  Monaco Editor (+ @monaco-editor/react)  — MIT License
+  Tailwind CSS                            — MIT License
+  Radix UI primitives                     — MIT License
+  Zustand                                 — MIT License
+  lucide-react                            — ISC License
+  sonner                                  — MIT License
+  @dnd-kit                                — MIT License
+  @xyflow/react                           — MIT License
+  react-markdown, remark-gfm, rehype-highlight — MIT License
+  electron-store                          — MIT License
+  Vite, esbuild                           — MIT License
+
+Out-of-band testing:
+
+  interactsh (projectdiscovery.io)        — MIT License — used for the
+    Collaborator feature; PandoraBox connects as a client to any compatible
+    interactsh server. PandoraBox does not bundle or distribute interactsh.
+
+Embedded source-level snippets / documentation:
+
+  Conversion algorithms in internal/converter/boop/ are derived from the
+  Boop project (https://github.com/IvanMathy/Boop) — MIT License.
+
+This NOTICE file is informational. The Apache-2.0 License governs the
+PandoraBox source code only; each dependency remains under its own license.

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 // Package mcp — tools.go: the main tool registrations.
 //
 // Every PandoraBox MCP tool is declared here as a ToolSpec and dispatched

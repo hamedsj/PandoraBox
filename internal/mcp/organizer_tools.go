@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 // Package mcp — organizer_tools.go: tools for the organizer (folders + items).
 // Migrated to the registry so every tool now goes through the mcpEnabled gate,
 // panic-recovery, and unified result envelope.

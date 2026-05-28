@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 // Package mcp — docgen.go: generates the canonical tool-reference Markdown
 // from the live registry, so the embedded `docs/tools.md` resource (returned
 // by `docs_get(topic="tools")`) can never drift from the actual registrations.

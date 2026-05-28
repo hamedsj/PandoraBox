@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 // Package api — collaborator.go: REST surface for server-side (MCP-started)
 // Collaborator sessions. The UI uses these to render sessions an agent created
 // on the same instance, alongside the browser-managed (purely-local) sessions

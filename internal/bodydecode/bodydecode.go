@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 // Package bodydecode decompresses HTTP message bodies based on their
 // Content-Encoding. It is the single source of truth for body decoding,
 // shared by the REST API (/api/decode) and the MCP analysis tools.

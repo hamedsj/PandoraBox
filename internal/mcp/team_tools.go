@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 // Package mcp — team_tools.go: team client + team-server admin tools.
 // Registered through the same registry as the rest. Server-mode-only tools are
 // declared with a clear note in the description and short-circuit with a

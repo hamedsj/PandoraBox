@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 // Package mcp — converter_tools.go: encoder/decoder/hash tools and saved
 // conversion stacks. Migrated to the registry.
 package mcp
