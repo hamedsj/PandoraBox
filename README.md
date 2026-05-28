@@ -2,55 +2,33 @@
 
 A programmable MITM proxy — intercept, inspect, replay, and script HTTP/HTTPS traffic — with a built-in MCP server for Claude Desktop integration.
 
-```
-┌──────────────────────────────────────────────┐
-│  Browser / System Proxy  →  :8080 (MITM)     │
-│                               ↓              │
-│             Go binary   (bin/pandorabox)    │
-│  REST API + WebSocket :7777  │  MCP :9090    │
-│                ↓                             │
-│         React UI / Electron                  │
-└──────────────────────────────────────────────┘
-```
-
----
-
-## Screenshots
-
-### History & Inspector — capture, filter, and read traffic
-
-Every request and response flows through a live history with method / status / size / timing columns, full-text search, and a Pretty / Raw / Hex inspector with syntax highlighting and decoded bodies.
-
 ![History and request inspector](docs/screenshots/history.png)
 
-### Replay — edit and resend the raw packet
-
-Queue any request, edit the full raw HTTP packet directly, and replay it. Responses come back syntax-highlighted with status, timing, and content type.
+> Capture and read traffic in a live history with method / status / size / timing columns, full-text search, and a Pretty / Raw / Hex inspector with syntax highlighting and decoded bodies.
 
 ![Replay editor and response](docs/screenshots/replay.png)
 
-### Collaborator — out-of-band (OAST) interaction capture
-
-Generate a unique host backed by an interactsh server and detect blind DNS, HTTP, and SMTP callbacks from SSRF, XXE, and RCE — with the full raw request/response for every interaction.
+> **Replay** — queue any request, edit the full raw HTTP packet directly, and resend it. Responses come back syntax-highlighted with status, timing, and content type.
 
 ![Collaborator out-of-band interactions](docs/screenshots/collaborator.png)
+
+> **Collaborator** — generate a unique host backed by an interactsh server and detect blind DNS, HTTP, and SMTP callbacks from SSRF, XXE, and RCE, with the full raw request/response for every interaction.
 
 ---
 
 ## Table of Contents
 
-1. [Screenshots](#screenshots)
-2. [Prerequisites](#prerequisites)
-3. [Installation](#installation)
-4. [CA Certificate Setup](#ca-certificate-setup)
-5. [Proxy Configuration](#proxy-configuration)
-6. [Running PandoraBox](#running-pandorabox)
-7. [UI Overview](#ui-overview)
-8. [MCP Server — Claude Desktop Integration](#mcp-server--claude-desktop-integration)
-9. [Projects](#projects)
-10. [CLI Reference](#cli-reference)
-11. [Building from Source](#building-from-source)
-12. [Further Documentation](#further-documentation)
+1. [Prerequisites](#prerequisites)
+2. [Installation](#installation)
+3. [CA Certificate Setup](#ca-certificate-setup)
+4. [Proxy Configuration](#proxy-configuration)
+5. [Running PandoraBox](#running-pandorabox)
+6. [UI Overview](#ui-overview)
+7. [MCP Server — Claude Desktop Integration](#mcp-server--claude-desktop-integration)
+8. [Projects](#projects)
+9. [CLI Reference](#cli-reference)
+10. [Building from Source](#building-from-source)
+11. [Further Documentation](#further-documentation)
 
 ---
 
