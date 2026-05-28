@@ -104,6 +104,21 @@ func (q *InterceptQueue) Resolve(requestID int64, d InterceptDecision) bool {
 	return ok
 }
 
+// GetRawPacket returns a copy of the held packet for one queued request id.
+// Returns (nil, false) if the request is not in the queue. Used by the MCP
+// intercept_get_editable helper so callers don't have to fetch the captured
+// row, decode it and reassemble the raw HTTP packet by hand.
+func (q *InterceptQueue) GetRawPacket(requestID int64) ([]byte, bool) {
+	q.mu.RLock()
+	defer q.mu.RUnlock()
+	for _, p := range q.pending {
+		if p.requestID == requestID {
+			return append([]byte(nil), p.raw...), true
+		}
+	}
+	return nil, false
+}
+
 func (q *InterceptQueue) QueueLength() int {
 	q.mu.RLock()
 	defer q.mu.RUnlock()

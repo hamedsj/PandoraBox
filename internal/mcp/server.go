@@ -25,10 +25,23 @@ import (
 )
 
 const (
-	mcpEndpointPath          = "/mcp"
-	sseEndpointPath          = "/sse"
+	mcpEndpointPath = "/mcp"
+	sseEndpointPath = "/sse"
+	// supportedProtocolVersion is the version we advertise back on initialize.
+	// We deliberately accept any version a client sends (the spec is forward-
+	// compatible) and let mcp-go negotiate; this is just what we echo when the
+	// client supplies no header.
 	supportedProtocolVersion = "2025-03-26"
 )
+
+// knownProtocolVersions lists the MCP revisions we have explicitly tested. A
+// client header outside this set is logged but accepted — modern MCP clients
+// are expected to be backwards-compatible with the response shape.
+var knownProtocolVersions = map[string]bool{
+	"2024-11-05": true,
+	"2025-03-26": true,
+	"2025-06-18": true,
+}
 
 type Status struct {
 	Running           bool   `json:"running"`
@@ -45,6 +58,30 @@ type session struct {
 	writeMu sync.Mutex
 	writer  http.ResponseWriter
 	flusher http.Flusher
+
+	// initialized + notifChan satisfy mcpserver.ClientSession so the server's
+	// HandleMessage can identify which client made the call. We don't actually
+	// deliver server-initiated notifications through this transport, so the
+	// channel is read-only and never closed.
+	initialized bool
+	notifChan   chan mcp.JSONRPCNotification
+}
+
+// SessionID implements mcpserver.ClientSession.
+func (s *session) SessionID() string { return s.id }
+
+// Initialize implements mcpserver.ClientSession.
+func (s *session) Initialize() { s.initialized = true }
+
+// Initialized implements mcpserver.ClientSession.
+func (s *session) Initialized() bool { return s.initialized }
+
+// NotificationChannel implements mcpserver.ClientSession.
+func (s *session) NotificationChannel() chan<- mcp.JSONRPCNotification {
+	if s.notifChan == nil {
+		s.notifChan = make(chan mcp.JSONRPCNotification, 1)
+	}
+	return s.notifChan
 }
 
 type Server struct {
@@ -68,9 +105,10 @@ type Server struct {
 	sessions sync.Map
 
 	collaboratorSessions sync.Map // sessionID → *collabSession
+	intruderJobs         sync.Map // job id → *intruderJob
 
 	consoleMu      sync.RWMutex
-	consoleEntries []events.ConsoleOutputData
+	consoleEntries []consoleEntry
 
 	projectMu       sync.RWMutex
 	project         *proj.Manager
@@ -185,6 +223,7 @@ func NewServer(cfg *config.Config, db *storage.DB, bus *events.Bus, p *proxy.Pro
 	s.registerIntruderTools()
 	s.registerCollaboratorTools()
 	s.registerConverterTools()
+	s.registerTeamTools()
 
 	return s
 }
@@ -462,10 +501,7 @@ func (s *Server) handleLegacyMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx := s.mcp.WithContext(r.Context(), mcpserver.NotificationContext{
-		ClientID:  sessionID,
-		SessionID: sessionID,
-	})
+	ctx := s.mcp.WithContext(r.Context(), s.getOrCreateSession(sessionID))
 	response := s.mcp.HandleMessage(ctx, rawMessage)
 	if response != nil {
 		payload, err := json.Marshal(response)
@@ -518,10 +554,7 @@ func (s *Server) handleStreamablePost(w http.ResponseWriter, r *http.Request) {
 		slog.Debug("MCP session created", "session", sessionID)
 	}
 
-	ctx := s.mcp.WithContext(r.Context(), mcpserver.NotificationContext{
-		ClientID:  sessionID,
-		SessionID: sessionID,
-	})
+	ctx := s.mcp.WithContext(r.Context(), s.getOrCreateSession(sessionID))
 
 	response := s.mcp.HandleMessage(ctx, rawMessage)
 	w.Header().Set("Mcp-Session-Id", sessionID)
@@ -698,14 +731,16 @@ func writeJSONRPCError(w http.ResponseWriter, id interface{}, code int, message 
 	})
 }
 
+// validateProtocolHeader is intentionally permissive: any non-empty header is
+// accepted because MCP is forward-compatible. We log unknown versions for
+// visibility but never reject them — rejecting on an unrecognised version
+// silently breaks newer clients without giving the user a way to recover.
 func validateProtocolHeader(r *http.Request) error {
 	version := strings.TrimSpace(r.Header.Get("Mcp-Protocol-Version"))
-	if version == "" {
+	if version == "" || knownProtocolVersions[version] {
 		return nil
 	}
-	if version != supportedProtocolVersion {
-		return fmt.Errorf("Unsupported MCP-Protocol-Version: %s", version)
-	}
+	slog.Info("MCP client sent unrecognised protocol version, accepting", "version", version, "advertised", supportedProtocolVersion)
 	return nil
 }
 

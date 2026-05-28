@@ -105,60 +105,74 @@ func safeFilePath(urlPath string) string {
 // ── Tool registration ─────────────────────────────────────────────────────────
 
 func (s *Server) registerAnalysisTools() {
-	s.mcp.AddTool(mcp.NewTool("export_responses",
-		mcp.WithDescription(`Export captured HTTP response bodies to the local filesystem. Each response is written as a file under dest_dir/{host}/{path}. Optionally decompress gzip/deflate/br/zstd-encoded bodies before writing.`),
-		mcp.WithString("dest_dir", mcp.Description("Local directory path to write files into"), mcp.Required()),
-		mcp.WithString("host", mcp.Description("Filter by host (substring match)")),
-		mcp.WithString("content_type", mcp.Description("Filter by Content-Type substring (e.g. \"javascript\", \"html\")")),
-		mcp.WithNumber("status_min", mcp.Description("Minimum response status code")),
-		mcp.WithNumber("status_max", mcp.Description("Maximum response status code")),
-		mcp.WithBoolean("decoded", mcp.Description("Decompress gzip/deflate/br/zstd bodies before writing (default true)")),
-	), s.toolExportResponses)
+	s.register(ToolSpec{
+		Name:     "analysis_export_responses",
+		Aliases:  []string{"export_responses"},
+		Category: CatAnalysis,
+		Behavior: BehaviorDestructive, // writes files to disk
+		Summary:  "Export captured response bodies to the local filesystem under dest_dir/{host}/{path}.",
+		Description: "Decompresses gzip/deflate/br/zstd by default. Returns counts and skipped reasons.",
+		Options: []mcp.ToolOption{
+			mcp.WithString("dest_dir", mcp.Description("Local directory to write files into."), mcp.Required()),
+			mcp.WithString("host", mcp.Description("Filter by host (substring).")),
+			mcp.WithString("content_type", mcp.Description("Filter by Content-Type substring, e.g. \"javascript\".")),
+			mcp.WithNumber("status_min", mcp.Description("Minimum status code.")),
+			mcp.WithNumber("status_max", mcp.Description("Maximum status code.")),
+			mcp.WithBoolean("decoded", mcp.Description("Decompress gzip/deflate/br/zstd before writing (default true).")),
+		},
+		Handler: s.toolExportResponses,
+	})
 
-	s.mcp.AddTool(mcp.NewTool("grep_responses",
-		mcp.WithDescription(`Search captured HTTP response bodies using a regular expression. Returns matching lines with optional context lines, similar to grep -C.`),
-		mcp.WithString("pattern", mcp.Description("Regular expression pattern to search for"), mcp.Required()),
-		mcp.WithString("host", mcp.Description("Filter by host (substring match)")),
-		mcp.WithString("content_type", mcp.Description("Filter by Content-Type substring (e.g. \"javascript\")")),
-		mcp.WithNumber("context_lines", mcp.Description("Lines of context before and after each match (0–10, default 2)")),
-	), s.toolGrepResponses)
+	s.register(ToolSpec{
+		Name:     "analysis_grep_responses",
+		Aliases:  []string{"grep_responses"},
+		Category: CatAnalysis,
+		Behavior: BehaviorReadOnly,
+		Summary:  "Search response bodies with a regular expression (grep -C style).",
+		Options: []mcp.ToolOption{
+			mcp.WithString("pattern", mcp.Description("Regular expression pattern."), mcp.Required()),
+			mcp.WithString("host", mcp.Description("Filter by host (substring).")),
+			mcp.WithString("content_type", mcp.Description("Filter by Content-Type substring.")),
+			mcp.WithNumber("context_lines", mcp.Description("Lines of context before/after each match (0–10, default 2).")),
+		},
+		Handler: s.toolGrepResponses,
+	})
 
-	s.mcp.AddTool(mcp.NewTool("get_response_headers_summary",
-		mcp.WithDescription(`Audit response headers across captured traffic. Returns headers grouped by name and flags which security headers (CSP, HSTS, X-Frame-Options, etc.) are missing from each response.`),
-		mcp.WithString("host", mcp.Description("Filter by host (substring match)")),
-	), s.toolGetResponseHeadersSummary)
+	s.register(ToolSpec{
+		Name:     "analysis_response_headers_summary",
+		Aliases:  []string{"get_response_headers_summary"},
+		Category: CatAnalysis,
+		Behavior: BehaviorReadOnly,
+		Summary:  "Audit response headers and flag missing security headers (CSP, HSTS, X-Frame-Options, …).",
+		Options: []mcp.ToolOption{
+			mcp.WithString("host", mcp.Description("Filter by host (substring).")),
+		},
+		Handler: s.toolGetResponseHeadersSummary,
+	})
 }
 
 // ── Tool handlers ─────────────────────────────────────────────────────────────
 
-func (s *Server) toolExportResponses(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	if !s.mcpEnabled() {
-		return nil, fmt.Errorf("MCP access is disabled for this project")
-	}
-	args := req.Params.Arguments
-
-	destDir, ok := args["dest_dir"].(string)
-	if !ok || destDir == "" {
-		return nil, fmt.Errorf("dest_dir required")
+func (s *Server) toolExportResponses(ctx context.Context, req mcp.CallToolRequest) (any, error) {
+	destDir, err := argRequiredString(req, "dest_dir")
+	if err != nil {
+		return nil, err
 	}
 
 	filter := storage.RequestFilter{Limit: 50000}
-	if v, ok := args["host"].(string); ok && v != "" {
+	if v := argString(req, "host"); v != "" {
 		filter.Host = v
 	}
-	if v, ok := args["content_type"].(string); ok && v != "" {
+	if v := argString(req, "content_type"); v != "" {
 		filter.ContentType = v
 	}
-	if v, ok := args["status_min"].(float64); ok {
+	if v, ok := argInt64(req, "status_min"); ok {
 		filter.StatusMin = int(v)
 	}
-	if v, ok := args["status_max"].(float64); ok {
+	if v, ok := argInt64(req, "status_max"); ok {
 		filter.StatusMax = int(v)
 	}
-	decode := true
-	if v, ok := args["decoded"].(bool); ok {
-		decode = v
-	}
+	decode := argBool(req, "decoded", true)
 
 	db := s.getDB()
 	if db == nil {
@@ -232,23 +246,18 @@ func (s *Server) toolExportResponses(ctx context.Context, req mcp.CallToolReques
 		})
 	}
 
-	return jsonResult(map[string]interface{}{
+	return map[string]any{
 		"exported":       exported,
 		"skipped":        skipped,
 		"total_exported": len(exported),
 		"total_skipped":  len(skipped),
-	})
+	}, nil
 }
 
-func (s *Server) toolGrepResponses(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	if !s.mcpEnabled() {
-		return nil, fmt.Errorf("MCP access is disabled for this project")
-	}
-	args := req.Params.Arguments
-
-	pattern, ok := args["pattern"].(string)
-	if !ok || pattern == "" {
-		return nil, fmt.Errorf("pattern required")
+func (s *Server) toolGrepResponses(ctx context.Context, req mcp.CallToolRequest) (any, error) {
+	pattern, err := argRequiredString(req, "pattern")
+	if err != nil {
+		return nil, err
 	}
 	re, err := regexp.Compile(pattern)
 	if err != nil {
@@ -256,15 +265,15 @@ func (s *Server) toolGrepResponses(ctx context.Context, req mcp.CallToolRequest)
 	}
 
 	filter := storage.RequestFilter{Limit: 10000}
-	if v, ok := args["host"].(string); ok && v != "" {
+	if v := argString(req, "host"); v != "" {
 		filter.Host = v
 	}
-	if v, ok := args["content_type"].(string); ok && v != "" {
+	if v := argString(req, "content_type"); v != "" {
 		filter.ContentType = v
 	}
 
 	contextLines := 2
-	if v, ok := args["context_lines"].(float64); ok {
+	if v, ok := argInt64(req, "context_lines"); ok {
 		contextLines = int(v)
 		if contextLines > 10 {
 			contextLines = 10
@@ -334,10 +343,7 @@ func (s *Server) toolGrepResponses(ctx context.Context, req mcp.CallToolRequest)
 		}
 	}
 
-	return jsonResult(map[string]interface{}{
-		"matches": matches,
-		"total":   len(matches),
-	})
+	return map[string]any{"matches": matches, "total": len(matches)}, nil
 }
 
 var securityHeaderNames = []string{
@@ -350,12 +356,8 @@ var securityHeaderNames = []string{
 	"X-XSS-Protection",
 }
 
-func (s *Server) toolGetResponseHeadersSummary(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	if !s.mcpEnabled() {
-		return nil, fmt.Errorf("MCP access is disabled for this project")
-	}
-
-	host, _ := req.Params.Arguments["host"].(string)
+func (s *Server) toolGetResponseHeadersSummary(ctx context.Context, req mcp.CallToolRequest) (any, error) {
+	host := argString(req, "host")
 
 	db := s.getDB()
 	if db == nil {
@@ -456,9 +458,9 @@ func (s *Server) toolGetResponseHeadersSummary(ctx context.Context, req mcp.Call
 		return nil, err
 	}
 
-	return jsonResult(map[string]interface{}{
+	return map[string]any{
 		"by_header":                byHeader,
 		"missing_security_headers": missingSecurity,
 		"security_headers_checked": securityHeaderNames,
-	})
+	}, nil
 }

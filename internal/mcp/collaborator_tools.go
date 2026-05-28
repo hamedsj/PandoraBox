@@ -31,35 +31,64 @@ type collabSession struct {
 }
 
 func (s *Server) registerCollaboratorTools() {
-	s.mcp.AddTool(mcp.NewTool("collaborator_start",
-		mcp.WithDescription(`Start a new Collaborator session backed by an interactsh server. Returns a unique URL to embed in your payloads. Interactions (DNS, HTTP, SMTP, LDAP…) are detected when the target resolves or contacts the URL. Use collaborator_poll to fetch interactions and collaborator_stop to end the session.`),
-		mcp.WithString("server", mcp.Description(`Interactsh server hostname. Defaults to "oast.pro". Public options: oast.pro, oast.live, oast.site, oast.online, oast.fun, oast.me`)),
-	), s.toolCollaboratorStart)
+	s.register(ToolSpec{
+		Name:      "collaborator_start",
+		Category:  CatCollaborator,
+		Behavior:  BehaviorMutating,
+		OpenWorld: true,
+		Summary:   "Start a new Collaborator (interactsh) session and return its URL.",
+		Description: "Embed the returned `url` in your payloads — DNS/HTTP/SMTP/LDAP interactions against it are recorded. " +
+			"Use `collaborator_poll` to fetch interactions, `collaborator_generate_url` to create distinct URLs per injection point, " +
+			"and `collaborator_stop` to end the session.",
+		Options: []mcp.ToolOption{
+			mcp.WithString("server", mcp.Description(`Interactsh hostname (default "oast.pro"). Public options: oast.pro, oast.live, oast.site, oast.online, oast.fun, oast.me.`)),
+		},
+		Handler: s.toolCollaboratorStart,
+	})
 
-	s.mcp.AddTool(mcp.NewTool("collaborator_poll",
-		mcp.WithDescription("Poll an active Collaborator session for new out-of-band interactions (DNS lookups, HTTP requests, SMTP connections, etc.)"),
-		mcp.WithString("session_id", mcp.Description("Session ID returned by collaborator_start"), mcp.Required()),
-	), s.toolCollaboratorPoll)
+	s.register(ToolSpec{
+		Name:      "collaborator_poll",
+		Category:  CatCollaborator,
+		Behavior:  BehaviorReadOnly,
+		OpenWorld: true,
+		Summary:   "Poll an active Collaborator session for new out-of-band interactions.",
+		Description: "Returns DNS lookups, HTTP requests, SMTP connections etc. that hit the session's URL since the last poll.",
+		Options: []mcp.ToolOption{
+			mcp.WithString("session_id", mcp.Description("Session id returned by collaborator_start."), mcp.Required()),
+		},
+		Handler: s.toolCollaboratorPoll,
+	})
 
-	s.mcp.AddTool(mcp.NewTool("collaborator_stop",
-		mcp.WithDescription("Stop a Collaborator session and deregister from the interactsh server"),
-		mcp.WithString("session_id", mcp.Description("Session ID returned by collaborator_start"), mcp.Required()),
-	), s.toolCollaboratorStop)
+	s.register(ToolSpec{
+		Name:      "collaborator_stop",
+		Category:  CatCollaborator,
+		Behavior:  BehaviorDestructive,
+		OpenWorld: true,
+		Summary:   "Stop a Collaborator session and deregister from the interactsh server.",
+		Options: []mcp.ToolOption{
+			mcp.WithString("session_id", mcp.Description("Session id returned by collaborator_start."), mcp.Required()),
+		},
+		Handler: s.toolCollaboratorStop,
+	})
 
-	s.mcp.AddTool(mcp.NewTool("collaborator_generate_url",
-		mcp.WithDescription("Generate a fresh unique test URL for an active Collaborator session (same correlation ID, new random nonce). Use this to create distinct per-payload URLs so you can track which injection point triggered an interaction."),
-		mcp.WithString("session_id", mcp.Description("Session ID returned by collaborator_start"), mcp.Required()),
-	), s.toolCollaboratorGenerateURL)
+	s.register(ToolSpec{
+		Name:     "collaborator_generate_url",
+		Category: CatCollaborator,
+		Behavior: BehaviorReadOnly,
+		Summary:  "Generate another unique test URL for an existing Collaborator session.",
+		Description: "Same correlation id, new random nonce. Use to distinguish which injection point triggered an interaction.",
+		Options: []mcp.ToolOption{
+			mcp.WithString("session_id", mcp.Description("Session id returned by collaborator_start."), mcp.Required()),
+		},
+		Handler: s.toolCollaboratorGenerateURL,
+	})
 }
 
 // ── Tool handlers ──────────────────────────────────────────────────────────────
 
-func (s *Server) toolCollaboratorStart(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	if !s.mcpEnabled() {
-		return nil, fmt.Errorf("MCP access is disabled for this project")
-	}
+func (s *Server) toolCollaboratorStart(ctx context.Context, req mcp.CallToolRequest) (any, error) {
 	server := "oast.pro"
-	if v, ok := req.Params.Arguments["server"].(string); ok && v != "" {
+	if v := argString(req, "server"); v != "" {
 		server = v
 	}
 
@@ -115,26 +144,22 @@ func (s *Server) toolCollaboratorStart(ctx context.Context, req mcp.CallToolRequ
 	}
 	s.collaboratorSessions.Store(sessionID, sess)
 
-	return jsonResult(map[string]interface{}{
+	return map[string]any{
 		"session_id":     sessionID,
 		"url":            currentURL,
 		"server":         server,
 		"correlation_id": correlationID,
-		"note":           "Embed 'url' in your payloads. Use collaborator_generate_url to create additional unique URLs for the same session.",
-	})
+	}, nil
 }
 
-func (s *Server) toolCollaboratorPoll(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	if !s.mcpEnabled() {
-		return nil, fmt.Errorf("MCP access is disabled for this project")
-	}
-	sessionID, ok := req.Params.Arguments["session_id"].(string)
-	if !ok || sessionID == "" {
-		return nil, fmt.Errorf("session_id required")
+func (s *Server) toolCollaboratorPoll(ctx context.Context, req mcp.CallToolRequest) (any, error) {
+	sessionID, err := argRequiredString(req, "session_id")
+	if err != nil {
+		return nil, err
 	}
 	val, ok := s.collaboratorSessions.Load(sessionID)
 	if !ok {
-		return nil, fmt.Errorf("session not found; call collaborator_start first")
+		return nil, fmt.Errorf("session %q not found; call collaborator_start first", sessionID)
 	}
 	sess := val.(*collabSession)
 
@@ -142,24 +167,17 @@ func (s *Server) toolCollaboratorPoll(ctx context.Context, req mcp.CallToolReque
 	if err != nil {
 		return nil, err
 	}
-
-	return jsonResult(map[string]interface{}{
-		"interactions": interactions,
-		"count":        len(interactions),
-	})
+	return map[string]any{"interactions": interactions, "count": len(interactions)}, nil
 }
 
-func (s *Server) toolCollaboratorStop(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	if !s.mcpEnabled() {
-		return nil, fmt.Errorf("MCP access is disabled for this project")
-	}
-	sessionID, ok := req.Params.Arguments["session_id"].(string)
-	if !ok || sessionID == "" {
-		return nil, fmt.Errorf("session_id required")
+func (s *Server) toolCollaboratorStop(ctx context.Context, req mcp.CallToolRequest) (any, error) {
+	sessionID, err := argRequiredString(req, "session_id")
+	if err != nil {
+		return nil, err
 	}
 	val, loaded := s.collaboratorSessions.LoadAndDelete(sessionID)
 	if !loaded {
-		return jsonResult(map[string]interface{}{"success": false, "note": "session not found"})
+		return map[string]any{"success": false, "reason": "session_not_found"}, nil
 	}
 	sess := val.(*collabSession)
 
@@ -181,25 +199,20 @@ func (s *Server) toolCollaboratorStop(ctx context.Context, req mcp.CallToolReque
 		deregResp.Body.Close()
 	}
 
-	return jsonResult(map[string]bool{"success": true})
+	return map[string]any{"success": true}, nil
 }
 
-func (s *Server) toolCollaboratorGenerateURL(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	if !s.mcpEnabled() {
-		return nil, fmt.Errorf("MCP access is disabled for this project")
-	}
-	sessionID, ok := req.Params.Arguments["session_id"].(string)
-	if !ok || sessionID == "" {
-		return nil, fmt.Errorf("session_id required")
+func (s *Server) toolCollaboratorGenerateURL(ctx context.Context, req mcp.CallToolRequest) (any, error) {
+	sessionID, err := argRequiredString(req, "session_id")
+	if err != nil {
+		return nil, err
 	}
 	val, ok := s.collaboratorSessions.Load(sessionID)
 	if !ok {
-		return nil, fmt.Errorf("session not found; call collaborator_start first")
+		return nil, fmt.Errorf("session %q not found; call collaborator_start first", sessionID)
 	}
 	sess := val.(*collabSession)
-	return jsonResult(map[string]string{
-		"url": collabTestURL(sess.CorrelationID, sess.Server),
-	})
+	return map[string]any{"url": collabTestURL(sess.CorrelationID, sess.Server)}, nil
 }
 
 // ── interactsh protocol helpers ────────────────────────────────────────────────

@@ -81,18 +81,16 @@ func (s *Server) registerDocs() {
 			page.Title,
 			mcp.WithResourceDescription(page.Description),
 			mcp.WithMIMEType("text/markdown"),
-		), func(ctx context.Context, request mcp.ReadResourceRequest) ([]interface{}, error) {
+		), func(ctx context.Context, request mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
 			text, err := readDocPage(page)
 			if err != nil {
 				return nil, err
 			}
-			return []interface{}{
+			return []mcp.ResourceContents{
 				mcp.TextResourceContents{
-					ResourceContents: mcp.ResourceContents{
-						URI:      page.URI,
-						MIMEType: "text/markdown",
-					},
-					Text: text,
+					URI:      page.URI,
+					MIMEType: "text/markdown",
+					Text:     text,
 				},
 			}, nil
 		})
@@ -100,6 +98,10 @@ func (s *Server) registerDocs() {
 }
 
 func readDocPage(page docPage) (string, error) {
+	// The "tools" topic is rendered live from the registry so it cannot drift.
+	if page.ID == "tools" {
+		return RenderToolReference(), nil
+	}
 	body, err := docsFS.ReadFile(page.File)
 	if err != nil {
 		return "", fmt.Errorf("read %s: %w", page.File, err)
@@ -144,35 +146,25 @@ func listDocTopics() []map[string]string {
 	return topics
 }
 
-func (s *Server) toolListDocs(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	if !s.mcpEnabled() {
-		return nil, fmt.Errorf("MCP access is disabled for this project")
-	}
-	return jsonResult(map[string]interface{}{
-		"topics": listDocTopics(),
-		"hint":   `Use get_doc with one of the topic ids above. Start with "tools"; read "coding-api" for script/API access, and "middleware" or "flows" when writing those features.`,
-	})
+func (s *Server) toolListDocs(ctx context.Context, req mcp.CallToolRequest) (any, error) {
+	return map[string]any{"topics": listDocTopics()}, nil
 }
 
-func (s *Server) toolGetDoc(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	if !s.mcpEnabled() {
-		return nil, fmt.Errorf("MCP access is disabled for this project")
-	}
-	id, _ := req.Params.Arguments["topic"].(string)
+func (s *Server) toolGetDoc(ctx context.Context, req mcp.CallToolRequest) (any, error) {
+	id := argString(req, "topic")
 	if id == "" {
-		id, _ = req.Params.Arguments["id"].(string)
+		id = argString(req, "id")
 	}
 	if id == "" {
-		return nil, fmt.Errorf("topic required")
+		return nil, fmt.Errorf("`topic` is required (e.g. \"overview\", \"tools\", \"project-schemas\"). Use docs_list to discover topics")
 	}
-
 	page, ok := findDocPage(id)
 	if !ok {
-		return nil, fmt.Errorf("unknown doc topic %q", id)
+		return nil, fmt.Errorf("unknown doc topic %q — use docs_list to discover valid topics", id)
 	}
 	text, err := readDocPage(page)
 	if err != nil {
 		return nil, err
 	}
-	return mcp.NewToolResultText(text), nil
+	return map[string]any{"topic": page.ID, "title": page.Title, "uri": page.URI, "markdown": text}, nil
 }

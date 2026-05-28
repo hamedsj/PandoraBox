@@ -1,8 +1,9 @@
+// Package mcp — converter_tools.go: encoder/decoder/hash tools and saved
+// conversion stacks. Migrated to the registry.
 package mcp
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -12,133 +13,152 @@ import (
 )
 
 func (s *Server) registerConverterTools() {
-	s.mcp.AddTool(mcp.NewTool("converter_list_algorithms",
-		mcp.WithDescription("List available converter/encoder/hash algorithms"),
-	), s.toolConverterListAlgorithms)
+	s.register(ToolSpec{
+		Name:     "converter_list_algorithms",
+		Category: CatConverter,
+		Behavior: BehaviorReadOnly,
+		Summary:  "List every available transform/encoder/decoder/hash algorithm.",
+		Handler:  s.toolConverterListAlgorithms,
+	})
 
-	s.mcp.AddTool(mcp.NewTool("converter_transform",
-		mcp.WithDescription("Transform input text using one algorithm"),
-		mcp.WithString("input", mcp.Description("Input text"), mcp.Required()),
-		mcp.WithString("algorithm", mcp.Description("Algorithm ID, e.g. base64_decode, sha256"), mcp.Required()),
-	), s.toolConverterTransform)
+	s.register(ToolSpec{
+		Name:     "converter_transform",
+		Category: CatConverter,
+		Behavior: BehaviorReadOnly,
+		Summary:  "Apply one algorithm to input text.",
+		Description: "Example: converter_transform(input=\"aGVsbG8=\", algorithm=\"base64_decode\") → \"hello\". " +
+			"Use converter_list_algorithms to discover ids.",
+		Options: []mcp.ToolOption{
+			mcp.WithString("input", mcp.Description("Input text to transform."), mcp.Required()),
+			mcp.WithString("algorithm", mcp.Description("Algorithm id, e.g. \"base64_decode\", \"sha256\", \"url_decode\"."), mcp.Required()),
+		},
+		Handler: s.toolConverterTransform,
+	})
 
-	s.mcp.AddTool(mcp.NewTool("converter_get_stacks",
-		mcp.WithDescription("Get saved conversion stacks from project config"),
-	), s.toolConverterGetStacks)
+	s.register(ToolSpec{
+		Name:     "converter_get_stacks",
+		Category: CatConverter,
+		Behavior: BehaviorReadOnly,
+		Summary:  "Get the saved conversion stacks for this project.",
+		Handler:  s.toolConverterGetStacks,
+	})
 
-	s.mcp.AddTool(mcp.NewTool("converter_save_stacks",
-		mcp.WithDescription("Replace saved conversion stacks in project config"),
-		mcp.WithString("stacks_json", mcp.Description("JSON array of ConvertStack objects"), mcp.Required()),
-	), s.toolConverterSaveStacks)
+	s.register(ToolSpec{
+		Name:     "converter_save_stacks",
+		Category: CatConverter,
+		Behavior: BehaviorMutating,
+		Summary:  "Replace the saved conversion stacks for this project.",
+		Options: []mcp.ToolOption{
+			mcp.WithArray("stacks", mcp.Description("Array of ConvertStack objects."), mcp.Items(map[string]any{"type": "object"})),
+			mcp.WithString("stacks_json", mcp.Description("Legacy stringified ConvertStack array. Prefer `stacks`.")),
+		},
+		Handler: s.toolConverterSaveStacks,
+	})
 
-	s.mcp.AddTool(mcp.NewTool("converter_run_stack",
-		mcp.WithDescription("Run a saved stack by id or ad-hoc stack JSON on input text"),
-		mcp.WithString("input", mcp.Description("Input text"), mcp.Required()),
-		mcp.WithString("stack_id", mcp.Description("Saved stack id")),
-		mcp.WithString("stack_json", mcp.Description("Ad-hoc ConvertStack JSON")),
-	), s.toolConverterRunStack)
+	s.register(ToolSpec{
+		Name:     "converter_run_stack",
+		Category: CatConverter,
+		Behavior: BehaviorReadOnly,
+		Summary:  "Run a saved stack (by id) or an ad-hoc stack against input text.",
+		Description: "Pass `stack_id` for a saved stack OR `stack` (object) / `stack_json` (legacy) for ad-hoc execution.",
+		Options: []mcp.ToolOption{
+			mcp.WithString("input", mcp.Description("Input text."), mcp.Required()),
+			mcp.WithString("stack_id", mcp.Description("Saved stack id from converter_get_stacks.")),
+			mcp.WithObject("stack", mcp.Description("Ad-hoc ConvertStack object.")),
+			mcp.WithString("stack_json", mcp.Description("Legacy stringified ConvertStack. Prefer `stack`.")),
+		},
+		Handler: s.toolConverterRunStack,
+	})
 }
 
-func (s *Server) toolConverterListAlgorithms(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	if !s.mcpEnabled() {
-		return nil, fmt.Errorf("MCP access is disabled for this project")
-	}
-	return jsonResult(map[string]interface{}{"algorithms": converter.Algorithms()})
+func (s *Server) toolConverterListAlgorithms(ctx context.Context, req mcp.CallToolRequest) (any, error) {
+	return map[string]any{"algorithms": converter.Algorithms()}, nil
 }
 
-func (s *Server) toolConverterTransform(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	if !s.mcpEnabled() {
-		return nil, fmt.Errorf("MCP access is disabled for this project")
-	}
-	input, _ := req.Params.Arguments["input"].(string)
-	algorithm, _ := req.Params.Arguments["algorithm"].(string)
-	if algorithm == "" {
-		return nil, fmt.Errorf("algorithm required")
+func (s *Server) toolConverterTransform(ctx context.Context, req mcp.CallToolRequest) (any, error) {
+	input := argString(req, "input")
+	algorithm, err := argRequiredString(req, "algorithm")
+	if err != nil {
+		return nil, err
 	}
 	out, err := converter.Transform(input, algorithm)
 	if err != nil {
 		return nil, err
 	}
-	return jsonResult(map[string]interface{}{"output": out})
+	return map[string]any{"output": out}, nil
 }
 
-func (s *Server) toolConverterGetStacks(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	if !s.mcpEnabled() {
-		return nil, fmt.Errorf("MCP access is disabled for this project")
-	}
+func (s *Server) toolConverterGetStacks(ctx context.Context, req mcp.CallToolRequest) (any, error) {
 	p := s.getProject()
 	if p == nil {
 		return nil, fmt.Errorf("no project loaded")
 	}
-	cfg := p.Config()
-	return jsonResult(map[string]interface{}{
-		"converter": map[string]interface{}{
-			"stacks": normalizeMCPConverterConfig(cfg.Converter).Stacks,
-		},
-	})
+	return map[string]any{
+		"stacks": normalizeMCPConverterConfig(p.Config().Converter).Stacks,
+	}, nil
 }
 
-func (s *Server) toolConverterSaveStacks(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	if !s.mcpEnabled() {
-		return nil, fmt.Errorf("MCP access is disabled for this project")
-	}
+func (s *Server) toolConverterSaveStacks(ctx context.Context, req mcp.CallToolRequest) (any, error) {
 	p := s.getProject()
 	if p == nil {
 		return nil, fmt.Errorf("no project loaded")
-	}
-	raw, _ := req.Params.Arguments["stacks_json"].(string)
-	if raw == "" {
-		return nil, fmt.Errorf("stacks_json required")
 	}
 	var stacks []proj.ConvertStack
-	if err := json.Unmarshal([]byte(raw), &stacks); err != nil {
-		return nil, fmt.Errorf("stacks_json: %w", err)
+	present, err := argInto(req, "stacks", &stacks)
+	if !present {
+		present, err = argInto(req, "stacks_json", &stacks)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !present {
+		return nil, fmt.Errorf("`stacks` (array) or `stacks_json` is required")
 	}
 	cfg := p.Config()
 	cfg.Converter = normalizeMCPConverterConfig(proj.ConverterConfig{Stacks: stacks})
 	if err := p.Save(cfg); err != nil {
 		return nil, err
 	}
-	return jsonResult(map[string]interface{}{
-		"converter": cfg.Converter,
-	})
+	return map[string]any{"stacks": cfg.Converter.Stacks}, nil
 }
 
-func (s *Server) toolConverterRunStack(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	if !s.mcpEnabled() {
-		return nil, fmt.Errorf("MCP access is disabled for this project")
-	}
-	input, _ := req.Params.Arguments["input"].(string)
-	stackID, _ := req.Params.Arguments["stack_id"].(string)
-	stackJSON, _ := req.Params.Arguments["stack_json"].(string)
+func (s *Server) toolConverterRunStack(ctx context.Context, req mcp.CallToolRequest) (any, error) {
+	input := argString(req, "input")
+	stackID := argString(req, "stack_id")
 
 	var stack *proj.ConvertStack
-	if stackJSON != "" {
+	{
 		var parsed proj.ConvertStack
-		if err := json.Unmarshal([]byte(stackJSON), &parsed); err != nil {
-			return nil, fmt.Errorf("stack_json: %w", err)
+		present, err := argInto(req, "stack", &parsed)
+		if !present {
+			present, err = argInto(req, "stack_json", &parsed)
 		}
-		sn := normalizeMCPStack(parsed)
-		stack = &sn
-	} else {
+		if err != nil {
+			return nil, err
+		}
+		if present {
+			sn := normalizeMCPStack(parsed)
+			stack = &sn
+		}
+	}
+	if stack == nil {
 		if stackID == "" {
-			return nil, fmt.Errorf("stack_id or stack_json required")
+			return nil, fmt.Errorf("either `stack_id` (saved) or `stack` (ad-hoc) is required")
 		}
 		p := s.getProject()
 		if p == nil {
 			return nil, fmt.Errorf("no project loaded")
 		}
-		for _, s := range normalizeMCPConverterConfig(p.Config().Converter).Stacks {
-			if s.ID == stackID {
-				cp := s
+		for _, st := range normalizeMCPConverterConfig(p.Config().Converter).Stacks {
+			if st.ID == stackID {
+				cp := st
 				stack = &cp
 				break
 			}
 		}
-	}
-
-	if stack == nil {
-		return nil, fmt.Errorf("stack not found")
+		if stack == nil {
+			return nil, fmt.Errorf("stack %q not found", stackID)
+		}
 	}
 
 	cur := input
@@ -152,10 +172,7 @@ func (s *Server) toolConverterRunStack(ctx context.Context, req mcp.CallToolRequ
 		}
 		cur = out
 	}
-	return jsonResult(map[string]interface{}{
-		"stack":  stack,
-		"output": cur,
-	})
+	return map[string]any{"stack": stack, "output": cur}, nil
 }
 
 func normalizeMCPConverterConfig(in proj.ConverterConfig) proj.ConverterConfig {
