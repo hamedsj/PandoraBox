@@ -5,12 +5,26 @@ import { useFlowsStore } from '@/store/flows'
 import { useConsoleStore } from '@/store/console'
 import { useTeamStore } from '@/store/team'
 import { useOrganizerStore } from '@/store/organizer'
+import { useIntruderStore } from '@/store/intruder'
 import { api } from '@/api/client'
 import type { Request, Replay, Response, ProxyStatus, WebSocketFrame, TeamMember, OrganizerFolder, OrganizerItem } from '@/api/client'
 
 interface WSEvent {
   type: string
   data: unknown
+}
+
+// Coalesce a burst of intercept events (e.g. forward-all) into a single queue
+// fetch so we don't issue one HTTP request per resolved item.
+let interceptRefetchTimer: ReturnType<typeof setTimeout> | undefined
+function scheduleInterceptRefetch() {
+  if (interceptRefetchTimer) return
+  interceptRefetchTimer = setTimeout(() => {
+    interceptRefetchTimer = undefined
+    api.intercept.queue()
+      .then((r) => useProxyStore.getState().setInterceptQueue(r.queue || []))
+      .catch(console.error)
+  }, 60)
 }
 
 export function useWebSocket() {
@@ -156,6 +170,42 @@ export function useWebSocket() {
         api.organizer.listItems(data.folder_id)
           .then((r) => setItemsForFolder(data.folder_id!, r.items))
           .catch(console.error)
+      }
+
+    // ── Intercept events: keep the queue panel live for MCP/REST mutations ──
+    } else if (evt.type === 'intercept.held' || evt.type === 'intercept.resolved') {
+      // The proxy emits these whenever a request enters or leaves the hold
+      // queue (including from MCP-driven forward/drop/modify). One coalesced
+      // refetch keeps the UI in sync without a poll loop.
+      scheduleInterceptRefetch()
+
+    // ── Intruder job events: live progress for MCP-driven runs ──────────────
+    } else if (evt.type === 'intruder.job.started') {
+      const data = evt.data as { job_id?: string; total?: number; request_id?: number; started_at?: string }
+      if (data?.job_id) {
+        useIntruderStore.getState().registerRemoteJob({
+          jobId: data.job_id,
+          total: data.total ?? 0,
+          requestId: data.request_id ?? 0,
+          startedAt: data.started_at ?? new Date().toISOString(),
+        })
+      }
+    } else if (evt.type === 'intruder.job.progress') {
+      const data = evt.data as { job_id?: string; completed?: number; total?: number }
+      if (data?.job_id) {
+        useIntruderStore.getState().updateRemoteJob(data.job_id, {
+          completed: data.completed ?? 0,
+          total: data.total ?? 0,
+        })
+      }
+    } else if (evt.type === 'intruder.job.completed' || evt.type === 'intruder.job.cancelled') {
+      const data = evt.data as { job_id?: string; status?: string; completed?: number; total?: number }
+      if (data?.job_id) {
+        useIntruderStore.getState().updateRemoteJob(data.job_id, {
+          completed: data.completed ?? 0,
+          total: data.total ?? 0,
+          status: (data.status as 'done' | 'cancelled') ?? 'done',
+        })
       }
     }
   }

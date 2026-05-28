@@ -25,6 +25,13 @@ const (
 
 	EventConsoleOutput EventType = "console.output"
 
+	// Intruder events — published by MCP-driven async runs so the Intruder
+	// page can show live progress even when the run was started by an agent.
+	EventIntruderJobStarted   EventType = "intruder.job.started"
+	EventIntruderJobProgress  EventType = "intruder.job.progress"
+	EventIntruderJobCompleted EventType = "intruder.job.completed"
+	EventIntruderJobCancelled EventType = "intruder.job.cancelled"
+
 	// Team collaboration events — published onto the local bus so the WS hub
 	// forwards them to connected browser clients.
 	EventTeamMemberJoined  EventType = "team.member.joined"

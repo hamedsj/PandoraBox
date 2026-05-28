@@ -25,10 +25,26 @@ export interface IntruderSession {
   progress: { done: number; total: number }
 }
 
+/**
+ * RemoteJob mirrors the lightweight progress of an MCP-driven `intruder_start`
+ * run. The browser never owned the run (no AbortController, no payload
+ * resolution), it just shows progress so the Intruder page reflects what an
+ * agent is doing in real time.
+ */
+export interface RemoteJob {
+  jobId: string
+  requestId: number
+  total: number
+  completed: number
+  status: 'running' | 'done' | 'cancelled'
+  startedAt: string
+}
+
 interface IntruderState {
   sessions: IntruderSession[]
   activeSessionId: string | null
   intruderAttentionTick: number
+  remoteJobs: RemoteJob[]
 
   addSession: (req: Request) => string
   removeSession: (id: string) => void
@@ -37,6 +53,11 @@ interface IntruderState {
   startAttack: (id: string) => Promise<void>
   stopAttack: (id: string) => void
   clearResults: (id: string) => void
+
+  // Remote (MCP-driven) job tracking.
+  registerRemoteJob: (job: Omit<RemoteJob, 'completed' | 'status'>) => void
+  updateRemoteJob: (jobId: string, patch: Partial<Omit<RemoteJob, 'jobId' | 'requestId'>>) => void
+  clearRemoteJob: (jobId: string) => void
 }
 
 // Keep abort controllers outside Zustand (not serializable)
@@ -46,6 +67,32 @@ export const useIntruderStore = create<IntruderState>((set, get) => ({
   sessions: [],
   activeSessionId: null,
   intruderAttentionTick: 0,
+  remoteJobs: [],
+
+  registerRemoteJob(job) {
+    set((s) => {
+      const existing = s.remoteJobs.findIndex((j) => j.jobId === job.jobId)
+      const next: RemoteJob = { ...job, completed: 0, status: 'running' }
+      if (existing >= 0) {
+        const updated = [...s.remoteJobs]
+        updated[existing] = { ...updated[existing], ...next }
+        return { remoteJobs: updated }
+      }
+      return { remoteJobs: [next, ...s.remoteJobs].slice(0, 20) }
+    })
+  },
+  updateRemoteJob(jobId, patch) {
+    set((s) => {
+      const idx = s.remoteJobs.findIndex((j) => j.jobId === jobId)
+      if (idx < 0) return s
+      const updated = [...s.remoteJobs]
+      updated[idx] = { ...updated[idx], ...patch }
+      return { remoteJobs: updated }
+    })
+  },
+  clearRemoteJob(jobId) {
+    set((s) => ({ remoteJobs: s.remoteJobs.filter((j) => j.jobId !== jobId) }))
+  },
 
   addSession(req: Request) {
     const raw = buildRawHTTP(req)

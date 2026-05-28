@@ -119,6 +119,9 @@ func (s *Server) toolConverterSaveStacks(ctx context.Context, req mcp.CallToolRe
 	if err := p.Save(cfg); err != nil {
 		return nil, err
 	}
+	// Notify the UI (and any other subscriber) that project config changed so
+	// the Converter page re-renders without a manual refresh.
+	s.publishProjectUpdated()
 	return map[string]any{"stacks": cfg.Converter.Stacks}, nil
 }
 

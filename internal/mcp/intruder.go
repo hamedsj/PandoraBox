@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/hamedsj5/pandorabox/internal/events"
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
@@ -370,6 +371,15 @@ func (s *Server) startIntruderJob(parent context.Context, req mcp.CallToolReques
 	// Schedule cleanup so the job table doesn't grow forever.
 	time.AfterFunc(intruderJobRetention, func() { s.intruderJobs.Delete(job.id) })
 
+	// Tell the UI a job is starting so it can open the panel / show a banner
+	// without the user being on the Intruder page when start was called.
+	if s.bus != nil {
+		s.bus.Publish(events.Event{
+			Type: events.EventIntruderJobStarted,
+			Data: map[string]any{"job_id": job.id, "total": job.total, "request_id": requestID, "attack_type": "", "started_at": job.startedAt.UTC().Format(time.RFC3339Nano)},
+		})
+	}
+
 	go s.runIntruderJob(ctx, job, requestID, tokens, variants, concurrency)
 	return job, nil
 }
@@ -378,10 +388,31 @@ func (s *Server) runIntruderJob(ctx context.Context, job *intruderJob, requestID
 	defer func() {
 		job.mu.Lock()
 		job.endedAt = time.Now()
-		if job.status == "running" {
+		finalStatus := job.status
+		if finalStatus == "running" {
+			finalStatus = "done"
 			job.status = "done"
 		}
+		completed := job.completed
+		total := job.total
 		job.mu.Unlock()
+
+		// Final notification — UI uses this to flip the panel out of "running".
+		if s.bus != nil {
+			evtType := events.EventIntruderJobCompleted
+			if finalStatus == "cancelled" {
+				evtType = events.EventIntruderJobCancelled
+			}
+			s.bus.Publish(events.Event{
+				Type: evtType,
+				Data: map[string]any{
+					"job_id":    job.id,
+					"status":    finalStatus,
+					"completed": completed,
+					"total":     total,
+				},
+			})
+		}
 	}()
 
 	if len(variants) == 0 {
@@ -396,6 +427,35 @@ func (s *Server) runIntruderJob(ctx context.Context, job *intruderJob, requestID
 	job.mu.Lock()
 	job.results = make([]intruderResult, len(variants))
 	job.mu.Unlock()
+
+	// Coalesce progress notifications so a 10k-payload run doesn't flood the WS.
+	// Send at most one every 250 ms; the UI re-renders smoothly on this cadence.
+	var (
+		progressMu      sync.Mutex
+		lastEmitted     int
+		lastEmittedTime time.Time
+	)
+	emitProgress := func(force bool) {
+		if s.bus == nil {
+			return
+		}
+		job.mu.Lock()
+		completed := job.completed
+		total := job.total
+		job.mu.Unlock()
+		progressMu.Lock()
+		if !force && time.Since(lastEmittedTime) < 250*time.Millisecond && completed-lastEmitted < total/20+1 {
+			progressMu.Unlock()
+			return
+		}
+		lastEmitted = completed
+		lastEmittedTime = time.Now()
+		progressMu.Unlock()
+		s.bus.Publish(events.Event{
+			Type: events.EventIntruderJobProgress,
+			Data: map[string]any{"job_id": job.id, "completed": completed, "total": total},
+		})
+	}
 
 	for i, v := range variants {
 		select {
@@ -429,9 +489,12 @@ func (s *Server) runIntruderJob(ctx context.Context, job *intruderJob, requestID
 			job.results[idx] = r
 			job.completed++
 			job.mu.Unlock()
+			emitProgress(false)
 		}(i, v)
 	}
 	wg.Wait()
+	// Force one final progress event in case the throttled one was skipped.
+	emitProgress(true)
 }
 
 func buildVariants(attackType string, numMarkers int, defaults []string, payloadSets [][]string) ([][]string, error) {

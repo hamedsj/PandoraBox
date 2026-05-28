@@ -23,7 +23,11 @@ export function InterceptPanel() {
   const mode = useThemeStore((s) => s.mode)
   const fontSize = useThemeStore((s) => s.fontSize)
 
-  const [queue, setQueue] = useState<InterceptQueueItem[]>([])
+  // Queue is the source of truth in the store so it stays live with intercept
+  // events from MCP/REST. Local writes prime the store too.
+  const queue = useProxyStore((s) => s.interceptQueue)
+  const setInterceptQueueStore = useProxyStore((s) => s.setInterceptQueue)
+  const setQueue = (next: InterceptQueueItem[]) => setInterceptQueueStore(next)
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [responseViewTab, setResponseViewTab] = useState<'packet' | 'request'>('packet')
   const [editContent, setEditContent] = useState('')
@@ -50,10 +54,10 @@ export function InterceptPanel() {
     setQueue(r.queue || [])
   }
 
+  // Initial fetch only; subsequent updates flow through the global WebSocket
+  // listener (intercept.held / intercept.resolved), so no polling is needed.
   useEffect(() => {
     fetchQueue().catch(console.error)
-    const t = setInterval(() => fetchQueue().catch(console.error), 1000)
-    return () => clearInterval(t)
   }, [])
 
   // Auto-select the first request when the queue goes from empty to non-empty
