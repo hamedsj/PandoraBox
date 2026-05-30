@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useContextMenu } from '@/hooks/useContextMenu'
 import { useProxyStore } from '@/store/proxy'
+import { useReplayQueueStore } from '@/store/replayQueue'
 import { useConverterStore } from '@/store/converter'
 import { api } from '@/api/client'
 import type { Request, ScopeRule } from '@/api/client'
@@ -46,10 +47,10 @@ export function RequestInspector({ edge = 'left' }: { edge?: 'left' | 'top' | 'n
   const setBodyMode = useWorkspaceStore((state) => state.setInspectorBodyMode)
   const project = useProxyStore((s) => s.project)
   const setProject = useProxyStore((s) => s.setProject)
-  const replayQueue = useProxyStore((s) => s.replayQueue)
+  const replayQueue = useReplayQueueStore((s) => s.replayQueue)
   const filters = useProxyStore((s) => s.filters)
-  const addToReplay = useProxyStore((s) => s.addToReplay)
-  const removeRequestFromReplay = useProxyStore((s) => s.removeRequestFromReplay)
+  const addToReplay = useReplayQueueStore((s) => s.addToReplay)
+  const removeRequestFromReplay = useReplayQueueStore((s) => s.removeRequestFromReplay)
   const updateRequest = useProxyStore((s) => s.updateRequest)
 
   const [req, setReq] = useState<Request | null>(null)

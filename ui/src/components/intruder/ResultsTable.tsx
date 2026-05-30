@@ -10,6 +10,7 @@ import { AddToFlowModal } from '@/components/flows/AddToFlowModal'
 import { AddToOrganizerModal } from '@/components/organizer/AddToOrganizerModal'
 import { useContextMenu } from '@/hooks/useContextMenu'
 import { useProxyStore } from '@/store/proxy'
+import { useReplayQueueStore } from '@/store/replayQueue'
 import { useIntruderStore } from '@/store/intruder'
 import { copyURL, copyRawRequest, copyAsCurl, copyAsFetch } from '@/lib/copyRequest'
 import { api } from '@/api/client'
@@ -111,9 +112,9 @@ export function ResultsTable({ results, markerCount }: Props) {
   const [addToOrganizerOpen, setAddToOrganizerOpen] = useState(false)
 
   // Stores
-  const addToReplay = useProxyStore((s) => s.addToReplay)
-  const replayQueue = useProxyStore((s) => s.replayQueue)
-  const removeRequestFromReplay = useProxyStore((s) => s.removeRequestFromReplay)
+  const addToReplay = useReplayQueueStore((s) => s.addToReplay)
+  const replayQueue = useReplayQueueStore((s) => s.replayQueue)
+  const removeRequestFromReplay = useReplayQueueStore((s) => s.removeRequestFromReplay)
 
   async function handleContextMenu(e: React.MouseEvent, result: AttackResult) {
     if (result.sentRequestId == null) return

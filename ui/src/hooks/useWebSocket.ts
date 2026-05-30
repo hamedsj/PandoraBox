@@ -7,8 +7,9 @@ import { useTeamStore } from '@/store/team'
 import { useOrganizerStore } from '@/store/organizer'
 import { useIntruderStore } from '@/store/intruder'
 import { useCollaboratorStore } from '@/store/collaborator'
+import { useReplayQueueStore } from '@/store/replayQueue'
 import { api } from '@/api/client'
-import type { Request, Replay, Response, ProxyStatus, WebSocketFrame, TeamMember, OrganizerFolder, OrganizerItem, ServerCollaboratorSession } from '@/api/client'
+import type { Request, Response, ProxyStatus, WebSocketFrame, TeamMember, OrganizerFolder, OrganizerItem, ServerCollaboratorSession } from '@/api/client'
 import type { Interaction } from '@/lib/interactsh'
 
 interface WSEvent {
@@ -32,7 +33,7 @@ function scheduleInterceptRefetch() {
 export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
-  const { prependRequest, updateRequest, removeRequest, clearRequests, setStatus, syncProject, setRequests, setSelectedRequestId, appendWsFrame, addToReplay, hydrateReplayQueue } = useProxyStore()
+  const { prependRequest, updateRequest, removeRequest, clearRequests, setStatus, syncProject, setRequests, setSelectedRequestId, appendWsFrame } = useProxyStore()
   const setFlows = useFlowsStore((s) => s.setFlows)
   const { upsertMember, removeMember, setMembers, setSyncStatus } = useTeamStore()
   const { upsertFolder, removeFolder, setFolders, upsertItem, removeItem, setItemsForFolder } = useOrganizerStore()
@@ -104,9 +105,8 @@ export function useWebSocket() {
           setSelectedRequestId(null)
         }
         setFlows(p.flows ?? [])
-        api.replay.list({ limit: 100, offset: 0 })
-          .then((result) => hydrateReplayQueue(result.replays ?? []))
-          .catch(console.error)
+        // Swap the replay queue to the one persisted for this project.
+        useReplayQueueStore.getState().setActiveProject(p.path)
       }).catch(console.error)
     } else if (evt.type === 'websocket.frame') {
       appendWsFrame(evt.data as WebSocketFrame)
@@ -122,11 +122,6 @@ export function useWebSocket() {
       }
     } else if (evt.type === 'requests.cleared') {
       clearRequests()
-    } else if (evt.type === 'replay.created') {
-      const replay = evt.data as Replay
-      if (replay?.request?.id) {
-        addToReplay(replay.request, replay)
-      }
     } else if (evt.type === 'console.output') {
       useConsoleStore.getState().append(evt.data as { source: 'middleware' | 'flow'; text: string; timestamp: string })
 

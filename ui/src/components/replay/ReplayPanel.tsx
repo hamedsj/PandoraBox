@@ -1,18 +1,18 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import type { editor as MonacoEditor } from 'monaco-editor'
 import { api } from '@/api/client'
-import type { Replay, Request, Response } from '@/api/client'
-import { useProxyStore, type ReplayQueueItem } from '@/store/proxy'
+import type { Replay, Response } from '@/api/client'
 import { useReplayStore } from '@/store/replay'
+import { useReplayQueueStore } from '@/store/replayQueue'
 import { MethodBadge } from '@/components/common/MethodBadge'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import { CodeViewer } from '@/components/common/CodeViewer'
 import { GraphQLEditorPanel } from '@/components/graphql/GraphQLEditorPanel'
-import { Send, RotateCcw, Trash2, Plus, FileCode2, ChevronLeft, ChevronRight, CopyPlus, Paperclip } from 'lucide-react'
+import { Send, RotateCcw, Trash2, Plus, FileCode2, ChevronLeft, ChevronRight, CopyPlus, Paperclip, X } from 'lucide-react'
 import { subscribeShortcutAction } from '@/lib/shortcuts'
 import { decodeBodyForDisplay, type DecodedBody } from '@/lib/httpBodies'
 import { presentBody } from '@/lib/bodyPresentation'
-import { applyAutomaticContentLength, encodeRawRequest, getRawRequestText } from '@/lib/rawHttp'
+import { applyAutomaticContentLength, encodeRawRequest } from '@/lib/rawHttp'
 import { detectGraphQLPacket } from '@/lib/graphql'
 import { cn, displayHost } from '@/lib/utils'
 import { useContextMenu } from '@/hooks/useContextMenu'
@@ -21,107 +21,105 @@ import { useNavigate } from 'react-router-dom'
 
 export function ReplayPanel() {
   const navigate = useNavigate()
-  const { replayQueue, removeFromReplay, duplicateReplayItem, clearReplay } = useProxyStore()
+  const replayQueue = useReplayQueueStore((s) => s.replayQueue)
+  const removeFromReplay = useReplayQueueStore((s) => s.removeFromReplay)
+  const duplicateReplayItem = useReplayQueueStore((s) => s.duplicateReplayItem)
+  const clearReplay = useReplayQueueStore((s) => s.clearReplay)
+  const updatePacket = useReplayQueueStore((s) => s.updatePacket)
+  const setScheme = useReplayQueueStore((s) => s.setScheme)
+  const pushHistory = useReplayQueueStore((s) => s.pushHistory)
+  const setHistoryIndex = useReplayQueueStore((s) => s.setHistoryIndex)
   const autoContentLength = useReplayStore((state) => state.autoContentLength)
   const sendToConverter = useConverterStore((state) => state.sendToConverter)
   const { open: contextMenuOpen, openMenu, close: closeContextMenu, menuRef } = useContextMenu()
 
   const [selectedQueueId, setSelectedQueueId] = useState<number | null>(null)
-  const [selectedRequest, setSelectedRequest] = useState<Request | null>(null)
-  const [rawRequest, setRawRequest] = useState('')
-  const [replay, setReplay] = useState<Replay | null>(null)
+  // Runtime-only per-entry results — not persisted (the queue/packets are).
+  const [results, setResults] = useState<Record<number, Replay>>({})
+  const [errors, setErrors] = useState<Record<number, string>>({})
   const [loading, setLoading] = useState(false)
-  const [requestLoading, setRequestLoading] = useState(false)
-  const [sendError, setSendError] = useState('')
   const [menuSelection, setMenuSelection] = useState('')
   const [decodedReplayBody, setDecodedReplayBody] = useState<DecodedBody | null>(null)
-  const [packetHistory, setPacketHistory] = useState<Record<number, { entries: string[]; index: number }>>({})
   const editorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
   const lastMonacoSelectionRef = useRef<{ text: string; at: number } | null>(null)
 
   const selectedEntry = replayQueue.find((entry) => entry.queueId === selectedQueueId) ?? null
   const selectedReq = selectedEntry?.request ?? null
+  const rawRequest = selectedEntry?.packet ?? ''
+  const scheme = selectedEntry?.scheme ?? 'http'
+  const history = selectedEntry?.history
+  const replay = selectedQueueId != null ? results[selectedQueueId] ?? null : null
+  const sendError = selectedQueueId != null ? errors[selectedQueueId] ?? '' : ''
+
   const replayPresentation = decodedReplayBody ? presentBody(decodedReplayBody) : null
   const replayPacketText = useMemo(() => {
     if (!replay?.response) return ''
     return buildRawResponsePacket(replay.response, replayPresentation?.text ?? decodeResponseBodyFallback(replay.response.body))
   }, [replay?.response, replayPresentation?.text])
-  const selectedHistory = selectedQueueId != null ? packetHistory[selectedQueueId] : undefined
-  const canGoBack = Boolean(selectedHistory && selectedHistory.index > 0)
-  const canGoForward = Boolean(selectedHistory && selectedHistory.index < selectedHistory.entries.length - 1)
+  const canGoBack = Boolean(history && history.index > 0)
+  const canGoForward = Boolean(history && history.index < history.entries.length - 1)
   const hasGraphQLRequest = useMemo(() => Boolean(detectGraphQLPacket(rawRequest)), [rawRequest])
+
+  function setRawRequest(next: string) {
+    if (selectedQueueId == null) return
+    updatePacket(selectedQueueId, next)
+  }
 
   async function sendReplay() {
     if (!selectedEntry) return
+    const id = selectedEntry.queueId
 
-    const nextRaw = autoContentLength ? applyAutomaticContentLength(rawRequest) : rawRequest
-    if (nextRaw !== rawRequest) {
-      setRawRequest(nextRaw)
+    let packet = selectedEntry.packet
+    if (autoContentLength) {
+      const next = applyAutomaticContentLength(packet)
+      if (next !== packet) {
+        updatePacket(id, next)
+        packet = next
+      }
     }
 
+    const controller = new AbortController()
+    abortRef.current = controller
     setLoading(true)
-    setSendError('')
+    setErrors((e) => { const n = { ...e }; delete n[id]; return n })
+
     try {
-      const result = await api.replay.create({
-        request_id: selectedEntry.request.id,
-        raw: encodeRawRequest(nextRaw),
-      })
-      setReplay(result)
-      setPacketHistory((current) => {
-        const existing = current[selectedEntry.queueId] ?? { entries: [nextRaw], index: 0 }
-        const visibleEntries = existing.entries.slice(0, existing.index + 1)
-        const lastEntry = visibleEntries[visibleEntries.length - 1]
-        const entries = lastEntry === nextRaw ? visibleEntries : [...visibleEntries, nextRaw]
-        return {
-          ...current,
-          [selectedEntry.queueId]: {
-            entries,
-            index: entries.length - 1,
-          },
-        }
-      })
+      const result = await api.replay.create(
+        { request_id: selectedEntry.request.id, raw: encodeRawRequest(packet), scheme: selectedEntry.scheme },
+        controller.signal,
+      )
+      setResults((r) => ({ ...r, [id]: result }))
+      if (result.status === 'error') {
+        setErrors((e) => ({ ...e, [id]: result.error || 'Replay failed' }))
+      } else {
+        pushHistory(id, packet)
+      }
     } catch (error) {
-      console.error(error)
-      setSendError(error instanceof Error ? error.message : 'Failed to replay request')
+      if (controller.signal.aborted) {
+        setErrors((e) => ({ ...e, [id]: 'Replay cancelled' }))
+      } else {
+        console.error(error)
+        setErrors((e) => ({ ...e, [id]: error instanceof Error ? error.message : 'Failed to replay request' }))
+      }
     } finally {
       setLoading(false)
+      abortRef.current = null
     }
   }
 
-  function navigateHistory(direction: -1 | 1) {
-    if (!selectedQueueId) return
-    setPacketHistory((current) => {
-      const history = current[selectedQueueId]
-      if (!history) return current
-      const nextIndex = history.index + direction
-      if (nextIndex < 0 || nextIndex >= history.entries.length) return current
-      setRawRequest(history.entries[nextIndex])
-      setSendError('')
-      return {
-        ...current,
-        [selectedQueueId]: {
-          ...history,
-          index: nextIndex,
-        },
-      }
-    })
+  function cancelReplay() {
+    abortRef.current?.abort()
   }
 
   function handleRemoveEntry(queueId: number) {
     removeFromReplay(queueId)
-    setPacketHistory((current) => {
-      const next = { ...current }
-      delete next[queueId]
-      return next
-    })
+    setResults((r) => { const n = { ...r }; delete n[queueId]; return n })
+    setErrors((e) => { const n = { ...e }; delete n[queueId]; return n })
     if (selectedQueueId === queueId) {
       setSelectedQueueId(null)
-      setSelectedRequest(null)
-      setRawRequest('')
-      setReplay(null)
       setDecodedReplayBody(null)
-      setSendError('')
     }
   }
 
@@ -129,20 +127,17 @@ export function ReplayPanel() {
     const content = await file.text()
     const target = editorRef.current
     if (!target) {
-      setRawRequest((current) => current + content)
-      setSendError('')
+      setRawRequest(rawRequest + content)
       return
     }
     const model = target.getModel()
     const selection = target.getSelection()
     if (!model || !selection) {
-      setRawRequest((current) => current + content)
-      setSendError('')
+      setRawRequest(rawRequest + content)
       return
     }
     target.executeEdits('insert-file', [{ range: selection, text: content, forceMoveMarkers: true }])
     setRawRequest(model.getValue())
-    setSendError('')
     target.focus()
   }
 
@@ -151,76 +146,22 @@ export function ReplayPanel() {
   }
 
   useEffect(() => {
-    if (!selectedEntry) {
-      setSelectedRequest(null)
-      setRawRequest('')
-      setReplay(null)
-      setDecodedReplayBody(null)
-      setSendError('')
-      return
-    }
-
-    let cancelled = false
-    setRequestLoading(true)
-    setSendError('')
-    api.requests.get(selectedEntry.request.id)
-      .then((request) => {
-        if (cancelled) return
-        const initialRaw = getRawRequestText(request)
-        setSelectedRequest(request)
-        setPacketHistory((current) => {
-          const existing = current[selectedEntry.queueId]
-          if (existing) {
-            const safeIndex = Math.min(existing.index, existing.entries.length - 1)
-            setRawRequest(existing.entries[safeIndex] ?? initialRaw)
-            return current
-          }
-          setRawRequest(initialRaw)
-          return {
-            ...current,
-            [selectedEntry.queueId]: {
-              entries: [initialRaw],
-              index: 0,
-            },
-          }
-        })
-        setReplay(selectedEntry.replay ?? null)
-      })
-      .catch((error) => {
-        console.error(error)
-        if (!cancelled) {
-          setSendError(error instanceof Error ? error.message : 'Failed to load request')
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setRequestLoading(false)
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [selectedEntry])
-
-  useEffect(() => {
     return subscribeShortcutAction((actionId) => {
       if (actionId === 'common.closeCurrent' || actionId === 'common.escape') {
         setSelectedQueueId(null)
-        setReplay(null)
         return
       }
-
-      if (actionId === 'replay.send' && selectedEntry) {
+      if (actionId === 'replay.send' && selectedEntry && !loading) {
         sendReplay().catch(console.error)
       }
     })
-  }, [selectedEntry, rawRequest, autoContentLength])
+  }, [selectedEntry, loading, autoContentLength])
 
   useEffect(() => {
     if (!replay?.response) {
       setDecodedReplayBody(null)
       return
     }
-
     let cancelled = false
     decodeBodyForDisplay(replay.response.body, replay.response.headers).then((body) => {
       if (!cancelled) setDecodedReplayBody(body)
@@ -372,21 +313,38 @@ export function ReplayPanel() {
                   <div className="truncate font-mono text-xs text-muted-foreground">{headerSubtitle}</div>
                 </div>
               </div>
+
+              {/* Scheme selector — lets a replay be flipped between HTTP and HTTPS. */}
+              <div className="flex items-center rounded-lg border border-border bg-card p-0.5">
+                {(['http', 'https'] as const).map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => selectedQueueId != null && setScheme(selectedQueueId, s)}
+                    className={cn(
+                      'rounded-md px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] transition-colors',
+                      scheme === s ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:text-foreground',
+                    )}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+
               <div className="hidden rounded-full border border-border bg-card px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground md:block">
                 Content-Length {autoContentLength ? 'auto' : 'manual'}
               </div>
               <div className="flex items-center gap-1 rounded-lg border border-border bg-card p-1">
                 <button
-                  onClick={() => navigateHistory(-1)}
-                  disabled={!selectedRequest || requestLoading || !canGoBack}
+                  onClick={() => selectedQueueId != null && history && setHistoryIndex(selectedQueueId, history.index - 1)}
+                  disabled={!canGoBack}
                   className="rounded-md px-2 py-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-35"
                   title="Previous sent packet"
                 >
                   <ChevronLeft size={14} />
                 </button>
                 <button
-                  onClick={() => navigateHistory(1)}
-                  disabled={!selectedRequest || requestLoading || !canGoForward}
+                  onClick={() => selectedQueueId != null && history && setHistoryIndex(selectedQueueId, history.index + 1)}
+                  disabled={!canGoForward}
                   className="rounded-md px-2 py-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-35"
                   title="Next sent packet"
                 >
@@ -395,20 +353,29 @@ export function ReplayPanel() {
               </div>
               <button
                 onClick={handleInsertFileClick}
-                disabled={requestLoading}
-                className="inline-flex items-center gap-1 rounded-lg border border-border bg-card px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-40"
+                className="inline-flex items-center gap-1 rounded-lg border border-border bg-card px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-muted"
               >
                 <Paperclip size={12} />
                 Insert File
               </button>
-              <button
-                onClick={() => { sendReplay().catch(console.error) }}
-                disabled={loading || requestLoading || !rawRequest.trim()}
-                className="inline-flex items-center gap-1 rounded-lg bg-primary/20 px-3 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/30 disabled:opacity-50"
-              >
-                <Send size={12} />
-                {loading ? 'Sending...' : 'Send'}
-              </button>
+              {loading ? (
+                <button
+                  onClick={cancelReplay}
+                  className="inline-flex items-center gap-1 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-300 transition-colors hover:bg-red-500/20"
+                >
+                  <X size={12} />
+                  Cancel
+                </button>
+              ) : (
+                <button
+                  onClick={() => { sendReplay().catch(console.error) }}
+                  disabled={!rawRequest.trim()}
+                  className="inline-flex items-center gap-1 rounded-lg bg-primary/20 px-3 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/30 disabled:opacity-50"
+                >
+                  <Send size={12} />
+                  Send
+                </button>
+              )}
             </div>
 
             <div className="flex-1 min-h-0 overflow-auto">
@@ -418,42 +385,34 @@ export function ReplayPanel() {
                   <span className="rounded-full border border-border px-2 py-0.5 normal-case tracking-normal">
                     Edit method, target, headers, and body directly
                   </span>
-                  {selectedHistory && (
+                  {history && history.entries.length > 1 && (
                     <span className="rounded-full border border-border px-2 py-0.5 normal-case tracking-normal">
-                      Packet {selectedHistory.index + 1} / {selectedHistory.entries.length}
+                      Packet {history.index + 1} / {history.entries.length}
                     </span>
                   )}
                 </div>
               </div>
 
               <div className="space-y-4 p-4">
-                {requestLoading ? (
-                  <div className="rounded-2xl border border-dashed border-border bg-muted/30 px-5 py-10 text-sm text-muted-foreground">
-                    Loading request packet...
-                  </div>
+                {hasGraphQLRequest ? (
+                  <GraphQLEditorPanel
+                    rawPacket={rawRequest}
+                    onChange={(next) => setRawRequest(next)}
+                    includeFullPacket
+                  />
                 ) : (
-                  <>
-                    {hasGraphQLRequest ? (
-                      <GraphQLEditorPanel
-                        rawPacket={rawRequest}
-                        onChange={(next) => setRawRequest(next)}
-                        includeFullPacket
-                      />
-                    ) : (
-                      <div onContextMenuCapture={handleRequestContextMenuCapture}>
-                        <CodeViewer
-                          value={rawRequest}
-                          language="http-request"
-                          readOnly={false}
-                          onChange={(value) => setRawRequest(value)}
-                          onEditorMount={(editor) => { editorRef.current = editor }}
-                          contextMenu={false}
-                          autoHeight={false}
-                          maxHeight={460}
-                        />
-                      </div>
-                    )}
-                  </>
+                  <div onContextMenuCapture={handleRequestContextMenuCapture}>
+                    <CodeViewer
+                      value={rawRequest}
+                      language="http-request"
+                      readOnly={false}
+                      onChange={(value) => setRawRequest(value)}
+                      onEditorMount={(editor) => { editorRef.current = editor }}
+                      contextMenu={false}
+                      autoHeight={false}
+                      maxHeight={460}
+                    />
+                  </div>
                 )}
               </div>
 
@@ -497,8 +456,6 @@ export function ReplayPanel() {
                         />
                       </div>
                     </div>
-                  ) : replay?.error ? (
-                    <div className="text-sm text-red-400">{replay.error}</div>
                   ) : null}
                 </div>
               )}
@@ -545,8 +502,9 @@ export function ReplayPanel() {
 }
 
 function buildRawResponsePacket(response: Response, bodyText: string): string {
-  const statusText = response.status_text?.trim() || 'OK'
-  const lines: string[] = [`HTTP/1.1 ${response.status_code} ${statusText}`]
+  const proto = response.proto?.trim() || 'HTTP/1.1'
+  const statusText = response.status_text?.trim() || ''
+  const lines: string[] = [`${proto} ${response.status_code} ${statusText}`.trimEnd()]
   const headers = parseHeaders(response.headers)
   for (const [name, values] of Object.entries(headers)) {
     for (const value of values) {

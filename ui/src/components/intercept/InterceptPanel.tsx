@@ -8,6 +8,7 @@ import type { InterceptFilter, InterceptQueueItem } from '@/api/client'
 import { decodeBodyForDisplay } from '@/lib/httpBodies'
 import { applyAutomaticContentLength, getRawRequestText } from '@/lib/rawHttp'
 import { useProxyStore } from '@/store/proxy'
+import { useReplayQueueStore } from '@/store/replayQueue'
 import { useThemeStore } from '@/store/theme'
 import { MethodBadge } from '@/components/common/MethodBadge'
 import { InterceptFilterModal } from './InterceptFilterModal'
@@ -19,7 +20,7 @@ import { useNavigate } from 'react-router-dom'
 export function InterceptPanel() {
   const navigate = useNavigate()
   const status = useProxyStore((s) => s.status)
-  const addToReplay = useProxyStore((s) => s.addToReplay)
+  const addToReplay = useReplayQueueStore((s) => s.addToReplay)
   const mode = useThemeStore((s) => s.mode)
   const fontSize = useThemeStore((s) => s.fontSize)
 

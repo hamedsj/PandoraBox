@@ -98,7 +98,7 @@ func (s *Server) runFlowByID(ctx context.Context, flowID string, seedVars map[st
 				return result, nil
 			}
 			interpolated := interpolateFlowVars(string(raw), variables)
-			replay, err := s.proxy.ReplayRequest(0, nil, nil, "", []byte(interpolated))
+			replay, err := s.proxy.ReplayRequest(0, nil, nil, "", []byte(interpolated), "")
 			if err != nil {
 				current.Status = "error"
 				current.Error = err.Error()

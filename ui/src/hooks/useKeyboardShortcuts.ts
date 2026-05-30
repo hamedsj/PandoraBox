@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { createShortcutEvent, isEditableTarget, matchesShortcut, allowsInEditable } from '@/lib/shortcuts'
 import { useProxyStore } from '@/store/proxy'
+import { useReplayQueueStore } from '@/store/replayQueue'
 import { useShortcutStore } from '@/store/shortcuts'
 import { type ShortcutActionId } from '@/shortcuts/actions'
 
@@ -62,7 +63,7 @@ export function useKeyboardShortcuts() {
           const selectedId = useProxyStore.getState().selectedRequestId
           const selectedRequest = useProxyStore.getState().requests.find((request) => request.id === selectedId)
           if (selectedRequest) {
-            useProxyStore.getState().addToReplay(selectedRequest)
+            useReplayQueueStore.getState().addToReplay(selectedRequest)
             navigate('/replay')
           } else {
             handled = false

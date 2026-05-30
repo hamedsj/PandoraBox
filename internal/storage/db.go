@@ -85,8 +85,21 @@ CREATE TABLE IF NOT EXISTS responses (
 CREATE TABLE IF NOT EXISTS replays (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     origin_request_id INTEGER REFERENCES requests(id),
-    request_id INTEGER NOT NULL REFERENCES requests(id),
-    response_id INTEGER REFERENCES responses(id),
+    method      TEXT,
+    scheme      TEXT,
+    host        TEXT,
+    path        TEXT,
+    query       TEXT,
+    req_headers TEXT,
+    req_body    BLOB,
+    req_raw     BLOB,
+    status_code INTEGER,
+    status_text TEXT,
+    resp_proto  TEXT,
+    resp_headers TEXT,
+    resp_body   BLOB,
+    duration_ms INTEGER,
+    size_bytes  INTEGER,
     status TEXT NOT NULL DEFAULT 'pending',
     error TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -159,5 +172,113 @@ CREATE TABLE IF NOT EXISTS organizer_items (
 	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_org_items_folder  ON organizer_items(folder_id)`)
 	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_org_items_request ON organizer_items(request_id)`)
 
+	// v4 migration: make replays self-contained so replay/repeater traffic no
+	// longer creates rows in the requests/responses tables (which leaked into
+	// History, the SiteMap, and request counts).
+	if err := migrateReplaysInline(db); err != nil {
+		return fmt.Errorf("replays inline migration: %w", err)
+	}
+
 	return nil
+}
+
+// migrateReplaysInline rebuilds the replays table to store the request and
+// response snapshots inline (instead of foreign-keying into requests/responses).
+// It backfills existing replays from their linked rows and then deletes the
+// orphaned replay request/response rows so previously-leaked replays disappear
+// from History retroactively. Idempotent: a no-op once the new schema is in place.
+func migrateReplaysInline(db *sql.DB) error {
+	// Detect the new schema by probing for the `method` column on replays.
+	if columnExists(db, "replays", "method") {
+		return nil
+	}
+
+	// Collect the request ids that legacy replays created (their sent copies)
+	// so we can purge them from history after the rebuild. origin_request_id is
+	// the source request in history and must be preserved.
+	var orphanReqIDs []int64
+	if rows, err := db.Query(`SELECT request_id FROM replays`); err == nil {
+		for rows.Next() {
+			var id int64
+			if rows.Scan(&id) == nil {
+				orphanReqIDs = append(orphanReqIDs, id)
+			}
+		}
+		rows.Close()
+	}
+
+	stmts := []string{
+		`ALTER TABLE replays RENAME TO replays_legacy`,
+		`CREATE TABLE replays (
+			id                INTEGER PRIMARY KEY AUTOINCREMENT,
+			origin_request_id INTEGER REFERENCES requests(id),
+			method      TEXT,
+			scheme      TEXT,
+			host        TEXT,
+			path        TEXT,
+			query       TEXT,
+			req_headers TEXT,
+			req_body    BLOB,
+			req_raw     BLOB,
+			status_code INTEGER,
+			status_text TEXT,
+			resp_proto  TEXT,
+			resp_headers TEXT,
+			resp_body   BLOB,
+			duration_ms INTEGER,
+			size_bytes  INTEGER,
+			status      TEXT NOT NULL DEFAULT 'pending',
+			error       TEXT,
+			created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`INSERT INTO replays (
+			id, origin_request_id, method, scheme, host, path, query,
+			req_headers, req_body, req_raw,
+			status_code, status_text, resp_headers, resp_body, duration_ms, size_bytes,
+			status, error, created_at)
+		 SELECT rp.id, rp.origin_request_id,
+		        req.method, req.scheme, req.host, req.path, req.query,
+		        req.headers, req.body, req.raw,
+		        resp.status_code, resp.status_text, resp.headers, resp.body, resp.duration_ms, resp.size_bytes,
+		        rp.status, rp.error, rp.created_at
+		 FROM replays_legacy rp
+		 LEFT JOIN requests  req  ON req.id  = rp.request_id
+		 LEFT JOIN responses resp ON resp.id = rp.response_id`,
+		`DROP TABLE replays_legacy`,
+	}
+	for _, s := range stmts {
+		if _, err := db.Exec(s); err != nil {
+			return fmt.Errorf("%s: %w", s, err)
+		}
+	}
+
+	// Purge the orphaned replay request/response rows so they no longer show up
+	// in History. Best-effort: a failure here must not block startup.
+	for _, id := range orphanReqIDs {
+		_, _ = db.Exec(`DELETE FROM responses WHERE request_id = ?`, id)
+		_, _ = db.Exec(`DELETE FROM requests WHERE id = ?`, id)
+	}
+	return nil
+}
+
+// columnExists reports whether a table has a column with the given name.
+func columnExists(db *sql.DB, table, column string) bool {
+	rows, err := db.Query(fmt.Sprintf(`PRAGMA table_info(%s)`, table))
+	if err != nil {
+		return false
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull, pk int
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			return false
+		}
+		if name == column {
+			return true
+		}
+	}
+	return false
 }

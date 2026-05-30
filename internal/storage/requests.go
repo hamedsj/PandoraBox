@@ -417,19 +417,11 @@ func deleteRequestsTx(tx *sql.Tx, ids []int64) error {
 		return err
 	}
 
-	replayArgs := make([]interface{}, 0, len(args)*3)
-	replayArgs = append(replayArgs, args...)
-	replayArgs = append(replayArgs, args...)
-	replayArgs = append(replayArgs, args...)
+	// Replays are self-contained (no request_id/response_id FK). Deleting a
+	// history request removes the replays that were anchored on it as origin.
 	if _, err := tx.Exec(
-		fmt.Sprintf(
-			`DELETE FROM replays
-			 WHERE request_id IN (%[1]s)
-			    OR origin_request_id IN (%[1]s)
-			    OR response_id IN (SELECT id FROM responses WHERE request_id IN (%[1]s))`,
-			inClause,
-		),
-		replayArgs...,
+		fmt.Sprintf(`DELETE FROM replays WHERE origin_request_id IN (%s)`, inClause),
+		args...,
 	); err != nil {
 		return err
 	}

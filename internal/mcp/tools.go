@@ -16,7 +16,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/hamedsj5/pandorabox/internal/events"
 	proj "github.com/hamedsj5/pandorabox/internal/project"
 	"github.com/hamedsj5/pandorabox/internal/proxy"
 	"github.com/hamedsj5/pandorabox/internal/storage"
@@ -231,16 +230,18 @@ func (s *Server) registerTools() {
 		Category:  CatReplay,
 		Behavior:  BehaviorMutating,
 		OpenWorld: true,
-		Summary:   "Replay a captured request with optional URL/headers/body overrides.",
-		Description: "Creates a new Replay record; the original captured request is not modified. " +
-			"Pass `modified_headers` as a native object or `modified_headers_json` as legacy stringified JSON. " +
-			"With `decoded=true` (default), the result includes `decoded_response_body`.",
+		Summary:   "Replay a captured request with optional URL/headers/body/scheme overrides.",
+		Description: "Records a self-contained Replay; the original captured request is not modified and the replay " +
+			"does NOT appear in History or the SiteMap. Pass `modified_headers` as a native object or " +
+			"`modified_headers_json` as legacy stringified JSON. With `decoded=true` (default), the result includes " +
+			"`decoded_response_body`.",
 		Options: []mcp.ToolOption{
 			mcp.WithNumber("request_id", mcp.Description("ID of the captured request to replay."), mcp.Required()),
 			mcp.WithString("modified_url", mcp.Description("Override the target URL.")),
 			mcp.WithString("modified_body", mcp.Description("Override the request body (plain text).")),
 			mcp.WithObject("modified_headers", mcp.Description("Header overrides, e.g. {\"Authorization\":\"Bearer new\"}.")),
 			mcp.WithString("modified_headers_json", mcp.Description("Legacy: stringified JSON header overrides. Prefer `modified_headers`.")),
+			mcp.WithString("scheme", mcp.Description("Force the transport scheme: \"http\" or \"https\". Omit to keep the original.")),
 			mcp.WithBoolean("decoded", mcp.Description("Include `decoded_response_body` (decompressed text). Default true.")),
 		},
 		Handler: s.toolReplayRequest,
@@ -887,11 +888,11 @@ func (s *Server) toolReplayRequest(ctx context.Context, req mcp.CallToolRequest)
 	}
 
 	decoded := argBool(req, "decoded", true)
+	scheme := argString(req, "scheme")
 
-	replay, err := s.proxy.ReplayRequest(id, modHeaders, modBody, modURL, nil)
-	if replay != nil {
-		s.bus.Publish(events.Event{Type: events.EventReplayCreated, Data: replay})
-	}
+	// Replays are self-contained and intentionally do NOT appear in the UI's
+	// curated Replay queue or in History; the result is returned to the caller.
+	replay, err := s.proxy.ReplayRequest(id, modHeaders, modBody, modURL, nil, scheme)
 	if err != nil {
 		return nil, err
 	}

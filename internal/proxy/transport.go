@@ -4,6 +4,7 @@ package proxy
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -309,35 +310,46 @@ func (p *Proxy) SendRequest(method, url string, headers map[string]string, body 
 	return captured, err
 }
 
-// ReplayRequest replays a stored request with optional modifications.
-// When reqID == 0 and raw is non-empty, the request is built directly from
-// the raw bytes without a DB lookup (used by the Flows feature).
-func (p *Proxy) ReplayRequest(reqID int64, modHeaders map[string]string, modBody []byte, modURL string, raw []byte) (*storage.Replay, error) {
+// replayTimeout bounds a single replay round-trip so a hung upstream can't
+// block the caller (and, on the API path, the request goroutine) forever.
+const replayTimeout = 60 * time.Second
+
+// ReplayRequest replays a stored request with optional modifications and
+// records the result as a self-contained replay — it does NOT write to the
+// requests/responses tables, so replay traffic never appears in History, the
+// SiteMap, or request counts.
+//
+// When reqID == 0 and raw is non-empty, the request is built directly from the
+// raw bytes without a DB lookup (used by Flows and Intruder). schemeOverride,
+// when non-empty ("http"/"https"), forces the transport scheme regardless of
+// the original — letting a replay be switched between HTTP and HTTPS.
+func (p *Proxy) ReplayRequest(reqID int64, modHeaders map[string]string, modBody []byte, modURL string, raw []byte, schemeOverride string) (*storage.Replay, error) {
 	db := p.getDB()
 
 	var req *http.Request
-	var newReqCapture *storage.Request
+	var snapshot *storage.Request
 	var err error
 
 	if reqID == 0 && len(raw) > 0 {
-		// Build directly from raw bytes using a stub origin with http scheme
 		stub := &storage.Request{Scheme: "http"}
-		req, newReqCapture, err = buildReplayRequestFromRaw(stub, raw)
-		if err != nil {
-			return nil, err
-		}
+		req, snapshot, err = buildReplayRequestFromRaw(stub, raw)
 	} else {
 		orig, dbErr := db.GetRequest(reqID)
 		if dbErr != nil || orig == nil {
 			return nil, fmt.Errorf("request not found: %d", reqID)
 		}
-		req, newReqCapture, err = buildReplayRequest(orig, modHeaders, modBody, modURL, raw)
-		if err != nil {
-			return nil, err
-		}
+		req, snapshot, err = buildReplayRequest(orig, modHeaders, modBody, modURL, raw)
+	}
+	if err != nil {
+		return nil, err
 	}
 	if req.Host == "" && req.URL != nil {
 		req.Host = req.URL.Host
+	}
+
+	// Scheme override: lets the user flip a replay between http and https.
+	if schemeOverride == "http" || schemeOverride == "https" {
+		req.URL.Scheme = schemeOverride
 	}
 
 	var originID *int64
@@ -351,53 +363,49 @@ func (p *Proxy) ReplayRequest(reqID int64, modHeaders map[string]string, modBody
 		req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 	}
 
-	inScope := p.scope.InScope(req.Host, req.URL.Path)
-	if inScope {
-		rules := p.getMatchReplace()
-		if len(rules) > 0 {
-			bodyBytes = applyToRequest(rules, req, bodyBytes)
+	// Match-replace and middleware are applied to replays unconditionally:
+	// a replay is a deliberate user action, so the user's rules should run
+	// regardless of whether the target is in the passive-capture scope.
+	rules := p.getMatchReplace()
+	if len(rules) > 0 {
+		bodyBytes = applyToRequest(rules, req, bodyBytes)
+		req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+		req.ContentLength = int64(len(bodyBytes))
+	}
+	if mw := p.getMiddlewareRunner(); mw != nil {
+		newMethod, newURL, newHeaders, newBody, mwErr := mw.ProcessRequest(
+			req.Method, req.URL.String(), req.Header.Clone(), bodyBytes,
+		)
+		if mwErr != nil {
+			slog.Warn("Replay request middleware error", "err", mwErr)
+		} else {
+			req.Method = newMethod
+			if u, e := url.Parse(newURL); e == nil {
+				req.URL = u
+				if u.Host != "" {
+					req.Host = u.Host
+				}
+			}
+			req.Header = newHeaders
+			bodyBytes = newBody
 			req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 			req.ContentLength = int64(len(bodyBytes))
 		}
-		if mw := p.getMiddlewareRunner(); mw != nil {
-			newMethod, newURL, newHeaders, newBody, err := mw.ProcessRequest(
-				req.Method, req.URL.String(), req.Header.Clone(), bodyBytes,
-			)
-			if err != nil {
-				slog.Warn("Replay request middleware error", "err", err)
-			} else {
-				req.Method = newMethod
-				if u, e := url.Parse(newURL); e == nil {
-					req.URL = u
-					if u.Host != "" {
-						req.Host = u.Host
-					}
-				}
-				req.Header = newHeaders
-				bodyBytes = newBody
-				req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
-				req.ContentLength = int64(len(bodyBytes))
-			}
-		}
 	}
 
-	syncCapturedRequest(newReqCapture, req, bodyBytes)
-	newReqCapture.Response = nil
+	syncCapturedRequest(snapshot, req, bodyBytes)
+	snapshot.Response = nil
 
-	replay := &storage.Replay{OriginRequestID: originID, Status: "pending"}
-
-	newReqID, err := db.SaveRequest(newReqCapture)
-	if err != nil {
-		return nil, err
-	}
-	newReqCapture.ID = newReqID
-	replay.RequestID = newReqID
-
+	replay := &storage.Replay{OriginRequestID: originID, Status: "pending", Request: snapshot}
 	replayID, err := db.SaveReplay(replay)
 	if err != nil {
 		return nil, err
 	}
 	replay.ID = replayID
+
+	ctx, cancel := context.WithTimeout(context.Background(), replayTimeout)
+	defer cancel()
+	req = req.WithContext(ctx)
 
 	start := time.Now()
 	removeHopByHop(req.Header)
@@ -405,10 +413,9 @@ func (p *Proxy) ReplayRequest(reqID int64, modHeaders map[string]string, modBody
 	transport := p.makeTransport()
 	resp, err := transport.RoundTrip(req)
 	if err != nil {
-		db.UpdateReplay(replayID, nil, "error", err.Error())
+		_ = db.UpdateReplayResponse(replayID, nil, "error", err.Error())
 		replay.Status = "error"
 		replay.Error = err.Error()
-		replay.Request = newReqCapture
 		return replay, err
 	}
 	defer resp.Body.Close()
@@ -416,56 +423,42 @@ func (p *Proxy) ReplayRequest(reqID int64, modHeaders map[string]string, modBody
 	duration := time.Since(start).Milliseconds()
 	respBodyBytes, _ := io.ReadAll(resp.Body)
 
-	if inScope {
-		rules := p.getMatchReplace()
-		if len(rules) > 0 {
-			respBodyBytes = applyToResponse(rules, resp, respBodyBytes)
-		}
-		if mw := p.getMiddlewareRunner(); mw != nil {
-			newCode, newText, newHeaders, newBody, err := mw.ProcessResponse(
-				resp.StatusCode, resp.Status, resp.Header.Clone(), respBodyBytes,
-			)
-			if err != nil {
-				slog.Warn("Replay response middleware error", "err", err)
-			} else {
-				resp.StatusCode = newCode
-				resp.Status = newText
-				resp.Header = newHeaders
-				respBodyBytes = newBody
-			}
+	if len(rules) > 0 {
+		respBodyBytes = applyToResponse(rules, resp, respBodyBytes)
+	}
+	if mw := p.getMiddlewareRunner(); mw != nil {
+		newCode, newText, newHeaders, newBody, mwErr := mw.ProcessResponse(
+			resp.StatusCode, resp.Status, resp.Header.Clone(), respBodyBytes,
+		)
+		if mwErr != nil {
+			slog.Warn("Replay response middleware error", "err", mwErr)
+		} else {
+			resp.StatusCode = newCode
+			resp.Status = newText
+			resp.Header = newHeaders
+			respBodyBytes = newBody
 		}
 	}
 
 	respHeadersJSON, _ := json.Marshal(resp.Header)
 	respRecord := &storage.Response{
-		RequestID:  newReqID,
 		StatusCode: resp.StatusCode,
 		StatusText: resp.Status,
+		Proto:      resp.Proto,
 		Headers:    string(respHeadersJSON),
 		Body:       respBodyBytes,
 		DurationMs: duration,
 		SizeBytes:  int64(len(respBodyBytes)),
 	}
-	respID, err := db.SaveResponse(respRecord)
-	if err != nil {
-		db.UpdateReplay(replayID, nil, "error", err.Error())
+	if err := db.UpdateReplayResponse(replayID, respRecord, "done", ""); err != nil {
 		replay.Status = "error"
 		replay.Error = err.Error()
-		replay.Request = newReqCapture
 		return replay, err
 	}
-	respRecord.ID = respID
-	newReqCapture.Response = respRecord
-
-	db.UpdateReplay(replayID, &respID, "done", "")
 
 	replay.Status = "done"
-	replay.ResponseID = &respID
 	replay.Response = respRecord
-	replay.Request = newReqCapture
-
-	p.bus.Publish(events.Event{Type: events.EventRequestCaptured, Data: newReqCapture})
-	p.bus.Publish(events.Event{Type: events.EventResponseReceived, Data: respRecord})
+	replay.Request = snapshot
 
 	return replay, nil
 }

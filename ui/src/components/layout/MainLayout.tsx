@@ -7,6 +7,7 @@ import { useTeamSync } from '@/hooks/useTeamSync'
 import { useEffect, useRef } from 'react'
 import { api } from '@/api/client'
 import { useProxyStore } from '@/store/proxy'
+import { useReplayQueueStore } from '@/store/replayQueue'
 import { useFlowsStore } from '@/store/flows'
 import { useConsoleStore } from '@/store/console'
 import { Toaster } from 'sonner'
@@ -18,22 +19,20 @@ export function MainLayout() {
   useTeamSync()
   const setStatus = useProxyStore((s) => s.setStatus)
   const syncProject = useProxyStore((s) => s.syncProject)
-  const hydrateReplayQueue = useProxyStore((s) => s.hydrateReplayQueue)
+  const setReplayProject = useReplayQueueStore((s) => s.setActiveProject)
   const setFlows = useFlowsStore((s) => s.setFlows)
   const toggleConsole = useConsoleStore((s) => s.toggle)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const filtersRef = useRef(useProxyStore.getState().filters)
 
-  // Load project on mount
+  // Load project on mount; point the persisted replay queue at this project.
   useEffect(() => {
     api.project.get().then((p) => {
       syncProject(p)
       setFlows(p.flows ?? [])
-      api.replay.list({ limit: 100, offset: 0 })
-        .then((result) => hydrateReplayQueue(result.replays ?? []))
-        .catch(console.error)
+      setReplayProject(p.path)
     }).catch(console.error)
-  }, [syncProject, setFlows, hydrateReplayQueue])
+  }, [syncProject, setFlows, setReplayProject])
 
   // Poll proxy status
   useEffect(() => {

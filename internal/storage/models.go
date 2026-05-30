@@ -25,7 +25,8 @@ type Response struct {
 	RequestID  int64     `json:"request_id"`
 	StatusCode int       `json:"status_code"`
 	StatusText string    `json:"status_text"`
-	Headers    string    `json:"headers"` // JSON
+	Proto      string    `json:"proto,omitempty"` // e.g. "HTTP/1.1", "HTTP/2.0"
+	Headers    string    `json:"headers"`         // JSON
 	Body       []byte    `json:"body"`
 	Raw        []byte    `json:"raw,omitempty"`
 	DurationMs int64     `json:"duration_ms"`

@@ -476,7 +476,7 @@ func (s *Server) runIntruderJob(ctx context.Context, job *intruderJob, requestID
 
 			rawBytes := []byte(substituteMarkers(tokens, payloads))
 			start := time.Now()
-			replay, err := s.proxy.ReplayRequest(requestID, nil, nil, "", rawBytes)
+			replay, err := s.proxy.ReplayRequest(requestID, nil, nil, "", rawBytes, "")
 			elapsed := time.Since(start).Milliseconds()
 
 			r := intruderResult{Index: idx, Payloads: payloads, TimeMs: elapsed}

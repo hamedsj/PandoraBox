@@ -17,6 +17,7 @@ func (s *Server) createReplay(w http.ResponseWriter, r *http.Request) {
 		ModifiedBody    []byte            `json:"modified_body"`
 		ModifiedURL     string            `json:"modified_url"`
 		Raw             string            `json:"raw"`
+		Scheme          string            `json:"scheme"` // optional "http"/"https" override
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -35,10 +36,14 @@ func (s *Server) createReplay(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	replay, err := s.proxy.ReplayRequest(body.RequestID, body.ModifiedHeaders, body.ModifiedBody, body.ModifiedURL, rawBytes)
+	replay, err := s.proxy.ReplayRequest(body.RequestID, body.ModifiedHeaders, body.ModifiedBody, body.ModifiedURL, rawBytes, body.Scheme)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
+		// A failed replay still returns a result object (status=error) so the UI
+		// can show the transport error; only signal 500 when there is no replay.
+		if replay == nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
 	}
 
 	writeJSON(w, http.StatusOK, replay)

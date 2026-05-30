@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useContextMenu } from '@/hooks/useContextMenu'
 import { useProxyStore } from '@/store/proxy'
+import { useReplayQueueStore } from '@/store/replayQueue'
 import { useRequests } from '@/hooks/useRequests'
 import { MethodBadge } from '@/components/common/MethodBadge'
 import { StatusBadge } from '@/components/common/StatusBadge'
@@ -104,14 +105,14 @@ export function RequestTable({
     setSelectedRequestId,
     filters,
     setFilters,
-    addToReplay,
-    removeRequestFromReplay,
-    replayQueue,
     updateRequest,
     removeRequests,
     clearRequests,
   } = useProxyStore()
   const scope = useProxyStore((s) => s.project?.scope)
+  const addToReplay = useReplayQueueStore((s) => s.addToReplay)
+  const removeRequestFromReplay = useReplayQueueStore((s) => s.removeRequestFromReplay)
+  const replayQueue = useReplayQueueStore((s) => s.replayQueue)
 
   const [sortColumn, setSortColumn] = useState<SortColumn>('id')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')

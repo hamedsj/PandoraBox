@@ -28,18 +28,29 @@ export function applyAutomaticContentLength(raw: string): string {
     return raw
   }
 
+  // A chunked request frames its own body; never inject Content-Length there.
+  const isChunked = headerLines.some(
+    (line, i) => i > 0 && /^transfer-encoding\s*:/i.test(line) && /chunked/i.test(line),
+  )
+  if (isChunked) {
+    return raw
+  }
+
   const contentLength = new TextEncoder().encode(bodyText).length
   let found = false
   const nextHeaders = headerLines.map((line, index) => {
     if (index === 0) return line
     if (/^content-length\s*:/i.test(line)) {
       found = true
+      // Always reflect the real body length, including 0 for an emptied body.
       return `Content-Length: ${contentLength}`
     }
     return line
   })
 
-  if (!found && contentLength > 0) {
+  // Add the header only when there is a body to describe; a bodyless GET should
+  // not gain a Content-Length: 0.
+  if (!found && splitIndex >= 0 && bodyText.length > 0) {
     nextHeaders.push(`Content-Length: ${contentLength}`)
   }
 

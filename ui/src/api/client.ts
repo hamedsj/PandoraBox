@@ -247,6 +247,7 @@ export interface Response {
   request_id: number
   status_code: number
   status_text: string
+  proto?: string
   headers: string
   body: string | number[] | null
   raw?: string | null
@@ -384,13 +385,27 @@ export const api = {
     setFilter: (filter: InterceptFilter) => put<InterceptFilter>('/intercept/filter', filter),
   },
   replay: {
-    create: (body: {
-      request_id: number
-      modified_headers?: Record<string, string>
-      modified_body?: number[]
-      modified_url?: string
-      raw?: string
-    }) => post<Replay>('/replay', body),
+    // Abortable so the UI can offer a Cancel button on a slow/hung upstream.
+    create: async (
+      body: {
+        request_id: number
+        modified_headers?: Record<string, string>
+        modified_body?: number[]
+        modified_url?: string
+        raw?: string
+        scheme?: string
+      },
+      signal?: AbortSignal,
+    ): Promise<Replay> => {
+      const res = await fetch(BASE + '/replay', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal,
+      })
+      if (!res.ok) throw new Error(await res.text())
+      return res.json() as Promise<Replay>
+    },
     get: (id: number) => get<Replay>(`/replay/${id}`),
     list: (params?: { limit?: number; offset?: number }) =>
       get<{ replays: Replay[]; total: number }>('/replays', params as Record<string, string | number>),

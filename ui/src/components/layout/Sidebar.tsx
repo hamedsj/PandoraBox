@@ -2,6 +2,7 @@ import { NavLink } from 'react-router-dom'
 import { Globe, Shield, RotateCcw, Settings, Target, Network, Replace, GitBranch, Terminal, Wifi, WifiOff, Loader2, FolderOpen, Crosshair, RadioTower, Binary } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useProxyStore } from '@/store/proxy'
+import { useReplayQueueStore } from '@/store/replayQueue'
 import { useConsoleStore } from '@/store/console'
 import { useTeamStore } from '@/store/team'
 import { useIntruderStore } from '@/store/intruder'
@@ -27,7 +28,7 @@ const navItems = [
 
 export function Sidebar() {
   const status = useProxyStore((s) => s.status)
-  const replayAttentionTick = useProxyStore((s) => s.replayAttentionTick)
+  const replayAttentionTick = useReplayQueueStore((s) => s.attentionTick)
   const { toggle: toggleConsole, unread, isOpen: consoleOpen } = useConsoleStore()
   const syncStatus = useTeamStore((s) => s.syncStatus)
   const intruderAttentionTick = useIntruderStore((s) => s.intruderAttentionTick)

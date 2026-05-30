@@ -15,6 +15,7 @@ import { AddToFlowModal } from '@/components/flows/AddToFlowModal'
 import { AddToOrganizerModal } from '@/components/organizer/AddToOrganizerModal'
 import { api, type ScopeRule } from '@/api/client'
 import { useProxyStore } from '@/store/proxy'
+import { useReplayQueueStore } from '@/store/replayQueue'
 import { useOrganizerStore } from '@/store/organizer'
 import { useIntruderStore } from '@/store/intruder'
 import { parseRequestTags, REQUEST_TAG_HIGHLIGHTED } from '@/lib/requestTags'
@@ -61,9 +62,9 @@ export function ItemCard({ item, selected, folderColor, onSelect, onRemove, onNo
 
   const project = useProxyStore((s) => s.project)
   const setProject = useProxyStore((s) => s.setProject)
-  const replayQueue = useProxyStore((s) => s.replayQueue)
-  const addToReplay = useProxyStore((s) => s.addToReplay)
-  const removeRequestFromReplay = useProxyStore((s) => s.removeRequestFromReplay)
+  const replayQueue = useReplayQueueStore((s) => s.replayQueue)
+  const addToReplay = useReplayQueueStore((s) => s.addToReplay)
+  const removeRequestFromReplay = useReplayQueueStore((s) => s.removeRequestFromReplay)
   const updateRequest = useProxyStore((s) => s.updateRequest)
   const upsertItem = useOrganizerStore((s) => s.upsertItem)
 
