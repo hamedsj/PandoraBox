@@ -49,6 +49,9 @@ type ConverterSelectionDetail = {
   y: number
   canReplace?: boolean
   replaceSelection?: (nextText: string) => void
+  // Why this fired, so listeners can tell a real in-editor deselect (should
+  // dismiss the popup) from an editor blur (clicking INTO the popup — keep it).
+  reason?: 'select' | 'cleared' | 'blur'
 }
 
 export function CodeViewer({
@@ -127,13 +130,13 @@ export function CodeViewer({
       const model = editor.getModel()
       const selection = editor.getSelection()
       if (!model || !selection || selection.isEmpty()) {
-        dispatchConverterSelection(null)
+        dispatchConverterCleared()
         return
       }
 
       const text = model.getValueInRange(selection)
       if (!text.trim()) {
-        dispatchConverterSelection(null)
+        dispatchConverterCleared()
         return
       }
 
@@ -141,12 +144,13 @@ export function CodeViewer({
       const visiblePos = editor.getScrolledVisiblePosition(endPos)
       const node = editor.getDomNode()
       if (!visiblePos || !node) {
-        dispatchConverterSelection(null)
+        dispatchConverterCleared()
         return
       }
 
       const rect = node.getBoundingClientRect()
       dispatchConverterSelection({
+        reason: 'select',
         text: text.slice(0, 25000),
         x: rect.left + visiblePos.left,
         y: rect.top + visiblePos.top + visiblePos.height + 8,
@@ -182,7 +186,7 @@ export function CodeViewer({
     syncHeight()
     const disposable = editor.onDidContentSizeChange(syncHeight)
     const selectionDisposable = editor.onDidChangeCursorSelection(emitSelection)
-    const blurDisposable = editor.onDidBlurEditorText(() => dispatchConverterSelection(null))
+    const blurDisposable = editor.onDidBlurEditorText(() => dispatchConverterBlur())
     editor.onDidDispose(() => {
       disposable.dispose()
       selectionDisposable.dispose()
@@ -273,6 +277,18 @@ export function CodeViewer({
 function dispatchConverterSelection(detail: ConverterSelectionDetail | null) {
   if (typeof window === 'undefined') return
   window.dispatchEvent(new CustomEvent('pandora:converter-selection', { detail }))
+}
+
+// The selection was cleared inside the editor (deselect / new selection start).
+// Listeners should dismiss the popup.
+function dispatchConverterCleared() {
+  dispatchConverterSelection({ reason: 'cleared', text: '', x: 0, y: 0 })
+}
+
+// The editor lost focus — which also happens when the user clicks INTO the
+// popup. Listeners should NOT dismiss the popup on this.
+function dispatchConverterBlur() {
+  dispatchConverterSelection({ reason: 'blur', text: '', x: 0, y: 0 })
 }
 
 function cssHslVarToHex(value: string, fallback: string): string {

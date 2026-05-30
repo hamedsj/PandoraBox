@@ -16,6 +16,7 @@ type ConverterSelectionDetail = {
   y: number
   canReplace?: boolean
   replaceSelection?: (nextText: string) => void
+  reason?: 'select' | 'cleared' | 'blur'
 }
 
 const POPUP_WIDTH = 360
@@ -51,6 +52,7 @@ export function SelectionConverterPopup() {
   const replaceSelectionRef = useRef<((nextText: string) => void) | null>(null)
   const showTimerRef = useRef<number | undefined>(undefined)
   const pendingDetailRef = useRef<ConverterSelectionDetail | null>(null)
+  const shownTextRef = useRef<string>('')
 
   const stacks = project?.converter?.stacks ?? []
   const hasStacks = stacks.length > 0
@@ -79,30 +81,52 @@ export function SelectionConverterPopup() {
 
   // Only source of truth: selections inside CodeViewer editors.
   useEffect(() => {
+    const show = () => {
+      const d = pendingDetailRef.current
+      if (!d) return
+      replaceSelectionRef.current = d.replaceSelection ?? null
+      shownTextRef.current = d.text
+      setPreview('')
+      setPreviewError(false)
+      setPos({ left: -9999, top: -9999 })
+      setPopup({
+        text: d.text.slice(0, 25000),
+        anchor: { x: d.x, y: d.y },
+        canReplace: Boolean(d.canReplace && d.replaceSelection),
+      })
+    }
+
     const onSelection = (event: Event) => {
       const detail = (event as CustomEvent<ConverterSelectionDetail | null>).detail
-      // Empty selection / editor blur: cancel a pending show, but leave an open
-      // popup alone so the user can interact with it (closing is handled by
-      // outside-click / Escape).
-      if (!detail || !detail.text?.trim()) {
+      const text = detail?.text?.trim() ?? ''
+
+      if (!text) {
         window.clearTimeout(showTimerRef.current)
+        pendingDetailRef.current = null
+        // A genuine in-editor deselect / new-selection start dismisses the popup.
+        // An editor blur ('blur') does NOT — it fires when the user clicks INTO
+        // the popup to use it.
+        if (detail?.reason === 'cleared') {
+          shownTextRef.current = ''
+          setPopup(null)
+        }
         return
       }
+
+      // Same selection re-emitted (e.g. editor refocus): nothing to do.
+      if (popupOpenRef.current && detail && detail.text === shownTextRef.current) {
+        return
+      }
+
       pendingDetailRef.current = detail
       window.clearTimeout(showTimerRef.current)
-      showTimerRef.current = window.setTimeout(() => {
-        const d = pendingDetailRef.current
-        if (!d) return
-        replaceSelectionRef.current = d.replaceSelection ?? null
-        setPreview('')
-        setPreviewError(false)
-        setPos({ left: -9999, top: -9999 })
-        setPopup({
-          text: d.text.slice(0, 25000),
-          anchor: { x: d.x, y: d.y },
-          canReplace: Boolean(d.canReplace && d.replaceSelection),
-        })
-      }, SHOW_DELAY)
+      // When a popup is already open, track the new selection immediately;
+      // otherwise wait for the selection to settle before first showing.
+      if (popupOpenRef.current) {
+        show()
+      } else {
+        showTimerRef.current = window.setTimeout(show, SHOW_DELAY)
+      }
     }
 
     window.addEventListener('pandora:converter-selection', onSelection as EventListener)
