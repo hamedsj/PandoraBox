@@ -45,7 +45,30 @@ type Proxy struct {
 	mwMu     sync.RWMutex
 	mwRunner *MiddlewareRunner
 
+	// clientHello maps a target hostname to the raw TLS ClientHello record the
+	// real browser sent for it. The upstream dialer replays this exact
+	// fingerprint (JA3/JA4) so the proxy is indistinguishable from whatever
+	// browser/version the user actually runs. See captureClientHello / chromeTLSDial.
+	clientHello sync.Map // string -> []byte
+
 	requestCount atomic.Int64
+}
+
+// storeClientHello records the raw ClientHello record the browser sent for host.
+func (p *Proxy) storeClientHello(host string, raw []byte) {
+	if len(raw) > 0 {
+		p.clientHello.Store(host, raw)
+	}
+}
+
+// clientHelloFor returns the raw ClientHello captured for host, or nil.
+func (p *Proxy) clientHelloFor(host string) []byte {
+	if v, ok := p.clientHello.Load(host); ok {
+		if b, ok := v.([]byte); ok {
+			return b
+		}
+	}
+	return nil
 }
 
 func New(cfg *config.Config, db *storage.DB, authority *ca.CA, bus *events.Bus, intercept *InterceptQueue) *Proxy {

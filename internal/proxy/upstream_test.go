@@ -58,3 +58,14 @@ func TestToFHTTPRequestSetsChromeHeaderOrder(t *testing.T) {
 			idx("user-agent"), idx("accept"), idx("cookie"))
 	}
 }
+
+// specFromClientHello must return nil for empty/garbage input so chromeTLSDial
+// safely falls back to the bundled Chrome preset instead of failing the dial.
+func TestSpecFromClientHelloFallback(t *testing.T) {
+	if specFromClientHello(nil) != nil {
+		t.Fatal("nil input should yield nil spec (fallback)")
+	}
+	if specFromClientHello([]byte{0x16, 0x03, 0x01, 0x00, 0x05, 0xde, 0xad, 0xbe, 0xef, 0x00}) != nil {
+		t.Fatal("garbage input should yield nil spec (fallback)")
+	}
+}

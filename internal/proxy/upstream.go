@@ -21,13 +21,20 @@ import (
 	"golang.org/x/net/proxy"
 )
 
-// chromeTLSDial wraps an existing TCP connection with a uTLS handshake
-// impersonating Chrome's ClientHello. This makes PandoraBox's TLS fingerprint
-// (JA3/JA4) indistinguishable from a real Chrome browser, defeating
-// fingerprint-based bot detection (e.g. Cloudflare Bot Management).
+// chromeTLSDial wraps an existing TCP connection with a uTLS handshake whose
+// ClientHello is fingerprint-identical to the real browser.
+//
+// When rawClientHello is non-nil it is the exact ClientHello record the user's
+// browser sent (captured in mitm.go); uTLS reconstructs a spec from it, so the
+// upstream JA3/JA4 matches whatever browser and version the user actually runs
+// — version-proof and brand-proof. uTLS discards the browser's ephemeral
+// key_share material and regenerates it per connection, so the handshake is
+// valid with our own keys. If the raw hello can't be reproduced (or none was
+// captured, e.g. replay/intruder traffic) it falls back to the bundled latest
+// Chrome preset.
 //
 // alpnProtos controls the ALPN extension. Pass []string{"h2", "http/1.1"} to
-// match Chrome's full fingerprint (important for JA4, which hashes the first
+// match a browser's full fingerprint (important for JA4, which hashes the first
 // ALPN value). Pass []string{"http/1.1"} only when the caller knows h2 is
 // unavailable (HTTP proxy tunnels).
 //
@@ -35,11 +42,15 @@ import (
 // objects in-place (GREASE values, ECDHE KeyShare.Data, etc.). Sharing a spec
 // across connections causes the second+ connection to skip key generation and
 // send stale key material — the TLS handshake then fails.
-func chromeTLSDial(ctx context.Context, tcpConn net.Conn, host string, alpnProtos []string) (net.Conn, error) {
-	spec, err := butls.UTLSIdToSpec(butls.HelloChrome_Auto)
-	if err != nil {
-		tcpConn.Close()
-		return nil, fmt.Errorf("utls spec: %w", err)
+func chromeTLSDial(ctx context.Context, tcpConn net.Conn, host string, alpnProtos []string, rawClientHello []byte) (net.Conn, error) {
+	spec := specFromClientHello(rawClientHello)
+	if spec == nil {
+		s, err := butls.UTLSIdToSpec(butls.HelloChrome_Auto)
+		if err != nil {
+			tcpConn.Close()
+			return nil, fmt.Errorf("utls spec: %w", err)
+		}
+		spec = &s
 	}
 	for _, ext := range spec.Extensions {
 		if alpn, ok := ext.(*butls.ALPNExtension); ok {
@@ -48,7 +59,7 @@ func chromeTLSDial(ctx context.Context, tcpConn net.Conn, host string, alpnProto
 		}
 	}
 	uconn := butls.UClient(tcpConn, &butls.Config{ServerName: host}, butls.HelloCustom, false, false, false)
-	if err := uconn.ApplyPreset(&spec); err != nil {
+	if err := uconn.ApplyPreset(spec); err != nil {
 		tcpConn.Close()
 		return nil, fmt.Errorf("utls apply preset: %w", err)
 	}
@@ -57,6 +68,21 @@ func chromeTLSDial(ctx context.Context, tcpConn net.Conn, host string, alpnProto
 		return nil, err
 	}
 	return uconn, nil
+}
+
+// specFromClientHello reconstructs a uTLS spec from a captured browser
+// ClientHello record, or returns nil if none/unparseable (caller falls back to
+// the bundled Chrome preset).
+func specFromClientHello(raw []byte) *butls.ClientHelloSpec {
+	if len(raw) == 0 {
+		return nil
+	}
+	fp := &butls.Fingerprinter{}
+	spec, err := fp.FingerprintClientHello(raw)
+	if err != nil || spec == nil {
+		return nil
+	}
+	return spec
 }
 
 // dualTransport tries h2 for HTTPS requests (full Chrome ALPN + h2 fingerprint)
@@ -309,7 +335,7 @@ func (p *Proxy) makeTransport() http.RoundTripper {
 	var rt http.RoundTripper
 
 	if u == nil {
-		rt = buildDirect(nil)
+		rt = buildDirect(nil, p.clientHelloFor)
 	} else {
 		switch u.Scheme {
 		case "http", "https":
@@ -338,16 +364,16 @@ func (p *Proxy) makeTransport() http.RoundTripper {
 			d, err := proxy.SOCKS5("tcp", u.Host, auth, proxy.Direct)
 			if err != nil {
 				slog.Warn("SOCKS5 dialer failed", "err", err)
-				rt = buildDirect(nil)
+				rt = buildDirect(nil, p.clientHelloFor)
 			} else {
 				dialFn := func(ctx context.Context, network, addr string) (net.Conn, error) {
 					return d.Dial(network, addr)
 				}
-				rt = buildDirect(dialFn)
+				rt = buildDirect(dialFn, p.clientHelloFor)
 			}
 		default:
 			slog.Warn("Unknown upstream proxy scheme", "scheme", u.Scheme)
-			rt = buildDirect(nil)
+			rt = buildDirect(nil, p.clientHelloFor)
 		}
 	}
 
@@ -358,11 +384,15 @@ func (p *Proxy) makeTransport() http.RoundTripper {
 
 // buildDirect constructs a dualTransport for direct or SOCKS5-routed
 // connections. dialFn is the TCP dialer; pass nil to use the default
-// net.Dialer.
-func buildDirect(dialFn func(ctx context.Context, network, addr string) (net.Conn, error)) *dualTransport {
+// net.Dialer. clientHelloFor returns the captured browser ClientHello for a
+// host (nil if none) so the upstream handshake mirrors the real browser.
+func buildDirect(dialFn func(ctx context.Context, network, addr string) (net.Conn, error), clientHelloFor func(host string) []byte) *dualTransport {
 	dialer := &net.Dialer{Timeout: 15 * time.Second, KeepAlive: 30 * time.Second}
 	if dialFn == nil {
 		dialFn = dialer.DialContext
+	}
+	if clientHelloFor == nil {
+		clientHelloFor = func(string) []byte { return nil }
 	}
 
 	// Chrome's full ALPN — required for JA4 fingerprint match.
@@ -401,7 +431,7 @@ func buildDirect(dialFn func(ctx context.Context, network, addr string) (net.Con
 			if err != nil {
 				return nil, err
 			}
-			conn, err := chromeTLSDial(context.Background(), tcpConn, host, fullALPN)
+			conn, err := chromeTLSDial(context.Background(), tcpConn, host, fullALPN, clientHelloFor(host))
 			if err != nil {
 				return nil, err
 			}
@@ -441,7 +471,7 @@ func buildDirect(dialFn func(ctx context.Context, network, addr string) (net.Con
 			if err != nil {
 				return nil, err
 			}
-			return chromeTLSDial(ctx, tcpConn, host, []string{"http/1.1"})
+			return chromeTLSDial(ctx, tcpConn, host, []string{"http/1.1"}, clientHelloFor(host))
 		},
 		DisableCompression:    true,
 		ForceAttemptHTTP2:     false,
@@ -500,7 +530,7 @@ func (p *Proxy) dialTCPWithALPN(host, hostname, scheme string, alpn []string) (n
 	}
 
 	if scheme == "https" {
-		return chromeTLSDial(context.Background(), conn, hostname, alpn)
+		return chromeTLSDial(context.Background(), conn, hostname, alpn, p.clientHelloFor(hostname))
 	}
 	return conn, nil
 }
