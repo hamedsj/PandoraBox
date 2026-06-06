@@ -5,6 +5,20 @@ All notable changes to PandoraBox will be documented in this file.
 The format is based on Keep a Changelog, and this project follows semantic
 versioning for public releases.
 
+## [1.1.0] - 2026-06-06
+
+### Added
+
+- Separate **App Font Size** and **Editor Font Size** controls in Settings → Typography. App size scales all UI text (sidebar, tables, panels); editor size scales Monaco request/response editors independently. Both settings are persisted.
+- App font size now takes effect immediately across the whole UI by setting the root element font size, making all Tailwind rem-based utilities scale correctly. Default app font size raised to 14 px.
+
+### Fixed
+
+- Sitemap tree is now collapsed by default on first load.
+- Raw response packet in Replay and History no longer duplicates the status code (`HTTP/2.0 200 200 OK` → `HTTP/2.0 200 OK`). Root cause: Go's `resp.Status` includes the code; backend now stores only the reason phrase via `http.StatusText`.
+
+---
+
 ## [1.0.0] - 2026-06-01
 
 First public release.
