@@ -163,8 +163,8 @@ export function countUniqueRoutes(requests: Request[]): number {
   return new Set(requests.map((request) => `${request.scheme}://${request.host}${request.path || '/'}`)).size
 }
 
-export function getDefaultExpanded(tree: SitemapBranchNode[]): string[] {
-  return tree.map((node) => node.id)
+export function getDefaultExpanded(_tree: SitemapBranchNode[]): string[] {
+  return []
 }
 
 export function collectRequestIdsUnder(nodes: SitemapNode[]): number[] {
