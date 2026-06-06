@@ -33,7 +33,10 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     root.style.setProperty('--accent', accentColorMap[accentColor])
     root.style.setProperty('--accent-foreground', colors.primaryForeground)
 
-    // Apply font settings
+    // Apply font settings.
+    // Setting font-size on the root element (html) scales all Tailwind rem-based
+    // utilities proportionally. --font-size-base is kept for legacy/non-Tailwind use.
+    root.style.fontSize = `${fontSize}px`
     root.style.setProperty('--font-mono', fontFamilyMap[fontFamily].stack)
     root.style.setProperty('--font-size-base', `${fontSize}px`)
 
