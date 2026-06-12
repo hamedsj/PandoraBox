@@ -15,6 +15,8 @@ interface WorkspaceStore {
   historyBottomSplit: number
   sitemapRightSplit: number
   sitemapBottomSplit: number
+  /** Request panel size (%) in the split message viewer. */
+  inspectorMessageSplit: number
   setInspectorPosition: (position: InspectorPosition) => void
   setInspectorTab: (tab: InspectorTab) => void
   setInspectorBodyMode: (mode: BodyViewMode) => void
@@ -22,6 +24,7 @@ interface WorkspaceStore {
   setHistoryBottomSplit: (value: number) => void
   setSitemapRightSplit: (value: number) => void
   setSitemapBottomSplit: (value: number) => void
+  setInspectorMessageSplit: (value: number) => void
 }
 
 export const useWorkspaceStore = create<WorkspaceStore>()(
@@ -34,6 +37,7 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
       historyBottomSplit: 58,
       sitemapRightSplit: 48,
       sitemapBottomSplit: 56,
+      inspectorMessageSplit: 50,
       setInspectorPosition: (inspectorPosition) => set({ inspectorPosition }),
       setInspectorTab: (inspectorTab) => set({ inspectorTab }),
       setInspectorBodyMode: (inspectorBodyMode) => set({ inspectorBodyMode }),
@@ -41,6 +45,7 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
       setHistoryBottomSplit: (historyBottomSplit) => set({ historyBottomSplit }),
       setSitemapRightSplit: (sitemapRightSplit) => set({ sitemapRightSplit }),
       setSitemapBottomSplit: (sitemapBottomSplit) => set({ sitemapBottomSplit }),
+      setInspectorMessageSplit: (inspectorMessageSplit) => set({ inspectorMessageSplit }),
     }),
     { name: 'pandora-workspace' }
   )

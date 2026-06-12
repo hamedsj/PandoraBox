@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useContextMenu } from '@/hooks/useContextMenu'
 import { useProxyStore } from '@/store/proxy'
@@ -23,8 +23,6 @@ import { parseRequestTags, REQUEST_TAG_HIGHLIGHTED } from '@/lib/requestTags'
 import { toast } from 'sonner'
 import { useIntruderStore } from '@/store/intruder'
 
-type Tab = 'request' | 'response'
-
 function buildExcludeRule(kind: 'entirely' | 'host' | 'path' | 'subpath', req: Request): ScopeRule {
   function escapeRegex(s: string) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') }
   switch (kind) {
@@ -39,12 +37,10 @@ export function RequestInspector({ edge = 'left' }: { edge?: 'left' | 'top' | 'n
   const { selectedRequestId, setSelectedRequestId } = useProxyStore()
   const inspectorPosition = useWorkspaceStore((state) => state.inspectorPosition)
   const setInspectorPosition = useWorkspaceStore((state) => state.setInspectorPosition)
-  // Persisted in the workspace store so they survive the inspector unmounting
-  // when you navigate to another view and back.
-  const activeTab = useWorkspaceStore((state) => state.inspectorTab)
-  const setActiveTab = useWorkspaceStore((state) => state.setInspectorTab)
   const bodyMode = useWorkspaceStore((state) => state.inspectorBodyMode)
   const setBodyMode = useWorkspaceStore((state) => state.setInspectorBodyMode)
+  const messageSplit = useWorkspaceStore((state) => state.inspectorMessageSplit)
+  const setMessageSplit = useWorkspaceStore((state) => state.setInspectorMessageSplit)
   const project = useProxyStore((s) => s.project)
   const setProject = useProxyStore((s) => s.setProject)
   const replayQueue = useReplayQueueStore((s) => s.replayQueue)
@@ -62,6 +58,8 @@ export function RequestInspector({ edge = 'left' }: { edge?: 'left' | 'top' | 'n
   const [findCaseSensitive, setFindCaseSensitive] = useState(false)
   const [findRegex, setFindRegex] = useState(false)
   const findInputRef = useRef<HTMLInputElement | null>(null)
+  const splitContainerRef = useRef<HTMLDivElement | null>(null)
+  const splitDragging = useRef(false)
 
   // Opens the find bar and focuses it. Bound to Ctrl/Cmd+F (see CodeViewer +
   // the container key handler) so it replaces Monaco's built-in find widget.
@@ -79,6 +77,25 @@ export function RequestInspector({ edge = 'left' }: { edge?: 'left' | 'top' | 'n
       openFind()
     }
   }
+
+  const onSplitMouseDown = useCallback(() => {
+    splitDragging.current = true
+    document.body.style.userSelect = 'none'
+    document.body.style.cursor = 'col-resize'
+  }, [])
+
+  const onSplitMouseMove = useCallback((event: ReactMouseEvent) => {
+    if (!splitDragging.current || !splitContainerRef.current) return
+    const rect = splitContainerRef.current.getBoundingClientRect()
+    const next = ((event.clientX - rect.left) / rect.width) * 100
+    setMessageSplit(Math.min(75, Math.max(25, next)))
+  }, [setMessageSplit])
+
+  const onSplitMouseUp = useCallback(() => {
+    splitDragging.current = false
+    document.body.style.userSelect = ''
+    document.body.style.cursor = ''
+  }, [])
 
   const navigate = useNavigate()
   const sendToConverter = useConverterStore((s) => s.sendToConverter)
@@ -103,9 +120,6 @@ export function RequestInspector({ edge = 'left' }: { edge?: 'left' | 'top' | 'n
       setSelectedText('')
       return
     }
-
-    // Active tab is intentionally NOT reset here, so a response-first workflow
-    // keeps the Response tab selected as you click through requests.
 
     let cancelled = false
     decodeBodyForDisplay(req.body, req.headers).then((body) => {
@@ -186,8 +200,8 @@ export function RequestInspector({ edge = 'left' }: { edge?: 'left' | 'top' | 'n
   const headers = tryParseHeaders(req.headers)
   const respHeaders = req.response ? tryParseHeaders(req.response.headers) : {}
 
-  // Find-in-message: searches headers + body of the active tab. When the find
-  // bar is empty it falls back to the active history search highlight.
+  // Find-in-message: searches headers + body in both panes. When the find bar
+  // is empty it falls back to the active history search highlight.
   const findSpec: HighlightSpec | null = findTerm
     ? { term: findTerm, caseInsensitive: !findCaseSensitive, useRegex: findRegex }
     : null
@@ -195,10 +209,12 @@ export function RequestInspector({ edge = 'left' }: { edge?: 'left' | 'top' | 'n
   const findMatchCount = (() => {
     const re = buildHighlightRegex(findSpec)
     if (!re) return 0
-    const parts: string[] =
-      activeTab === 'request'
-        ? [headersToText(headers), requestBody?.text ?? '']
-        : [headersToText(respHeaders), responseBody?.text ?? '']
+    const parts: string[] = [
+      headersToText(headers),
+      requestBody?.text ?? '',
+      headersToText(respHeaders),
+      responseBody?.text ?? '',
+    ]
     let count = 0
     for (const p of parts) {
       const m = p.match(re)
@@ -207,14 +223,10 @@ export function RequestInspector({ edge = 'left' }: { edge?: 'left' | 'top' | 'n
     return count
   })()
 
-  function copyMessage() {
-    const raw =
-      activeTab === 'response' && req!.response
-        ? buildRawResponse(req!.response, responseBody?.text ?? '')
-        : buildRawRequest(req!)
+  function copyRequest() {
     navigator.clipboard
-      .writeText(raw)
-      .then(() => toast.success(`Copied raw ${activeTab}`))
+      .writeText(buildRawRequest(req!))
+      .then(() => toast.success('Copied raw request'))
       .catch(() => toast.error('Copy failed'))
   }
 
@@ -254,8 +266,8 @@ export function RequestInspector({ edge = 'left' }: { edge?: 'left' | 'top' | 'n
           {inspectorPosition === 'right' ? <PanelBottomOpen size={14} /> : <PanelRightOpen size={14} />}
         </button>
         <button
-          onClick={copyMessage}
-          title={`Copy raw ${activeTab}`}
+          onClick={copyRequest}
+          title="Copy raw request"
           className="p-1 text-muted-foreground hover:text-foreground transition-colors"
         >
           <Copy size={14} />
@@ -266,27 +278,6 @@ export function RequestInspector({ edge = 'left' }: { edge?: 'left' | 'top' | 'n
         >
           <X size={14} />
         </button>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex border-b border-border">
-        {(['request', 'response'] as Tab[]).map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={cn(
-              'px-4 py-2 text-xs font-medium capitalize transition-colors',
-              activeTab === tab
-                ? 'text-primary border-b-2 border-primary'
-                : 'text-muted-foreground hover:text-foreground'
-            )}
-          >
-            {tab}
-            {tab === 'response' && req.response && (
-              <StatusBadge code={req.response.status_code} />
-            )}
-          </button>
-        ))}
       </div>
 
       {/* Find bar */}
@@ -335,10 +326,22 @@ export function RequestInspector({ edge = 'left' }: { edge?: 'left' | 'top' | 'n
         </div>
       )}
 
-      {/* Content */}
-      <div className="flex-1 overflow-auto p-3 space-y-3">
-        {activeTab === 'request' ? (
-          <>
+      {/* Split request / response panes */}
+      <div
+        ref={splitContainerRef}
+        className="flex min-h-0 flex-1 flex-row"
+        onMouseMove={onSplitMouseMove}
+        onMouseUp={onSplitMouseUp}
+        onMouseLeave={onSplitMouseUp}
+      >
+        <div
+          style={{ width: `${messageSplit}%` }}
+          className="flex min-h-0 min-w-0 flex-col"
+        >
+          <div className="flex shrink-0 items-center border-b border-border bg-muted/20 px-3 py-1.5">
+            <span className="text-xs font-medium text-primary">Request</span>
+          </div>
+          <div className="min-w-0 flex-1 space-y-3 overflow-auto p-3">
             <HeadersView headers={headers} highlight={effectiveHighlight} />
             {requestBody && (
               <BodyViewer
@@ -350,29 +353,52 @@ export function RequestInspector({ edge = 'left' }: { edge?: 'left' | 'top' | 'n
                 viewStateKey={`insp-req-${req.id}`}
               />
             )}
-          </>
-        ) : req.response ? (
-          <>
-            <div className="flex items-center gap-2 text-sm">
-              <StatusBadge code={req.response.status_code} />
-              <span className="text-muted-foreground font-mono text-xs">{req.response.status_text}</span>
-              <span className="ml-auto text-muted-foreground text-xs">{req.response.duration_ms}ms · {formatBytes(req.response.size_bytes)}</span>
-            </div>
-            <HeadersView headers={respHeaders} highlight={effectiveHighlight} />
-            {responseBody && (
-              <BodyViewer
-                body={responseBody}
-                highlight={effectiveHighlight}
-                onRequestFind={openFind}
-                mode={bodyMode}
-                onModeChange={setBodyMode}
-                viewStateKey={`insp-res-${req.id}`}
-              />
+          </div>
+        </div>
+
+        <div
+          className="w-1.5 shrink-0 cursor-col-resize bg-border transition-colors hover:bg-primary/60"
+          onMouseDown={onSplitMouseDown}
+        />
+
+        <div
+          style={{ width: `${100 - messageSplit}%` }}
+          className="flex min-h-0 min-w-0 flex-col"
+        >
+          <div className="flex shrink-0 items-center gap-2 border-b border-border bg-muted/20 px-3 py-1.5">
+            <span className="text-xs font-medium text-emerald-400">Response</span>
+            {req.response ? (
+              <>
+                <StatusBadge code={req.response.status_code} />
+                <span className="text-muted-foreground font-mono text-[11px]">{req.response.status_text}</span>
+                <span className="ml-auto text-muted-foreground text-[11px]">
+                  {req.response.duration_ms}ms · {formatBytes(req.response.size_bytes)}
+                </span>
+              </>
+            ) : (
+              <span className="text-muted-foreground text-[11px]">No response</span>
             )}
-          </>
-        ) : (
-          <div className="text-muted-foreground text-sm">No response</div>
-        )}
+          </div>
+          <div className="min-w-0 flex-1 space-y-3 overflow-auto p-3">
+            {req.response ? (
+              <>
+                <HeadersView headers={respHeaders} highlight={effectiveHighlight} />
+                {responseBody && (
+                  <BodyViewer
+                    body={responseBody}
+                    highlight={effectiveHighlight}
+                    onRequestFind={openFind}
+                    mode={bodyMode}
+                    onModeChange={setBodyMode}
+                    viewStateKey={`insp-res-${req.id}`}
+                  />
+                )}
+              </>
+            ) : (
+              <div className="text-muted-foreground text-sm">No response captured for this request.</div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Context menu */}
@@ -538,17 +564,5 @@ function buildRawRequest(req: Request): string {
   }
   raw += '\r\n'
   if (req.body) raw += decodeBodyBytes(req.body as RawBody)
-  return raw
-}
-
-function buildRawResponse(resp: NonNullable<Request['response']>, bodyText: string): string {
-  const headers = tryParseHeaders(resp.headers)
-  const statusText = resp.status_text?.trim() || ''
-  let raw = `HTTP/1.1 ${resp.status_code} ${statusText}`.trimEnd() + '\r\n'
-  for (const [k, vs] of Object.entries(headers)) {
-    for (const v of vs) raw += `${k}: ${v}\r\n`
-  }
-  raw += '\r\n'
-  raw += bodyText
   return raw
 }
