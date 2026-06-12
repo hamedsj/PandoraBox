@@ -50,21 +50,25 @@ export function HeadersView({ headers, highlight }: HeadersViewProps) {
   if (entries.length === 0) return null
 
   return (
-    <div className="space-y-0.5">
+    <div className="min-w-0 max-w-full space-y-0.5">
       {entries.map(([name, values]) => {
         const isCookie = name.toLowerCase() === 'cookie' || name.toLowerCase() === 'set-cookie'
         return (
-          <div key={name} className="font-mono text-xs leading-relaxed">
-            <span className="text-primary"><Highlight text={name} spec={highlight} /></span>
+          <div key={name} className="max-w-full font-mono text-xs leading-relaxed">
+            <span className="whitespace-nowrap text-primary"><Highlight text={name} spec={highlight} /></span>
             <span className="text-muted-foreground">: </span>
             {isCookie
               ? values.map((v, i) => (
-                  <span key={i}>
+                  <span key={i} className="break-all">
                     {i > 0 && <span className="text-muted-foreground">, </span>}
                     <CookieValue value={v} />
                   </span>
                 ))
-              : <span className="text-foreground"><Highlight text={values.join(', ')} spec={highlight} /></span>
+              : (
+                <span className="break-all text-foreground">
+                  <Highlight text={values.join(', ')} spec={highlight} />
+                </span>
+              )
             }
           </div>
         )

@@ -8,6 +8,7 @@ import { shortcutDefinitions, type ShortcutActionId } from '@/shortcuts/actions'
 import { eventToShortcut, formatShortcut } from '@/lib/shortcuts'
 import { Download, Sun, Moon, Palette, Type, Check, Shield, Server, Globe, LayoutDashboard, Keyboard, RotateCcw, Bot, Users } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { copyText } from '@/lib/clipboard'
 import { useState, useEffect } from 'react'
 
 const accentColors: { value: AccentColor; label: string }[] = [
@@ -728,7 +729,7 @@ export function SettingsPage() {
                     className="w-24 bg-background border border-border rounded-md px-3 py-1.5 text-sm font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                   />
                   <button
-                    onClick={() => navigator.clipboard.writeText(`127.0.0.1:${proxyPort}`)}
+                    onClick={() => copyText(`127.0.0.1:${proxyPort}`, 'Copied proxy address')}
                     className="text-xs text-muted-foreground hover:text-foreground"
                     title="Copy to clipboard"
                   >
@@ -913,7 +914,7 @@ export function SettingsPage() {
                     {mcpEndpoint}
                   </code>
                   <button
-                    onClick={() => navigator.clipboard.writeText(mcpEndpoint)}
+                    onClick={() => copyText(mcpEndpoint, 'Copied MCP endpoint')}
                     className="text-xs text-muted-foreground hover:text-foreground"
                     title="Copy to clipboard"
                   >
@@ -971,7 +972,7 @@ export function SettingsPage() {
 }`}
                 </pre>
                 <button
-                  onClick={() => navigator.clipboard.writeText(`{\n  "mcpServers": {\n    "pandorabox": {\n      "url": "${mcpEndpoint}"\n    }\n  }\n}`)}
+                  onClick={() => copyText(`{\n  "mcpServers": {\n    "pandorabox": {\n      "url": "${mcpEndpoint}"\n    }\n  }\n}`, 'Copied MCP config')}
                   className="absolute top-2 right-2 text-xs text-muted-foreground hover:text-foreground"
                   title="Copy to clipboard"
                 >
@@ -1002,7 +1003,7 @@ export function SettingsPage() {
                         <div className="flex items-center justify-between gap-3">
                           <div className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">CLI Command</div>
                           <button
-                            onClick={() => navigator.clipboard.writeText(tip.command!)}
+                            onClick={() => copyText(tip.command!, `Copied ${tip.name} command`)}
                             className="text-xs text-muted-foreground hover:text-foreground"
                             title="Copy to clipboard"
                           >
@@ -1023,7 +1024,7 @@ export function SettingsPage() {
                             {tip.configLabel ? ` · ${tip.configLabel}` : ''}
                           </div>
                           <button
-                            onClick={() => navigator.clipboard.writeText(tip.config!)}
+                            onClick={() => copyText(tip.config!, `Copied ${tip.name} config`)}
                             className="text-xs text-muted-foreground hover:text-foreground"
                             title="Copy to clipboard"
                           >

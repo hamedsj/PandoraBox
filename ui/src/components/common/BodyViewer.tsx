@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
-import { Check, Copy, WrapText } from 'lucide-react'
+import { Copy, WrapText } from 'lucide-react'
+import { copyText } from '@/lib/clipboard'
 import { CodeViewer } from '@/components/common/CodeViewer'
 import type { HighlightSpec } from '@/components/common/Highlight'
 import type { DecodedBody } from '@/lib/httpBodies'
@@ -74,7 +75,6 @@ export function BodyViewer({
 
   const [internalMode, setInternalMode] = useState<Mode>(modes[0])
   const [wrap, setWrap] = useState(true)
-  const [copied, setCopied] = useState(false)
 
   // Active mode is derived (no reset effect): prefer the controlled/persisted
   // mode, then internal state, falling back to the first available mode when
@@ -90,13 +90,7 @@ export function BodyViewer({
     mode === 'hex' ? 'plaintext' : mode === 'raw' ? 'plaintext' : presentation.language
 
   function handleCopy() {
-    navigator.clipboard
-      .writeText(mode === 'pretty' && graphQL ? graphQL.formattedQuery : displayedText)
-      .then(() => {
-        setCopied(true)
-        window.setTimeout(() => setCopied(false), 1500)
-      })
-      .catch(() => {})
+    copyText(mode === 'pretty' && graphQL ? graphQL.formattedQuery : displayedText, 'Copied body')
   }
 
   return (
@@ -146,7 +140,7 @@ export function BodyViewer({
             title="Copy"
             className="rounded-md border border-border p-1.5 text-muted-foreground transition-colors hover:text-foreground"
           >
-            {copied ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+            <Copy size={13} />
           </button>
         </div>
       </div>

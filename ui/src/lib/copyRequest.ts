@@ -1,4 +1,5 @@
 import type { Request } from '@/api/client'
+import { copyText } from '@/lib/clipboard'
 import { decodeBodyBytes, type RawBody } from '@/lib/httpBodies'
 import { displayHost } from '@/lib/utils'
 
@@ -12,7 +13,7 @@ function parseHeaders(raw: string): Record<string, string[]> {
   try { return JSON.parse(raw) as Record<string, string[]> } catch { return {} }
 }
 
-function buildURL(req: Request): string {
+export function buildURL(req: Request): string {
   return `${req.scheme}://${displayHost(req.host, req.scheme)}${req.path}${req.query ? '?' + req.query : ''}`
 }
 
@@ -21,8 +22,8 @@ function getBody(req: Request): string {
   return decodeBodyBytes(req.body as RawBody)
 }
 
-export function copyURL(req: Request): void {
-  navigator.clipboard.writeText(buildURL(req)).catch(console.error)
+export function copyURL(req: Request): Promise<void> {
+  return copyText(buildURL(req), 'Copied URL')
 }
 
 export function buildRawHTTP(req: Request): string {
@@ -38,11 +39,11 @@ export function buildRawHTTP(req: Request): string {
   return raw
 }
 
-export function copyRawRequest(req: Request): void {
-  navigator.clipboard.writeText(buildRawHTTP(req)).catch(console.error)
+export function copyRawRequest(req: Request): Promise<void> {
+  return copyText(buildRawHTTP(req), 'Copied raw request')
 }
 
-export function copyAsCurl(req: Request): void {
+export function copyAsCurl(req: Request): Promise<void> {
   const headers = parseHeaders(req.headers)
   const url = buildURL(req)
   const body = getBody(req)
@@ -67,10 +68,10 @@ export function copyAsCurl(req: Request): void {
     parts.push(`--data-binary $'${escaped}'`)
   }
 
-  navigator.clipboard.writeText(parts.join(' \\\n  ')).catch(console.error)
+  return copyText(parts.join(' \\\n  '), 'Copied cURL command')
 }
 
-export function copyAsFetch(req: Request): void {
+export function copyAsFetch(req: Request): Promise<void> {
   const headers = parseHeaders(req.headers)
   const url = buildURL(req)
   const body = getBody(req)
@@ -99,5 +100,5 @@ export function copyAsFetch(req: Request): void {
 
   lines.push('})')
 
-  navigator.clipboard.writeText(lines.join('\n')).catch(console.error)
+  return copyText(lines.join('\n'), 'Copied fetch() snippet')
 }

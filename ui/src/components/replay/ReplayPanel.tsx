@@ -18,6 +18,7 @@ import { cn, displayHost } from '@/lib/utils'
 import { useContextMenu } from '@/hooks/useContextMenu'
 import { useConverterStore } from '@/store/converter'
 import { useNavigate } from 'react-router-dom'
+import { copyText } from '@/lib/clipboard'
 
 export function ReplayPanel() {
   const navigate = useNavigate()
@@ -485,7 +486,7 @@ export function ReplayPanel() {
           <button
             className="w-full text-left px-3 py-2 text-xs hover:bg-accent hover:text-accent-foreground"
             onClick={() => {
-              navigator.clipboard.writeText(menuSelection).catch(() => {})
+              copyText(menuSelection, 'Copied selection')
               closeContextMenu()
             }}
           >

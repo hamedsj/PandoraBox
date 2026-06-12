@@ -11,8 +11,14 @@ import { StatusBadge } from '@/components/common/StatusBadge'
 import { BodyViewer } from '@/components/common/BodyViewer'
 import { AddToFlowModal } from '@/components/flows/AddToFlowModal'
 import { AddToOrganizerModal } from '@/components/organizer/AddToOrganizerModal'
-import { X, Copy, PanelBottomOpen, PanelRightOpen, Highlighter, RotateCcw, Trash2, GitBranch, FolderPlus, Target, Link, Terminal, Code2, Crosshair, Search, Regex, CaseSensitive } from 'lucide-react'
-import { copyURL, copyRawRequest, copyAsCurl, copyAsFetch } from '@/lib/copyRequest'
+import {
+  X, Copy, PanelBottomOpen, PanelRightOpen, Highlighter, RotateCcw, Trash2,
+  GitBranch, FolderPlus, Target, Link, Terminal, Code2, Crosshair, Search,
+  Regex, CaseSensitive, Bot, ChevronUp, ChevronDown,
+} from 'lucide-react'
+import { copyText } from '@/lib/clipboard'
+import { copyURL, copyRawRequest, copyAsCurl, copyAsFetch, buildURL, buildRawHTTP } from '@/lib/copyRequest'
+import { copyMcpPrompt } from '@/lib/mcpPrompt'
 import { displayHost } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import { decodeBodyBytes, decodeBodyForDisplay, type DecodedBody, type RawBody } from '@/lib/httpBodies'
@@ -22,8 +28,6 @@ import { useWorkspaceStore } from '@/store/workspace'
 import { parseRequestTags, REQUEST_TAG_HIGHLIGHTED } from '@/lib/requestTags'
 import { toast } from 'sonner'
 import { useIntruderStore } from '@/store/intruder'
-
-type Tab = 'request' | 'response'
 
 function buildExcludeRule(kind: 'entirely' | 'host' | 'path' | 'subpath', req: Request): ScopeRule {
   function escapeRegex(s: string) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') }
@@ -39,12 +43,10 @@ export function RequestInspector({ edge = 'left' }: { edge?: 'left' | 'top' | 'n
   const { selectedRequestId, setSelectedRequestId } = useProxyStore()
   const inspectorPosition = useWorkspaceStore((state) => state.inspectorPosition)
   const setInspectorPosition = useWorkspaceStore((state) => state.setInspectorPosition)
-  // Persisted in the workspace store so they survive the inspector unmounting
-  // when you navigate to another view and back.
-  const activeTab = useWorkspaceStore((state) => state.inspectorTab)
-  const setActiveTab = useWorkspaceStore((state) => state.setInspectorTab)
   const bodyMode = useWorkspaceStore((state) => state.inspectorBodyMode)
   const setBodyMode = useWorkspaceStore((state) => state.setInspectorBodyMode)
+  const messageSplit = useWorkspaceStore((state) => state.inspectorMessageSplit)
+  const setMessageSplit = useWorkspaceStore((state) => state.setInspectorMessageSplit)
   const project = useProxyStore((s) => s.project)
   const setProject = useProxyStore((s) => s.setProject)
   const replayQueue = useReplayQueueStore((s) => s.replayQueue)
@@ -63,8 +65,14 @@ export function RequestInspector({ edge = 'left' }: { edge?: 'left' | 'top' | 'n
   const [findRegex, setFindRegex] = useState(false)
   const findInputRef = useRef<HTMLInputElement | null>(null)
 
-  // Opens the find bar and focuses it. Bound to Ctrl/Cmd+F (see CodeViewer +
-  // the container key handler) so it replaces Monaco's built-in find widget.
+  // Collapsed pane state — only applies to vertical layout (left/none edge)
+  const [collapsedPane, setCollapsedPane] = useState<'request' | 'response' | null>(null)
+
+  // horizontal = inspector docked at the bottom; vertical = docked to the side
+  const isHorizontal = edge === 'top'
+
+  const splitContainerRef = useRef<HTMLDivElement | null>(null)
+
   const openFind = useCallback(() => {
     setFindOpen(true)
     requestAnimationFrame(() => {
@@ -78,6 +86,36 @@ export function RequestInspector({ edge = 'left' }: { edge?: 'left' | 'top' | 'n
       e.preventDefault()
       openFind()
     }
+  }
+
+  // Document-level drag for the split divider — avoids the "mouse leaves
+  // container and drag freezes" bug that comes from container-level events.
+  const startDrag = useCallback(() => {
+    document.body.style.userSelect = 'none'
+    document.body.style.cursor = isHorizontal ? 'col-resize' : 'row-resize'
+
+    const onMove = (e: MouseEvent) => {
+      if (!splitContainerRef.current) return
+      const rect = splitContainerRef.current.getBoundingClientRect()
+      const pct = isHorizontal
+        ? ((e.clientX - rect.left) / rect.width) * 100
+        : ((e.clientY - rect.top) / rect.height) * 100
+      setMessageSplit(Math.min(80, Math.max(20, pct)))
+    }
+
+    const onUp = () => {
+      document.body.style.userSelect = ''
+      document.body.style.cursor = ''
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }, [isHorizontal, setMessageSplit])
+
+  function toggleCollapse(pane: 'request' | 'response') {
+    setCollapsedPane((prev) => (prev === pane ? null : pane))
   }
 
   const navigate = useNavigate()
@@ -104,9 +142,6 @@ export function RequestInspector({ edge = 'left' }: { edge?: 'left' | 'top' | 'n
       return
     }
 
-    // Active tab is intentionally NOT reset here, so a response-first workflow
-    // keeps the Response tab selected as you click through requests.
-
     let cancelled = false
     decodeBodyForDisplay(req.body, req.headers).then((body) => {
       if (!cancelled) setRequestBody(body)
@@ -115,16 +150,12 @@ export function RequestInspector({ edge = 'left' }: { edge?: 'left' | 'top' | 'n
       if (!cancelled) setResponseBody(body)
     })
 
-    return () => {
-      cancelled = true
-    }
+    return () => { cancelled = true }
   }, [req])
 
   const highlighted = req ? parseRequestTags(req).includes(REQUEST_TAG_HIGHLIGHTED) : false
   const inReplay = req ? replayQueue.some((e) => e.request.id === req.id) : false
 
-  // Reflect the active history search so the matched term is highlighted and
-  // revealed in the opened request/response.
   const highlightSpec = useMemo<HighlightSpec | null>(() => {
     if (!filters.search || filters.negativeSearch) return null
     return { term: filters.search, caseInsensitive: filters.caseInsensitive, useRegex: filters.useRegex }
@@ -186,19 +217,19 @@ export function RequestInspector({ edge = 'left' }: { edge?: 'left' | 'top' | 'n
   const headers = tryParseHeaders(req.headers)
   const respHeaders = req.response ? tryParseHeaders(req.response.headers) : {}
 
-  // Find-in-message: searches headers + body of the active tab. When the find
-  // bar is empty it falls back to the active history search highlight.
   const findSpec: HighlightSpec | null = findTerm
     ? { term: findTerm, caseInsensitive: !findCaseSensitive, useRegex: findRegex }
     : null
   const effectiveHighlight = findSpec ?? highlightSpec
+
+  // Find counts across both panes simultaneously
   const findMatchCount = (() => {
     const re = buildHighlightRegex(findSpec)
     if (!re) return 0
-    const parts: string[] =
-      activeTab === 'request'
-        ? [headersToText(headers), requestBody?.text ?? '']
-        : [headersToText(respHeaders), responseBody?.text ?? '']
+    const parts = [
+      headersToText(headers), requestBody?.text ?? '',
+      headersToText(respHeaders), responseBody?.text ?? '',
+    ]
     let count = 0
     for (const p of parts) {
       const m = p.match(re)
@@ -207,89 +238,82 @@ export function RequestInspector({ edge = 'left' }: { edge?: 'left' | 'top' | 'n
     return count
   })()
 
-  function copyMessage() {
-    const raw =
-      activeTab === 'response' && req!.response
-        ? buildRawResponse(req!.response, responseBody?.text ?? '')
-        : buildRawRequest(req!)
-    navigator.clipboard
-      .writeText(raw)
-      .then(() => toast.success(`Copied raw ${activeTab}`))
-      .catch(() => toast.error('Copy failed'))
-  }
+  // Pane size styles
+  const reqPaneStyle = collapsedPane === 'request'
+    ? undefined
+    : collapsedPane === 'response'
+      ? { flex: 1 }
+      : isHorizontal
+        ? { width: `${messageSplit}%` }
+        : { height: `${messageSplit}%` }
+
+  const resPaneStyle = collapsedPane === 'response'
+    ? undefined
+    : collapsedPane === 'request'
+      ? { flex: 1 }
+      : isHorizontal
+        ? { width: `${100 - messageSplit}%` }
+        : { height: `${100 - messageSplit}%` }
+
+  const btnClass = 'p-1 text-muted-foreground hover:text-foreground transition-colors rounded'
 
   return (
     <div
       className={cn(
         'flex h-full flex-col bg-card',
         edge === 'left' && 'border-l border-border',
-        edge === 'top' && 'border-t border-border'
+        edge === 'top' && 'border-t border-border',
       )}
       onContextMenu={handleContextMenu}
       onKeyDown={handleInspectorKeyDown}
     >
-      {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-border">
+      {/* ── Header ── */}
+      <div className="flex items-center gap-2 border-b border-border px-3 py-2">
         <MethodBadge method={req.method} />
-        {highlighted && <span className="h-2 w-2 rounded-full bg-amber-300 shadow-[0_0_10px_rgba(252,211,77,0.6)] flex-shrink-0" />}
-        <span className="font-mono text-xs text-muted-foreground flex-1 truncate">
+        {highlighted && (
+          <span className="h-2 w-2 flex-shrink-0 rounded-full bg-amber-300 shadow-[0_0_10px_rgba(252,211,77,0.6)]" />
+        )}
+        <span className="flex-1 truncate font-mono text-xs text-muted-foreground">
           {req.scheme}://{displayHost(req.host, req.scheme)}{req.path}
           {req.query ? <span className="text-muted-foreground/60">?{req.query}</span> : null}
         </span>
         <button
           onClick={() => (findOpen ? setFindOpen(false) : openFind())}
           title="Find in request/response (⌘F)"
-          className={cn(
-            'p-1 transition-colors',
-            findOpen ? 'text-primary' : 'text-muted-foreground hover:text-foreground',
-          )}
+          className={cn(btnClass, findOpen && 'text-primary')}
         >
           <Search size={14} />
         </button>
         <button
           onClick={() => setInspectorPosition(inspectorPosition === 'right' ? 'bottom' : 'right')}
           title={inspectorPosition === 'right' ? 'Move viewer to bottom' : 'Move viewer to side'}
-          className="p-1 text-muted-foreground hover:text-foreground transition-colors"
+          className={btnClass}
         >
           {inspectorPosition === 'right' ? <PanelBottomOpen size={14} /> : <PanelRightOpen size={14} />}
         </button>
         <button
-          onClick={copyMessage}
-          title={`Copy raw ${activeTab}`}
-          className="p-1 text-muted-foreground hover:text-foreground transition-colors"
+          onClick={() => copyText(buildRawHTTP(req), 'Copied raw request')}
+          title="Copy raw request"
+          className={btnClass}
         >
           <Copy size={14} />
         </button>
         <button
+          onClick={() => copyMcpPrompt(req)}
+          title="Copy MCP prompt"
+          className={btnClass}
+        >
+          <Bot size={14} />
+        </button>
+        <button
           onClick={() => setSelectedRequestId(null)}
-          className="p-1 text-muted-foreground hover:text-foreground transition-colors"
+          className={btnClass}
         >
           <X size={14} />
         </button>
       </div>
 
-      {/* Tabs */}
-      <div className="flex border-b border-border">
-        {(['request', 'response'] as Tab[]).map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={cn(
-              'px-4 py-2 text-xs font-medium capitalize transition-colors',
-              activeTab === tab
-                ? 'text-primary border-b-2 border-primary'
-                : 'text-muted-foreground hover:text-foreground'
-            )}
-          >
-            {tab}
-            {tab === 'response' && req.response && (
-              <StatusBadge code={req.response.status_code} />
-            )}
-          </button>
-        ))}
-      </div>
-
-      {/* Find bar */}
+      {/* ── Find bar ── */}
       {findOpen && (
         <div className="flex items-center gap-1.5 border-b border-border bg-card px-3 py-1.5">
           <Search size={13} className="shrink-0 text-muted-foreground" />
@@ -335,47 +359,129 @@ export function RequestInspector({ edge = 'left' }: { edge?: 'left' | 'top' | 'n
         </div>
       )}
 
-      {/* Content */}
-      <div className="flex-1 overflow-auto p-3 space-y-3">
-        {activeTab === 'request' ? (
-          <>
-            <HeadersView headers={headers} highlight={effectiveHighlight} />
-            {requestBody && (
-              <BodyViewer
-                body={requestBody}
-                highlight={effectiveHighlight}
-                onRequestFind={openFind}
-                mode={bodyMode}
-                onModeChange={setBodyMode}
-                viewStateKey={`insp-req-${req.id}`}
-              />
-            )}
-          </>
-        ) : req.response ? (
-          <>
-            <div className="flex items-center gap-2 text-sm">
-              <StatusBadge code={req.response.status_code} />
-              <span className="text-muted-foreground font-mono text-xs">{req.response.status_text}</span>
-              <span className="ml-auto text-muted-foreground text-xs">{req.response.duration_ms}ms · {formatBytes(req.response.size_bytes)}</span>
+      {/* ── Split panes ── */}
+      <div
+        ref={splitContainerRef}
+        className={cn('flex min-h-0 flex-1', isHorizontal ? 'flex-row' : 'flex-col')}
+      >
+        {/* Request pane */}
+        <div
+          className="flex min-h-0 min-w-0 flex-col overflow-hidden"
+          style={reqPaneStyle}
+        >
+          <div className="flex shrink-0 items-center border-b border-border bg-muted/20 px-3 py-1.5">
+            <span className="text-xs font-medium text-primary">Request</span>
+            <div className="ml-auto flex items-center gap-0.5">
+              <button
+                onClick={() => copyText(buildRawHTTP(req), 'Copied raw request')}
+                title="Copy raw request"
+                className={btnClass}
+              >
+                <Copy size={12} />
+              </button>
+              {!isHorizontal && (
+                <button
+                  onClick={() => toggleCollapse('request')}
+                  title={collapsedPane === 'request' ? 'Expand request' : 'Collapse request'}
+                  className={btnClass}
+                >
+                  {collapsedPane === 'request' ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
+                </button>
+              )}
             </div>
-            <HeadersView headers={respHeaders} highlight={effectiveHighlight} />
-            {responseBody && (
-              <BodyViewer
-                body={responseBody}
-                highlight={effectiveHighlight}
-                onRequestFind={openFind}
-                mode={bodyMode}
-                onModeChange={setBodyMode}
-                viewStateKey={`insp-res-${req.id}`}
-              />
+          </div>
+          {collapsedPane !== 'request' && (
+            <div className="min-h-0 flex-1 space-y-3 overflow-auto p-3">
+              <HeadersView headers={headers} highlight={effectiveHighlight} />
+              {requestBody && (
+                <BodyViewer
+                  body={requestBody}
+                  highlight={effectiveHighlight}
+                  onRequestFind={openFind}
+                  mode={bodyMode}
+                  onModeChange={setBodyMode}
+                  viewStateKey={`insp-req-${req.id}`}
+                />
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Divider — hidden when a pane is collapsed in vertical layout */}
+        {(isHorizontal || collapsedPane === null) && (
+          <div
+            className={cn(
+              'shrink-0 bg-border transition-colors hover:bg-primary/50',
+              isHorizontal ? 'w-1.5 cursor-col-resize' : 'h-1.5 cursor-row-resize',
             )}
-          </>
-        ) : (
-          <div className="text-muted-foreground text-sm">No response</div>
+            onMouseDown={startDrag}
+          />
         )}
+
+        {/* Response pane */}
+        <div
+          className="flex min-h-0 min-w-0 flex-col overflow-hidden"
+          style={resPaneStyle}
+        >
+          <div className="flex shrink-0 items-center gap-2 border-b border-border bg-muted/20 px-3 py-1.5">
+            <span className="text-xs font-medium text-primary">Response</span>
+            {req.response ? (
+              <>
+                <StatusBadge code={req.response.status_code} />
+                <span className="font-mono text-[11px] text-muted-foreground">{req.response.status_text}</span>
+                <span className="ml-auto text-[11px] text-muted-foreground">
+                  {req.response.duration_ms}ms · {formatBytes(req.response.size_bytes)}
+                </span>
+              </>
+            ) : (
+              <span className="ml-auto text-[11px] text-muted-foreground">No response</span>
+            )}
+            <div className="flex items-center gap-0.5">
+              {req.response && (
+                <button
+                  onClick={() => copyText(buildRawResponse(req.response!, responseBody?.text ?? ''), 'Copied raw response')}
+                  title="Copy raw response"
+                  className={btnClass}
+                >
+                  <Copy size={12} />
+                </button>
+              )}
+              {!isHorizontal && (
+                <button
+                  onClick={() => toggleCollapse('response')}
+                  title={collapsedPane === 'response' ? 'Expand response' : 'Collapse response'}
+                  className={btnClass}
+                >
+                  {collapsedPane === 'response' ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                </button>
+              )}
+            </div>
+          </div>
+          {collapsedPane !== 'response' && (
+            <div className="min-h-0 flex-1 space-y-3 overflow-auto p-3">
+              {req.response ? (
+                <>
+                  <HeadersView headers={respHeaders} highlight={effectiveHighlight} />
+                  {responseBody && (
+                    <BodyViewer
+                      body={responseBody}
+                      highlight={effectiveHighlight}
+                      onRequestFind={openFind}
+                      mode={bodyMode}
+                      onModeChange={setBodyMode}
+                      viewStateKey={`insp-res-${req.id}`}
+                    />
+                  )}
+                </>
+              ) : (
+                <div className="text-sm text-muted-foreground">No response captured for this request.</div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Context menu */}
+      {/* ── Context menu ── */}
       {contextMenuOpen && (
         <div
           ref={menuRef}
@@ -436,11 +542,7 @@ export function RequestInspector({ edge = 'left' }: { edge?: 'left' | 'top' | 'n
 
           {selectedText && (
             <button
-              onClick={() => {
-                sendToConverter(selectedText)
-                navigate('/converter')
-                closeContextMenu()
-              }}
+              onClick={() => { sendToConverter(selectedText); navigate('/converter'); closeContextMenu() }}
               className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-muted"
             >
               <RotateCcw size={14} />
@@ -451,9 +553,7 @@ export function RequestInspector({ edge = 'left' }: { edge?: 'left' | 'top' | 'n
           <div className="my-1 border-t border-border" />
 
           <div className="px-3 py-1">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Copy
-            </span>
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Copy</span>
           </div>
 
           <button onClick={() => { copyURL(req); closeContextMenu() }} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-muted">
@@ -467,6 +567,9 @@ export function RequestInspector({ edge = 'left' }: { edge?: 'left' | 'top' | 'n
           </button>
           <button onClick={() => { copyAsFetch(req); closeContextMenu() }} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-muted">
             <Code2 size={14} />Copy as fetch()
+          </button>
+          <button onClick={() => { copyMcpPrompt(req); closeContextMenu() }} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-muted">
+            <Bot size={14} />Copy MCP Prompt
           </button>
 
           <div className="my-1 border-t border-border" />
@@ -498,17 +601,9 @@ export function RequestInspector({ edge = 'left' }: { edge?: 'left' | 'top' | 'n
         </div>
       )}
 
-      {/* Sub-modals */}
-      <AddToFlowModal
-        open={addToFlowOpen}
-        request={req}
-        onClose={() => setAddToFlowOpen(false)}
-      />
-      <AddToOrganizerModal
-        open={addToOrganizerOpen}
-        requestId={req.id}
-        onClose={() => setAddToOrganizerOpen(false)}
-      />
+      {/* ── Sub-modals ── */}
+      <AddToFlowModal open={addToFlowOpen} request={req} onClose={() => setAddToFlowOpen(false)} />
+      <AddToOrganizerModal open={addToOrganizerOpen} requestId={req.id} onClose={() => setAddToOrganizerOpen(false)} />
     </div>
   )
 }
@@ -526,19 +621,6 @@ function formatBytes(n: number): string {
   if (n < 1024) return `${n}B`
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)}KB`
   return `${(n / 1024 / 1024).toFixed(1)}MB`
-}
-
-function buildRawRequest(req: Request): string {
-  const headers = tryParseHeaders(req.headers)
-  let raw = `${req.method} ${req.path}${req.query ? '?' + req.query : ''} HTTP/1.1\r\n`
-  raw += `Host: ${displayHost(req.host, req.scheme)}\r\n`
-  for (const [k, vs] of Object.entries(headers)) {
-    if (k.toLowerCase() === 'host') continue
-    for (const v of vs) raw += `${k}: ${v}\r\n`
-  }
-  raw += '\r\n'
-  if (req.body) raw += decodeBodyBytes(req.body as RawBody)
-  return raw
 }
 
 function buildRawResponse(resp: NonNullable<Request['response']>, bodyText: string): string {

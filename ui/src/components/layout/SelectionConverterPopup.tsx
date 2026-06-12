@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowRight, Check, Copy, Replace, X } from 'lucide-react'
+import { ArrowRight, Copy, Replace, X } from 'lucide-react'
+import { copyText } from '@/lib/clipboard'
 import { api } from '@/api/client'
 import type { ConverterAlgorithm } from '@/api/client'
 import { useProxyStore } from '@/store/proxy'
@@ -45,7 +46,7 @@ export function SelectionConverterPopup() {
   const [preview, setPreview] = useState('')
   const [previewError, setPreviewError] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [copied, setCopied] = useState(false)
+
 
   const popupRef = useRef<HTMLDivElement | null>(null)
   const popupOpenRef = useRef(false)
@@ -204,10 +205,7 @@ export function SelectionConverterPopup() {
   if (!popup) return null
 
   const copyResult = () => {
-    navigator.clipboard.writeText(preview).then(() => {
-      setCopied(true)
-      window.setTimeout(() => setCopied(false), 1200)
-    }).catch(() => {})
+    copyText(preview, 'Copied result')
   }
   const doReplace = () => {
     const replacer = replaceSelectionRef.current
@@ -298,8 +296,8 @@ export function SelectionConverterPopup() {
                 onClick={copyResult}
                 className="flex items-center gap-1 text-[10px] text-muted-foreground transition-colors hover:text-foreground"
               >
-                {copied ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
-                {copied ? 'Copied' : 'Copy'}
+                <Copy size={11} />
+                Copy
               </button>
             )}
           </div>

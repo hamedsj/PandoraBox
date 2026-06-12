@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
-import { Check, ChevronDown, Copy, CaseSensitive, Regex } from 'lucide-react'
+import { ChevronDown, Copy, CaseSensitive, Regex } from 'lucide-react'
+import { copyText } from '@/lib/clipboard'
 import { useProxyStore } from '@/store/proxy'
 import type { WebSocketFrame, WebSocketSession } from '@/api/client'
 import { cn } from '@/lib/utils'
@@ -419,7 +420,6 @@ function FrameRow({
   onToggle: () => void
 }) {
   const [activeTab, setActiveTab] = useState<PayloadTab>('hex')
-  const [copied, setCopied] = useState(false)
   const [wrap, setWrap] = useState(true)
 
   const isSent = frame.direction === 'c2s'
@@ -451,10 +451,7 @@ function FrameRow({
   const activeLanguage = getPayloadLanguage(activeTab)
 
   const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(activePayload).then(() => {
-      setCopied(true)
-      window.setTimeout(() => setCopied(false), 1500)
-    }).catch(console.error)
+    copyText(activePayload, 'Copied frame payload')
   }, [activePayload])
 
   return (
@@ -530,8 +527,8 @@ function FrameRow({
                 onClick={handleCopy}
                 className="flex items-center gap-1 rounded-full border border-border bg-background px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground transition-colors hover:text-foreground"
               >
-                {copied ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
-                {copied ? 'Copied' : 'Copy'}
+                <Copy size={11} />
+                Copy
               </button>
             </div>
           </div>

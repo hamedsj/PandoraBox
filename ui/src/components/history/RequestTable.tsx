@@ -10,8 +10,9 @@ import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { Checkbox } from '@/components/ui/Checkbox'
 import { cn } from '@/lib/utils'
 import { api, type Request, type ScopeRule } from '@/api/client'
-import { Globe, Filter, RotateCcw, Trash2, ChevronUp, ChevronDown, Target, GitBranch, Highlighter, Sparkles, FolderPlus, Copy, Link, Terminal, Code2, Crosshair, Search, X, Regex, CaseSensitive } from 'lucide-react'
+import { Globe, Filter, RotateCcw, Trash2, ChevronUp, ChevronDown, Target, GitBranch, Highlighter, Sparkles, FolderPlus, Copy, Link, Terminal, Code2, Crosshair, Search, X, Regex, CaseSensitive, Bot } from 'lucide-react'
 import { copyURL, copyRawRequest, copyAsCurl, copyAsFetch } from '@/lib/copyRequest'
+import { copyMcpPrompt } from '@/lib/mcpPrompt'
 import { displayHost } from '@/lib/utils'
 import { UserDot } from '@/components/team/UserDot'
 import { useTeamStore } from '@/store/team'
@@ -872,6 +873,14 @@ function RequestRow({
           >
             <Code2 size={14} />
             Copy as fetch()
+          </button>
+
+          <button
+            onClick={(e) => { e.stopPropagation(); copyMcpPrompt(req); closeContextMenu() }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-muted"
+          >
+            <Bot size={14} />
+            Copy MCP Prompt
           </button>
 
           <div className="my-1 border-t border-border" />

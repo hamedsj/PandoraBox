@@ -6,6 +6,7 @@ import { useConverterStore } from '@/store/converter'
 import { cn } from '@/lib/utils'
 import { Select } from '@/components/ui/Select'
 import { Copy, Play, Plus, Trash2, ArrowUp, ArrowDown, RefreshCcw } from 'lucide-react'
+import { copyText } from '@/lib/clipboard'
 
 type ConverterTab = 'quick' | 'stack'
 
@@ -129,7 +130,7 @@ export function ConverterPanel() {
         ))}
         <div className="ml-auto flex gap-2">
           <button
-            onClick={() => navigator.clipboard.writeText(output).catch(() => {})}
+            onClick={() => copyText(output, 'Copied output')}
             className="px-2.5 py-1.5 text-xs rounded-md border border-border text-muted-foreground hover:text-foreground flex items-center gap-1.5"
           >
             <Copy size={12} /> Copy Output
