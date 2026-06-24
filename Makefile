@@ -56,7 +56,10 @@ _ui-build:
 electron-mac: go-build-mac
 	cd ui && npx electron-builder --mac
 
-electron-mac-arm64: go-build-mac-arm64
+# package.json's mac target builds both arm64 and x64 dmg/zip regardless of
+# the --arm64 flag below, so both Go binaries must be fresh — depend on
+# go-build-mac (not go-build-mac-arm64) or the x64 artifacts ship a stale binary.
+electron-mac-arm64: go-build-mac
 	cd ui && npx electron-builder --mac --arm64
 
 electron-win: go-build-win
