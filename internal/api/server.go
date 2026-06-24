@@ -10,8 +10,10 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/hamedsj5/pandorabox/internal/ca"
+	"github.com/hamedsj5/pandorabox/internal/collaborator"
 	"github.com/hamedsj5/pandorabox/internal/config"
 	"github.com/hamedsj5/pandorabox/internal/events"
+	"github.com/hamedsj5/pandorabox/internal/intruder"
 	mcpsrv "github.com/hamedsj5/pandorabox/internal/mcp"
 	"github.com/hamedsj5/pandorabox/internal/project"
 	"github.com/hamedsj5/pandorabox/internal/proxy"
@@ -28,10 +30,6 @@ type MCPServerFacade interface {
 	Status() mcpsrv.Status
 	CallTool(context.Context, string, map[string]interface{}) (map[string]interface{}, error)
 	ListTools(context.Context) (map[string]interface{}, error)
-	// Collaborator surface — exposed so the REST API + UI can see sessions that
-	// were started by an MCP agent.
-	ListCollaboratorSessions() []mcpsrv.CollaboratorSessionInfo
-	GetCollaboratorSessionInteractions(sessionID string) ([]any, bool)
 }
 
 type Server struct {
@@ -47,6 +45,9 @@ type Server struct {
 	uiFS      fs.FS
 	mcpServer MCPServerFacade
 
+	intruderMgr     *intruder.Manager
+	collaboratorMgr *collaborator.Manager
+
 	projectMu sync.RWMutex
 	project   *project.Manager
 	appCfg    *project.AppConfig
@@ -61,18 +62,21 @@ type Server struct {
 func NewServer(cfg *config.Config, db *storage.DB, bus *events.Bus, p *proxy.Proxy, intercept *proxy.InterceptQueue, authority *ca.CA) *Server {
 	p.SetMiddlewareBus(bus)
 	return &Server{
-		cfg:       cfg,
-		db:        db,
-		bus:       bus,
-		proxy:     p,
-		intercept: intercept,
-		ca:        authority,
-		hub:       NewHub(bus),
+		cfg:             cfg,
+		db:              db,
+		bus:             bus,
+		proxy:           p,
+		intercept:       intercept,
+		ca:              authority,
+		hub:             NewHub(bus),
+		intruderMgr:     intruder.NewManager(p, bus),
+		collaboratorMgr: collaborator.NewManager(bus),
 	}
 }
 
 func (s *Server) SetContext(ctx context.Context) {
 	s.ctx = ctx
+	s.collaboratorMgr.SetContext(ctx)
 }
 
 func (s *Server) SetProject(mgr *project.Manager, appCfg *project.AppConfig) {
@@ -156,9 +160,20 @@ func (s *Server) Handler() http.Handler {
 		// Body decoding (Brotli/zstd/gzip/deflate) for the web UI
 		r.Post("/decode", s.decodeBody)
 
-		// Collaborator: server-side (MCP-started) sessions visible to the UI.
+		// Collaborator: out-of-band (interactsh) sessions, visible to the UI in
+		// real time regardless of who started them (browser, CLI, or legacy MCP).
 		r.Get("/collaborator/sessions", s.listCollaboratorSessions)
 		r.Get("/collaborator/sessions/{id}/interactions", s.getCollaboratorSessionInteractions)
+		r.Post("/collaborator/sessions", s.startCollaboratorSession)
+		r.Post("/collaborator/sessions/{id}/poll", s.pollCollaboratorSession)
+		r.Post("/collaborator/sessions/{id}/stop", s.stopCollaboratorSession)
+		r.Post("/collaborator/sessions/{id}/url", s.generateCollaboratorURL)
+
+		// Intruder: marker-driven fuzzing jobs, visible to the UI in real time.
+		r.Post("/intruder/start", s.startIntruderJob)
+		r.Get("/intruder/{id}/status", s.getIntruderStatus)
+		r.Get("/intruder/{id}/results", s.getIntruderResults)
+		r.Post("/intruder/{id}/cancel", s.cancelIntruderJob)
 
 		// Converter
 		r.Get("/converter", s.getConverterConfig)

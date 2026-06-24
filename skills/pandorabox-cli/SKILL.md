@@ -1,6 +1,6 @@
 ---
 name: pandorabox-cli
-description: Use when Codex or another LLM agent needs to inspect, search, replay, or manage PandoraBox proxy traffic through compact CLI commands instead of MCP. Trigger for PandoraBox security-analysis tasks involving captured HTTP/HTTPS requests, WebSocket frames, intercept queue actions, replay, project switching, or low-token agent workflows.
+description: Use when Codex or another LLM agent needs to inspect, search, replay, or manage PandoraBox proxy traffic through compact CLI commands instead of MCP. Trigger for PandoraBox security-analysis tasks involving captured HTTP/HTTPS requests, WebSocket frames, intercept queue actions, replay, project switching, scope, match & replace, middleware, converter stacks, organizer folders, flows, Intruder fuzzing, Collaborator OOB sessions, or low-token agent workflows.
 ---
 
 # PandoraBox CLI
@@ -65,6 +65,68 @@ pandorabox project get
 pandorabox project recent
 pandorabox project open /path/to/project
 ```
+
+Scope:
+
+```bash
+pandorabox scope get
+pandorabox scope add-include --host example.com
+pandorabox scope enable
+```
+
+Match & Replace:
+
+```bash
+pandorabox matchreplace list
+pandorabox matchreplace add --target req-header --match '^User-Agent.*$' --replace 'User-Agent: custom' --regex
+```
+
+Middleware:
+
+```bash
+pandorabox middleware list
+pandorabox middleware add --type request --name "Inject Header" --code-file step.py
+```
+
+Converter:
+
+```bash
+pandorabox converter algorithms
+echo -n "data" | pandorabox converter run --algorithm base64_encode --stdin
+pandorabox converter stack list
+```
+
+Organizer:
+
+```bash
+pandorabox organizer folder list
+pandorabox organizer folder create --name "Auth Flows"
+pandorabox organizer item add <folder-id> --request-id 47
+```
+
+Flows (chains of HTTP requests + Python steps, variables threaded through):
+
+```bash
+pandorabox flows list
+pandorabox flows run <flow-id> --var username=admin
+```
+
+Intruder (marker-driven fuzzing — wrap injection points in `§markers§`):
+
+```bash
+pandorabox intruder start --request-id 47 --raw-file template.txt --attack-type sniper --payloads-file payloads.json
+pandorabox intruder status <job-id>
+pandorabox intruder results <job-id>
+```
+
+Collaborator (out-of-band DNS/HTTP/SMTP interaction capture):
+
+```bash
+pandorabox collaborator start
+pandorabox collaborator poll <session-id>
+```
+
+Every command above appears live in the running UI immediately — no separate "sync" step needed.
 
 ## Token Rules
 

@@ -87,7 +87,11 @@ pandorabox replay send 47
 pandorabox intercept queue
 ```
 
+It also covers scope, match & replace, middleware, converter stacks, organizer folders, flows, Intruder fuzzing, and Collaborator OOB sessions — see `wiki/cli.md` for the full command reference. Every mutation is reflected live in the running UI over the same WebSocket the browser uses.
+
 Default output is intentionally terse to save tokens. Use `--json` only when machine-readable output is required. Use `--max-bytes` whenever printing bodies, raw packets, or WebSocket payloads.
+
+Intruder and Collaborator are implemented twice on purpose: `internal/intruder`/`internal/collaborator` back the REST API/CLI, while `internal/mcp/intruder.go`/`internal/mcp/collaborator_tools.go` back the legacy MCP tools of the same name. This was a deliberate scope tradeoff to avoid touching legacy MCP, not an oversight — do not merge them without checking with the user first.
 
 ## Legacy MCP server notes
 

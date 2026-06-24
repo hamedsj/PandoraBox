@@ -24,6 +24,7 @@ func (s *Server) projectEventData() map[string]interface{} {
 		"match_replace": cfg.MatchReplace,
 		"middleware":    cfg.Middleware,
 		"flows":         cfg.Flows,
+		"converter":     cfg.Converter,
 	}
 }
 

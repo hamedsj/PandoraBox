@@ -76,7 +76,9 @@ When an upstream request fails inside the MITM loop, use `continue` (not `return
 
 ## Agent CLI notes
 
-The default agent interface is the `pandorabox` CLI (`internal/agentcli`): `status`, `traffic`, `replay`, `intercept`, `project` subcommands talking to the local REST API. Output is terse text by default; `--json` is explicit. Add new agent workflows here first, not as MCP tools.
+The default agent interface is the `pandorabox` CLI (`internal/agentcli`): `status`, `traffic`, `replay`, `intercept`, `project`, `scope`, `matchreplace`, `middleware`, `converter`, `organizer`, `flows`, `intruder`, `collaborator` subcommands talking to the local REST API. Output is terse text by default; `--json` is explicit. Every mutation is reflected live in the running UI over the same WebSocket the browser uses. Add new agent workflows here first, not as MCP tools.
+
+Intruder and Collaborator are implemented twice on purpose: `internal/intruder`/`internal/collaborator` back the REST API/CLI, while `internal/mcp/intruder.go`/`internal/mcp/collaborator_tools.go` back the legacy MCP tools of the same name. They were intentionally **not** unified — keeping legacy MCP untouched was a deliberate risk/scope tradeoff, not an oversight. Do not merge them without checking with the user first.
 
 ## Legacy MCP server notes
 

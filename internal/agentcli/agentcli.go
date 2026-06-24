@@ -93,6 +93,14 @@ func AddCommands(root *cobra.Command) {
 		newReplayCommand(),
 		newInterceptCommand(),
 		newProjectCommand(),
+		newScopeCommand(),
+		newMatchReplaceCommand(),
+		newMiddlewareCommand(),
+		newConverterCommand(),
+		newOrganizerCommand(),
+		newFlowsCommand(),
+		newIntruderCommand(),
+		newCollaboratorCommand(),
 	)
 }
 
