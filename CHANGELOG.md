@@ -5,6 +5,20 @@ All notable changes to PandoraBox will be documented in this file.
 The format is based on Keep a Changelog, and this project follows semantic
 versioning for public releases.
 
+## [1.3.0] - 2026-06-24
+
+### Added
+
+- The `pandorabox` CLI now covers every feature the app has, not just traffic/replay/intercept: `scope`, `matchreplace`, `middleware`, `converter`, `organizer`, `flows`, `intruder`, and `collaborator` command groups. See `wiki/cli.md` for the full reference.
+- `flows run <id>` executes a flow's HTTP-request and Python-process steps in order, threading variables through exactly like the UI does.
+- `intruder start/status/results/cancel` runs marker-driven fuzzing attacks (sniper/battering_ram/pitchfork/cluster_bomb) from the terminal, with live progress visible in the Intruder panel.
+- `collaborator start/poll/stop/url` runs out-of-band (interactsh) sessions from the terminal, with interactions visible live in the Collaborator panel.
+- Every CLI mutation is reflected live in the running UI over the same WebSocket the browser uses — no separate sync step.
+
+### Fixed
+
+- `project.updated` WebSocket events were missing the `converter` field entirely, which silently wiped the Converter page's stack list to empty on any unrelated project change (scope, match & replace, etc.) — from the browser or the CLI. Now included.
+
 ## [1.2.2] - 2026-06-24
 
 ### Changed
