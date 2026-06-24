@@ -1,0 +1,4 @@
+interface:
+  display_name: "PandoraBox CLI"
+  short_description: "Drive PandoraBox through compact CLI commands"
+  default_prompt: "Use $pandorabox-cli to inspect captured traffic and replay requests with compact command output."

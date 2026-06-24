@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"syscall"
 
+	"github.com/hamedsj5/pandorabox/internal/agentcli"
 	"github.com/hamedsj5/pandorabox/internal/api"
 	"github.com/hamedsj5/pandorabox/internal/ca"
 	"github.com/hamedsj5/pandorabox/internal/config"
@@ -26,7 +27,7 @@ import (
 func main() {
 	root := &cobra.Command{
 		Use:   "pandorabox",
-		Short: "MITM proxy with AI/MCP integration",
+		Short: "Programmable MITM proxy with compact agent CLI",
 	}
 
 	serveCmd := &cobra.Command{
@@ -61,7 +62,8 @@ func main() {
 
 	serveCmd.Flags().Int("proxy-port", 8080, "Proxy port")
 	serveCmd.Flags().Int("api-port", 7777, "API/UI port")
-	serveCmd.Flags().Int("mcp-port", 9090, "MCP SSE port")
+	serveCmd.Flags().Int("mcp-port", 9090, "Legacy MCP port")
+	serveCmd.Flags().Bool("enable-mcp", false, "Enable the legacy MCP server")
 	serveCmd.Flags().String("db", "", "SQLite database path (overrides project DB)")
 	serveCmd.Flags().String("project", "", "Project folder path to open on startup")
 	serveCmd.Flags().Bool("verbose", false, "Enable debug-level logging")
@@ -73,6 +75,7 @@ func main() {
 	serveCmd.Flags().String("server-config", "", "Path to pandorabox-server.json (team server mode)")
 
 	root.AddCommand(serveCmd, caCmd)
+	agentcli.AddCommands(root)
 
 	if err := root.Execute(); err != nil {
 		os.Exit(1)
@@ -194,17 +197,25 @@ func runServe(cmd *cobra.Command, args []string) error {
 	apiServer.SetStaticFS(getUIFS())
 	apiServer.SetProject(projectMgr, appCfg)
 
-	// MCP server
-	mcpServer := mcpsrv.NewServer(cfg, db, bus, proxyEngine, interceptQueue, authority)
-	mcpServer.SetProject(projectMgr, appCfg)
-	mcpServer.SetSwitchProjectFn(apiServer.SwitchProject)
-	apiServer.SetMCPServer(mcpServer)
+	// Legacy MCP server. The compact REST-backed CLI is now the default agent
+	// interface; MCP remains available only when explicitly enabled.
+	var mcpServer *mcpsrv.Server
+	if cfg.MCPEnabled {
+		mcpServer = mcpsrv.NewServer(cfg, db, bus, proxyEngine, interceptQueue, authority)
+		mcpServer.SetProject(projectMgr, appCfg)
+		mcpServer.SetSwitchProjectFn(apiServer.SwitchProject)
+		apiServer.SetMCPServer(mcpServer)
+	} else {
+		slog.Info("Legacy MCP server disabled; use the pandorabox CLI commands for agent control")
+	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
 	apiServer.SetContext(ctx)
-	mcpServer.SetContext(ctx)
+	if mcpServer != nil {
+		mcpServer.SetContext(ctx)
+	}
 
 	// Team client — start if team-url is set or persisted in app config.
 	teamURL := cfg.TeamURL
@@ -222,7 +233,9 @@ func runServe(cmd *cobra.Command, args []string) error {
 		teamClient := team.NewClient(teamCfg, bus, projectMgr, db)
 		teamClient.Start(ctx)
 		apiServer.SetTeamClient(teamClient)
-		mcpServer.SetTeamClient(teamClient)
+		if mcpServer != nil {
+			mcpServer.SetTeamClient(teamClient)
+		}
 		slog.Info("Team client started", "url", teamURL)
 	}
 
@@ -240,13 +253,15 @@ func runServe(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	// Start MCP server
-	go func() {
-		slog.Info("MCP server starting", "port", cfg.MCPPort)
-		if err := mcpServer.Start(ctx); err != nil {
-			slog.Error("MCP server error", "err", err)
-		}
-	}()
+	// Start legacy MCP server when explicitly requested.
+	if mcpServer != nil {
+		go func() {
+			slog.Info("Legacy MCP server starting", "port", cfg.MCPPort)
+			if err := mcpServer.Start(ctx); err != nil {
+				slog.Error("MCP server error", "err", err)
+			}
+		}()
+	}
 
 	// Start proxy (blocking until ctx done)
 	slog.Info("Proxy starting", "port", cfg.ProxyPort)
@@ -320,26 +335,37 @@ func runTeamServer(cmd *cobra.Command, cfg *config.Config, appCfg *project.AppCo
 	}, db, authority, bus, interceptQueue)
 
 	// API server.
+	mcpPort := cfg.MCPPort
+	if mcpPort == 0 {
+		mcpPort = 9090
+	}
 	apiCfg := &config.Config{
-		APIPort: srvCfg.APIPort,
-		MCPPort: 9090,
+		APIPort:    srvCfg.APIPort,
+		MCPPort:    mcpPort,
+		MCPEnabled: cfg.MCPEnabled,
 	}
 	apiServer := api.NewServer(apiCfg, db, bus, proxyEngine, interceptQueue, authority)
 	apiServer.SetStaticFS(getUIFS())
 	apiServer.SetProject(projectMgr, appCfg)
 	apiServer.SetTeamServer(teamSrv, srvCfg)
 
-	// MCP server.
-	mcpServer := mcpsrv.NewServer(apiCfg, db, bus, proxyEngine, interceptQueue, authority)
-	mcpServer.SetProject(projectMgr, appCfg)
-	mcpServer.SetTeamServer(teamSrv, srvCfg)
-	apiServer.SetMCPServer(mcpServer)
+	var mcpServer *mcpsrv.Server
+	if cfg.MCPEnabled {
+		mcpServer = mcpsrv.NewServer(apiCfg, db, bus, proxyEngine, interceptQueue, authority)
+		mcpServer.SetProject(projectMgr, appCfg)
+		mcpServer.SetTeamServer(teamSrv, srvCfg)
+		apiServer.SetMCPServer(mcpServer)
+	} else {
+		slog.Info("Legacy MCP server disabled in team-server mode")
+	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
 	apiServer.SetContext(ctx)
-	mcpServer.SetContext(ctx)
+	if mcpServer != nil {
+		mcpServer.SetContext(ctx)
+	}
 
 	// Start API server.
 	go func() {
@@ -355,12 +381,13 @@ func runTeamServer(cmd *cobra.Command, cfg *config.Config, appCfg *project.AppCo
 		}
 	}()
 
-	// Start MCP server.
-	go func() {
-		if err := mcpServer.Start(ctx); err != nil {
-			slog.Warn("MCP server exited", "err", err)
-		}
-	}()
+	if mcpServer != nil {
+		go func() {
+			if err := mcpServer.Start(ctx); err != nil {
+				slog.Warn("MCP server exited", "err", err)
+			}
+		}()
+	}
 
 	// Start team sync server (blocking until ctx done).
 	return teamSrv.Start(ctx)

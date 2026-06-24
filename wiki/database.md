@@ -128,7 +128,7 @@ PRAGMA foreign_keys = ON;
 PRAGMA busy_timeout = 5000;
 ```
 
-WAL mode allows one writer and multiple concurrent readers without blocking, which is important since the proxy, API, and MCP server all access the database simultaneously.
+WAL mode allows one writer and multiple concurrent readers without blocking, which is important since the proxy, API, CLI-driven requests, and optional legacy MCP server may access the database simultaneously.
 
 ---
 

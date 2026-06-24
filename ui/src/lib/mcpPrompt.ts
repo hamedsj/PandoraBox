@@ -11,21 +11,22 @@ function formatResponseLine(req: Request): string {
 }
 
 function httpToolHints(id: number): string {
-  return `The pandorabox MCP server is connected. Start by loading the full packet:
-  traffic_get(id=${id}, decoded=true)
+  return `Use the compact PandoraBox CLI. Start with bounded metadata:
+  pandorabox traffic get ${id} --headers
 
-Then use action tools as needed:
-  replay_request(request_id=${id}, modified_headers={...})
-  intruder_start(request_id=${id}, raw_text="...", attack_type="sniper", payloads=[...])`
+Fetch bodies only when needed:
+  pandorabox traffic get ${id} --body response --max-bytes 4000
+
+Replay the request:
+  pandorabox replay send ${id}`
 }
 
 function websocketToolHints(id: number): string {
-  return `The pandorabox MCP server is connected. Start by loading the upgrade request:
-  traffic_get(id=${id}, decoded=true)
+  return `Use the compact PandoraBox CLI. Start by loading the upgrade request:
+  pandorabox traffic get ${id} --headers
 
-Then inspect WebSocket traffic (frames are stored separately):
-  websocket_get_session(request_id=${id})
-  websocket_get_frames(request_id=${id}, direction="s2c", limit=200)`
+Then inspect WebSocket frames:
+  pandorabox traffic ws ${id} --direction s2c -n 200 --max-bytes 1000`
 }
 
 export function buildMcpPrompt(req: Request): string {
@@ -33,7 +34,7 @@ export function buildMcpPrompt(req: Request): string {
   const responseLine = formatResponseLine(req)
   const toolHints = isWebSocket(req) ? websocketToolHints(req.id) : httpToolHints(req.id)
 
-  return `PandoraBox MCP — analyze and act on this captured request.
+  return `PandoraBox CLI — analyze and act on this captured request.
 
 Request #${req.id}
 ${req.method} ${url}
@@ -47,5 +48,5 @@ Your task:
 }
 
 export function copyMcpPrompt(req: Request): Promise<void> {
-  return copyText(buildMcpPrompt(req), 'Copied MCP prompt')
+  return copyText(buildMcpPrompt(req), 'Copied CLI prompt')
 }

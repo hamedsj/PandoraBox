@@ -11,6 +11,41 @@ let launcherWindow = null
 let tray = null
 let backendProcess = null
 
+function getAppIconPath(preferredExt = process.platform === 'win32' ? 'ico' : 'png') {
+  const buildDir = path.join(__dirname, '..', 'build')
+  const candidates = [
+    path.join(buildDir, `icon.${preferredExt}`),
+    path.join(buildDir, 'icon.png'),
+    path.join(buildDir, 'icon.ico'),
+  ]
+  return candidates.find((candidate) => {
+    try { return fs.existsSync(candidate) } catch { return false }
+  }) || null
+}
+
+function getAppIcon(preferredExt) {
+  const iconPath = getAppIconPath(preferredExt)
+  if (!iconPath) return undefined
+  const icon = nativeImage.createFromPath(iconPath)
+  return icon.isEmpty() ? undefined : icon
+}
+
+function windowOptionsWithIcon(options) {
+  const icon = getAppIcon()
+  return icon ? { ...options, icon } : options
+}
+
+function configureAppIdentity() {
+  app.setName('PandoraBox')
+  if (process.platform === 'win32') {
+    app.setAppUserModelId('com.pandorabox.app')
+  }
+  if (process.platform === 'darwin' && app.dock) {
+    const dockIcon = getAppIcon('png')
+    if (dockIcon) app.dock.setIcon(dockIcon)
+  }
+}
+
 // Find the Go binary - in packaged app it's in resources/, in dev it's in ../bin/
 function getBackendPath() {
   const binaryName = process.platform === 'win32' ? 'pandorabox.exe' : 'pandorabox'
@@ -55,7 +90,7 @@ function createLauncher() {
   // Load the built React app from disk (backend not started yet)
   const distIndex = path.join(__dirname, '..', 'dist', 'index.html')
 
-  launcherWindow = new BrowserWindow({
+  launcherWindow = new BrowserWindow(windowOptionsWithIcon({
     width: 560,
     height: 480,
     resizable: false,
@@ -67,7 +102,7 @@ function createLauncher() {
       preload: path.join(__dirname, 'launcher-preload.cjs'),
     },
     show: false,
-  })
+  }))
   launcherWindow.loadFile(distIndex, { query: { launcher: '1' } })
   launcherWindow.once('ready-to-show', () => launcherWindow.show())
   launcherWindow.on('closed', () => {
@@ -100,7 +135,7 @@ function waitForBackend(retries = 30) {
 }
 
 function createWindow() {
-  mainWindow = new BrowserWindow({
+  mainWindow = new BrowserWindow(windowOptionsWithIcon({
     width: 1400,
     height: 900,
     minWidth: 900,
@@ -115,7 +150,7 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.cjs'),
     },
     show: false,
-  })
+  }))
 
   mainWindow.loadURL('http://localhost:7777')
 
@@ -346,6 +381,7 @@ ipcMain.handle('body:decode', async (_event, payload) => {
 })
 
 app.whenReady().then(() => {
+  configureAppIdentity()
   createLauncher()
 
   app.on('activate', () => {

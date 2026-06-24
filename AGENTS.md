@@ -4,7 +4,7 @@ Context for AI assistants (Codex) working on this project.
 
 ## What this project is
 
-PandoraBox is a programmable MITM proxy (like Burp Suite / Caido) with an MCP server for Codex Desktop integration. The user is the primary owner. Other engineers may be brought in to implement specific features.
+PandoraBox is a programmable MITM proxy (like Burp Suite / Caido) with a compact REST-backed CLI for Codex/LLM agent integration. The legacy MCP server still exists for compatibility but is opt-in. The user is the primary owner. Other engineers may be brought in to implement specific features.
 
 ## Build pipeline — always use `make build`
 
@@ -57,12 +57,12 @@ When an upstream request fails inside the MITM loop, use `continue` (not `return
 ## Ports
 - 8080 — MITM proxy listener
 - 7777 — REST API + WebSocket + embedded React UI
-- 9090 — MCP SSE server
+- 9090 — legacy MCP server when `serve --enable-mcp` is used
 
 ## Go dependencies
 - `github.com/go-chi/chi/v5` — HTTP router for API
 - `github.com/gorilla/websocket` — WebSocket hub
-- `github.com/mark3labs/mcp-go v0.8.0` — MCP server (SSE transport)
+- `github.com/mark3labs/mcp-go` — legacy MCP compatibility server
 - `github.com/spf13/cobra` — CLI subcommands
 - `modernc.org/sqlite` — Pure Go SQLite (no CGo, single-binary)
 
@@ -74,14 +74,30 @@ When an upstream request fails inside the MITM loop, use `continue` (not `return
 - Radix UI (accessible primitives)
 - Electron 36 + electron-builder 26
 
-## MCP server notes
+## Agent CLI notes
 
-`github.com/mark3labs/mcp-go v0.8.0` API: use positional `server.NewSSEServer(s.mcp, baseURLString)` — there is no `server.WithBaseURL(...)` option in this version.
+The default agent interface is the `pandorabox` CLI:
+
+```bash
+pandorabox status
+pandorabox traffic list -n 20
+pandorabox traffic get 47 --headers
+pandorabox traffic get 47 --body response --max-bytes 4000
+pandorabox replay send 47
+pandorabox intercept queue
+```
+
+Default output is intentionally terse to save tokens. Use `--json` only when machine-readable output is required. Use `--max-bytes` whenever printing bodies, raw packets, or WebSocket payloads.
+
+## Legacy MCP server notes
+
+MCP is no longer the default integration path. Start it explicitly with `pandorabox serve --enable-mcp`. Do not add new agent workflows only as MCP tools; add compact CLI/API support first.
 
 ## Docs
 
 - `wiki/architecture.md` — system architecture, Go package map, data flow, key technical decisions
 - `wiki/api.md` — complete REST API + WebSocket event reference
-- `wiki/mcp.md` — full MCP tool reference with parameters and examples
+- `wiki/cli.md` — compact CLI reference for agents
+- `wiki/mcp.md` — legacy MCP compatibility notes
 - `wiki/development.md` — dev workflow, project structure, Zustand stores
 - `wiki/database.md` — SQLite schema reference

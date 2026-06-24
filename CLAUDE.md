@@ -4,7 +4,7 @@ Context for AI assistants (Claude Code) working on this project.
 
 ## What this project is
 
-PandoraBox is a programmable MITM proxy (like Burp Suite / Caido) with an MCP server for Claude Desktop integration. The user is the primary owner. Other engineers may be brought in to implement specific features.
+PandoraBox is a programmable MITM proxy (like Burp Suite / Caido) with a compact REST-backed CLI for Claude/LLM agent integration. The legacy MCP server still exists for compatibility but is opt-in. The user is the primary owner. Other engineers may be brought in to implement specific features.
 
 ## Build pipeline — always use `make build`
 
@@ -57,12 +57,12 @@ When an upstream request fails inside the MITM loop, use `continue` (not `return
 ## Ports
 - 8080 — MITM proxy listener
 - 7777 — REST API + WebSocket + embedded React UI
-- 9090 — MCP SSE server
+- 9090 — legacy MCP server when `serve --enable-mcp` is used
 
 ## Go dependencies
 - `github.com/go-chi/chi/v5` — HTTP router for API
 - `github.com/gorilla/websocket` — WebSocket hub
-- `github.com/mark3labs/mcp-go v0.8.0` — MCP server (SSE transport)
+- `github.com/mark3labs/mcp-go` — legacy MCP compatibility server
 - `github.com/spf13/cobra` — CLI subcommands
 - `modernc.org/sqlite` — Pure Go SQLite (no CGo, single-binary)
 
@@ -74,14 +74,19 @@ When an upstream request fails inside the MITM loop, use `continue` (not `return
 - Radix UI (accessible primitives)
 - Electron 36 + electron-builder 26
 
-## MCP server notes
+## Agent CLI notes
 
-`github.com/mark3labs/mcp-go v0.8.0` API: use positional `server.NewSSEServer(s.mcp, baseURLString)` — there is no `server.WithBaseURL(...)` option in this version.
+The default agent interface is the `pandorabox` CLI (`internal/agentcli`): `status`, `traffic`, `replay`, `intercept`, `project` subcommands talking to the local REST API. Output is terse text by default; `--json` is explicit. Add new agent workflows here first, not as MCP tools.
+
+## Legacy MCP server notes
+
+MCP is opt-in: start it with `pandorabox serve --enable-mcp`. `github.com/mark3labs/mcp-go` API: use positional `server.NewSSEServer(s.mcp, baseURLString)` — there is no `server.WithBaseURL(...)` option in this version.
 
 ## Docs
 
 - `wiki/architecture.md` — system architecture, Go package map, data flow, key technical decisions
 - `wiki/api.md` — complete REST API + WebSocket event reference
-- `wiki/mcp.md` — full MCP tool reference with parameters and examples
+- `wiki/cli.md` — compact CLI reference for agents
+- `wiki/mcp.md` — legacy MCP compatibility notes
 - `wiki/development.md` — dev workflow, project structure, Zustand stores
 - `wiki/database.md` — SQLite schema reference

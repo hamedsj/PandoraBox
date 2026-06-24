@@ -12,8 +12,8 @@
 │  Go Binary  (bin/pandorabox)                                   │
 │                                                                  │
 │  ┌─────────────────┐  ┌──────────────────┐  ┌────────────────┐  │
-│  │  MITM Proxy     │  │  REST API        │  │  MCP Server    │  │
-│  │  :8080 (TCP)    │  │  + WebSocket     │  │  SSE :9090     │  │
+│  │  MITM Proxy     │  │  REST API        │  │  Legacy MCP    │  │
+│  │  :8080 (TCP)    │  │  + WebSocket     │  │  opt-in :9090  │  │
 │  │                 │  │  :7777 (HTTP)    │  │                │  │
 │  └────────┬────────┘  └────────┬─────────┘  └───────┬────────┘  │
 │           │                   │                     │           │
@@ -41,9 +41,9 @@
 |------|---------|-------------|
 | 8080 | MITM Proxy | Raw TCP listener. Configure your browser/system to use this. |
 | 7777 | REST API + WebSocket + UI | All `/api/*` endpoints, `/ws` WebSocket, and the embedded React SPA. |
-| 9090 | MCP | Streamable HTTP at `/mcp` (recommended). Legacy SSE at `/sse`. Claude Desktop, Claude Code, and other MCP clients connect here. |
+| 9090 | Legacy MCP | Streamable HTTP at `/mcp` and legacy SSE at `/sse` only when `serve --enable-mcp` is used. Agents should prefer the compact CLI. |
 
-All ports are configurable via CLI flags (`--proxy-port`, `--api-port`, `--mcp-port`).
+All ports are configurable via CLI flags (`--proxy-port`, `--api-port`, `--mcp-port`). The MCP port matters only when legacy MCP is enabled.
 
 ---
 
@@ -98,12 +98,12 @@ Browser → GET /chat HTTP/1.1 + Upgrade: websocket
 
 ### `cmd/pandorabox`
 
-- `main.go` — Cobra CLI. Wires config, storage, CA, proxy, API, MCP. Subcommands: `serve`, `ca export`, `ca regenerate`.
+- `main.go` — Cobra CLI. Wires config, storage, CA, proxy, API, optional legacy MCP. Subcommands include `serve`, `status`, `traffic`, `replay`, `intercept`, `project`, and CA management.
 - `embed.go` — `//go:embed all:dist` embeds the compiled React bundle into the binary.
 
 ### `internal/config`
 
-- `config.go` — `Config{ProxyPort, APIPort, MCPPort, DBPath, ProjectPath}` parsed from CLI flags.
+- `config.go` — `Config{ProxyPort, APIPort, MCPPort, MCPEnabled, DBPath, ProjectPath}` parsed from CLI flags.
 
 ### `internal/events`
 
@@ -152,10 +152,13 @@ Browser → GET /chat HTTP/1.1 + Upgrade: websocket
 - `project.go` — `Manager`: loads/saves `project.json`, `TempProject()`, `SaveAs(path)`, `CreateProject(path, name)`, `OpenProject(path)`.
 - `appconfig.go` — `~/.pandorabox/config.json`: recent projects (10-item MRU), last opened project.
 
+### `internal/agentcli`
+
+- `agentcli.go` — compact REST-backed CLI for LLM agents. Text output is terse by default; `--json` is explicit.
+
 ### `internal/mcp`
 
-- `server.go` — SSE MCP server using `github.com/mark3labs/mcp-go v0.8.0`. Exposes `SetProject()`, `SetDB()`, `SetSwitchProjectFn()` for runtime project switching.
-- `tools.go` — 20 MCP tools. See [mcp.md](mcp.md) for full documentation.
+- Legacy opt-in MCP compatibility server. Start with `serve --enable-mcp`.
 
 ---
 

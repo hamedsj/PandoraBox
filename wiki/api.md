@@ -382,11 +382,13 @@ Fetches a replay result with the associated request and response.
 
 ---
 
-## Coding Tool API
+## Legacy Coding Tool API
+
+These endpoints proxy the optional MCP server and are compatibility-only. New agent workflows should use the compact CLI in [Agent CLI](cli.md).
 
 ### `GET /api/tools`
 
-Lists all MCP tools that can be called through the coding API facade.
+Lists legacy MCP tools that can be called through the coding API facade when MCP is enabled.
 
 **Response:** Parsed MCP `tools/list` result.
 
@@ -394,7 +396,7 @@ Lists all MCP tools that can be called through the coding API facade.
 
 ### `POST /api/tools/{name}`
 
-Calls any PandoraBox MCP tool through a normal HTTP API request.
+Calls a PandoraBox legacy MCP tool through a normal HTTP API request.
 
 **Request body:**
 ```json

@@ -6,10 +6,11 @@ import (
 )
 
 type Config struct {
-	ProxyPort int
-	APIPort   int
-	MCPPort   int
-	DBPath    string
+	ProxyPort  int
+	APIPort    int
+	MCPPort    int
+	MCPEnabled bool
+	DBPath     string
 
 	// Team collaboration flags.
 	TeamServer       bool   // run as team sync hub (no local proxy)
@@ -22,6 +23,7 @@ func FromFlags(cmd *cobra.Command) *Config {
 	proxyPort, _ := cmd.Flags().GetInt("proxy-port")
 	apiPort, _ := cmd.Flags().GetInt("api-port")
 	mcpPort, _ := cmd.Flags().GetInt("mcp-port")
+	mcpEnabled, _ := cmd.Flags().GetBool("enable-mcp")
 	dbPath, _ := cmd.Flags().GetString("db")
 	teamServer, _ := cmd.Flags().GetBool("team-server")
 	teamPort, _ := cmd.Flags().GetInt("team-port")
@@ -31,6 +33,7 @@ func FromFlags(cmd *cobra.Command) *Config {
 		ProxyPort:        proxyPort,
 		APIPort:          apiPort,
 		MCPPort:          mcpPort,
+		MCPEnabled:       mcpEnabled,
 		DBPath:           dbPath,
 		TeamServer:       teamServer,
 		TeamPort:         teamPort,

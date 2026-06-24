@@ -27,7 +27,7 @@ A complete reference for every feature in PandoraBox.
 19. [Settings — Keyboard Shortcuts](#settings--keyboard-shortcuts)
 20. [Settings — Certificate](#settings--certificate)
 21. [Settings — Proxy](#settings--proxy)
-22. [Settings — MCP](#settings--mcp)
+22. [Settings — Agent CLI](#settings--agent-cli)
 
 ---
 
@@ -847,8 +847,8 @@ On startup, the launcher modal shows:
 | Middleware config + node code | `project.json` → `middleware` |
 | Flows + step code | `project.json` → `flows` |
 | Converter stacks | `project.json` → `converter` |
-| MCP enabled/disabled | `project.json` → `mcp_disabled` |
-| MCP port | `project.json` → `mcp_port` |
+| Legacy MCP enabled/disabled | `project.json` → `mcp_disabled` |
+| Legacy MCP port | `project.json` → `mcp_port` |
 
 ### Global State (not per-project)
 
@@ -1032,15 +1032,40 @@ Automatically recalculates `Content-Length` when the replay editor body changes.
 
 ---
 
-## Settings — MCP
+## Settings — Agent CLI
 
-**Route:** `/settings` → MCP tab
+**Route:** `/settings` → Agent CLI tab
 
-### Enable / Disable
+### Compact CLI
 
-Per-project toggle. When disabled, all MCP tool calls return an error. Useful for projects containing sensitive data.
+The tab shows the preferred agent workflow:
 
-### Endpoints
+```bash
+pandorabox status
+pandorabox traffic list -n 20
+pandorabox traffic get 47 --headers
+pandorabox traffic get 47 --body response --max-bytes 2000
+pandorabox replay send 47
+pandorabox intercept queue
+```
+
+The CLI talks to the local REST API and prints terse text by default. Use `--json` only when an agent needs structured output.
+
+### Agent Skill
+
+The repository includes `skills/pandorabox-cli/SKILL.md`, a concise Codex-style skill that tells agents to list first, fetch one request, and only print bodies with explicit byte limits.
+
+### Legacy MCP
+
+MCP is compatibility-only and is not started by default. Start it explicitly:
+
+```bash
+pandorabox serve --enable-mcp
+```
+
+The per-project toggle controls whether legacy MCP clients may use the project tools after they connect.
+
+Legacy endpoints:
 
 | Transport | URL |
 |---|---|
@@ -1048,58 +1073,3 @@ Per-project toggle. When disabled, all MCP tool calls return an error. Useful fo
 | Legacy SSE | `http://localhost:9090/sse` |
 
 The port is configurable per project.
-
-### Client Setup Snippets
-
-The tab provides copy-paste commands and config snippets for common MCP clients. All use the Streamable HTTP endpoint (`/mcp`).
-
-**Claude Desktop** (`claude_desktop_config.json`):
-```json
-{
-  "mcpServers": {
-    "pandorabox": {
-      "url": "http://localhost:9090/mcp"
-    }
-  }
-}
-```
-
-**Claude Code** (CLI):
-```bash
-# Add for the current project only (default scope)
-claude mcp add --transport http pandorabox http://localhost:9090/mcp
-
-# Add globally across all your projects
-claude mcp add --transport http --scope user pandorabox http://localhost:9090/mcp
-```
-
-Verify with `claude mcp list`. Use `/mcp` inside a Claude Code session to check live server status.
-
-**Gemini CLI:**
-```bash
-gemini mcp add --transport http pandorabox http://localhost:9090/mcp
-```
-
-**Codex** (`~/.codex/config.toml`):
-```toml
-[mcp_servers.pandorabox]
-url = "http://localhost:9090/mcp"
-```
-
-**Qwen Code** (`.qwen/settings.json`):
-```json
-{
-  "mcpServers": {
-    "pandorabox": {
-      "httpUrl": "http://localhost:9090/mcp"
-    }
-  }
-}
-```
-
-**Legacy SSE** (older clients only):
-```
-http://localhost:9090/sse
-```
-
-For the full MCP tool reference, see [mcp.md](mcp.md) or call `docs_get(topic="tools")` from any connected MCP client.

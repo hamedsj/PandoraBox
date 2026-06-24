@@ -1,6 +1,16 @@
-# MCP Tool Reference
+# Legacy MCP Compatibility
 
-> **The authoritative tool reference lives inside the running PandoraBox MCP server.** This wiki page only describes setup and points at the canonical docs.
+PandoraBox now prefers the compact REST-backed CLI for agent workflows. See [Agent CLI](cli.md).
+
+MCP remains available for older clients, but it is opt-in:
+
+```bash
+pandorabox serve --enable-mcp
+```
+
+When enabled, the server listens on the configured MCP port, default `9090`.
+
+> **The authoritative legacy tool reference lives inside the running PandoraBox MCP server.** This wiki page only describes setup and points at the canonical docs.
 
 ## Getting the up-to-date docs
 
@@ -82,7 +92,7 @@ url = "http://localhost:9090/mcp"
 }
 ```
 
-The in-app **Settings → MCP** tab shows these snippets with live port substitution and copy buttons.
+The in-app **Settings → Agent CLI** tab shows the legacy endpoint only when compatibility is needed.
 
 ## Disabling MCP for a project
 

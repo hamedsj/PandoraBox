@@ -60,7 +60,7 @@ make build
 PandoraBox/
 │
 ├── cmd/pandorabox/
-│   ├── main.go          CLI entry point (Cobra: serve, ca export, ca regenerate)
+│   ├── main.go          CLI entry point (Cobra: serve, status, traffic, replay, intercept, project, ca)
 │   └── embed.go         //go:embed all:dist — embeds React bundle
 │
 ├── internal/
@@ -98,9 +98,8 @@ PandoraBox/
 │   ├── project/
 │   │   ├── project.go   Manager: project.json load/save, TempProject, SaveAs
 │   │   └── appconfig.go ~/.pandorabox/config.json: recent projects, last project
-│   └── mcp/
-│       ├── server.go    MCP SSE server, runtime project/DB injection
-│       └── tools.go     20 MCP tools
+│   ├── agentcli/        Compact REST-backed CLI for agents
+│   └── mcp/             Legacy opt-in MCP compatibility
 │
 ├── ui/
 │   ├── electron/
@@ -161,11 +160,9 @@ PandoraBox/
 |---|---|---|
 | `github.com/go-chi/chi/v5` | v5 | HTTP router for the REST API |
 | `github.com/gorilla/websocket` | latest | WebSocket server (hub, frame relay) |
-| `github.com/mark3labs/mcp-go` | v0.8.0 | MCP server with SSE transport |
+| `github.com/mark3labs/mcp-go` | see `go.mod` | Legacy MCP compatibility server |
 | `github.com/spf13/cobra` | latest | CLI subcommands and flags |
 | `modernc.org/sqlite` | latest | Pure Go SQLite (no CGo) |
-
-**MCP API note:** `mcp-go v0.8.0` uses positional constructor: `server.NewSSEServer(s.mcp, baseURLString)`. There is no `server.WithBaseURL(...)` option in this version.
 
 ---
 
@@ -308,9 +305,12 @@ The connection auto-reconnects with exponential backoff on disconnect.
 3. Add the typed fetch call to `ui/src/api/client.ts`.
 4. Run `make build` and test.
 
-## Adding a New MCP Tool
+## Adding Agent Commands
 
-1. Register the tool in `internal/mcp/tools.go` using `s.mcp.AddTool(...)`.
-2. Implement the handler method on `*Server`.
-3. Document it in `wiki/mcp.md`.
-4. Run `make build`.
+Prefer compact CLI/API support before MCP.
+
+1. Add or reuse a REST API endpoint.
+2. Add the command in `internal/agentcli/agentcli.go`.
+3. Keep text output terse by default and gate full JSON behind `--json`.
+4. Document it in `wiki/cli.md` and `skills/pandorabox-cli/SKILL.md`.
+5. Run `make build`.

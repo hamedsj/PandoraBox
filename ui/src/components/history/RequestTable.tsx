@@ -880,7 +880,7 @@ function RequestRow({
             className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-muted"
           >
             <Bot size={14} />
-            Copy MCP Prompt
+            Copy CLI Prompt
           </button>
 
           <div className="my-1 border-t border-border" />

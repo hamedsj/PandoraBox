@@ -4,9 +4,9 @@
 
 # PandoraBox
 
-**A programmable MITM proxy — intercept, inspect, replay, and script HTTP/HTTPS traffic — with a built-in MCP server so an AI agent can drive it.**
+**A programmable MITM proxy — intercept, inspect, replay, and script HTTP/HTTPS traffic — with a compact CLI so an AI agent can drive it without burning context.**
 
-[**Download**](https://github.com/hamedsj/PandoraBox/releases/latest) · [Quick start](#quick-start) · [MCP](#mcp--let-an-ai-drive-the-proxy) · [Docs](wiki/features.md)
+[**Download**](https://github.com/hamedsj/PandoraBox/releases/latest) · [Quick start](#quick-start) · [Agent CLI](#agent-cli--let-an-ai-drive-the-proxy) · [Docs](wiki/features.md)
 
 ![license](https://img.shields.io/badge/license-Apache--2.0-blue)
 ![release](https://img.shields.io/github/v/release/hamedsj/PandoraBox?display_name=tag)
@@ -69,29 +69,22 @@ Full walkthrough → [wiki/features.md](wiki/features.md)
 
 ---
 
-## MCP — let an AI drive the proxy
+## Agent CLI — let an AI drive the proxy
 
-PandoraBox runs an MCP server (default `http://localhost:9090/mcp`) so Claude — or any MCP client — can read traffic, replay requests, manage scope, and control the proxy in plain language.
+PandoraBox exposes compact CLI commands backed by the local REST API. The defaults print short summaries; use `--json` only when an agent needs structured output.
 
-Add it to your client config (e.g. Claude Desktop's `claude_desktop_config.json`):
-
-```json
-{
-  "mcpServers": {
-    "pandorabox": { "url": "http://localhost:9090/mcp" }
-  }
-}
+```bash
+pandorabox status
+pandorabox traffic list -n 20 --host api.example.com
+pandorabox traffic get 47 --headers
+pandorabox traffic get 47 --body response --max-bytes 4000
+pandorabox replay send 47
+pandorabox intercept queue
 ```
 
-Then just ask:
+For Codex-style agents, use the repository skill at `skills/pandorabox-cli/SKILL.md`.
 
-```
-"Show every POST to api.example.com, then replay #47 with a Bearer token."
-"Turn on interception and forward everything except /admin."
-"Set scope to *.example.com only."
-```
-
-Works with Claude Desktop, Claude Code, Codex, Gemini, and Qwen. Toggle it off per project in **Settings → MCP**. Full tool reference → [wiki/mcp.md](wiki/mcp.md)
+The legacy MCP server is still available for compatibility, but it is opt-in: start with `pandorabox serve --enable-mcp` and then configure the endpoint shown in **Settings → Agent CLI**.
 
 ---
 
@@ -117,7 +110,8 @@ Desktop app: `make dev-electron` to run · `make electron-mac` / `electron-win` 
 | | |
 |---|---|
 | [Features](wiki/features.md) | Every page and option |
-| [MCP](wiki/mcp.md) | Full tool reference |
+| [Agent CLI](wiki/cli.md) | Compact commands for LLM agents |
+| [MCP](wiki/mcp.md) | Legacy MCP compatibility |
 | [API](wiki/api.md) | REST + WebSocket |
 | [Architecture](wiki/architecture.md) | Packages and data flow |
 | [Development](wiki/development.md) | Workflow and build pipeline |

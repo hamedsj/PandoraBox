@@ -104,8 +104,8 @@ type ConvertStep struct {
 }
 
 type ConvertStack struct {
-	ID    string       `json:"id"`
-	Name  string       `json:"name"`
+	ID    string        `json:"id"`
+	Name  string        `json:"name"`
 	Steps []ConvertStep `json:"steps"`
 }
 
@@ -124,7 +124,7 @@ type Config struct {
 	MatchReplace []MatchReplaceRule `json:"match_replace,omitempty"`
 	Middleware   MiddlewareConfig   `json:"middleware,omitempty"`
 	Flows        []Flow             `json:"flows,omitempty"`
-	Converter    ConverterConfig      `json:"converter,omitempty"`
+	Converter    ConverterConfig    `json:"converter,omitempty"`
 }
 
 type Manager struct {
@@ -164,6 +164,8 @@ func defaultConfig(name string) Config {
 			IncludeRules: []ScopeRule{},
 			ExcludeRules: []ScopeRule{},
 		},
+		MCPDisabled:  true,
+		MCPPort:      9090,
 		MatchReplace: defaultMatchReplaceRules(),
 	}
 }

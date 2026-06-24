@@ -53,70 +53,6 @@ const status = {
 
 type SettingsTab = 'appearance' | 'shortcuts' | 'certificate' | 'proxy' | 'mcp' | 'team'
 
-interface MCPClientTip {
-  name: string
-  summary: string
-  command?: string
-  configLabel?: string
-  config?: string
-  notes: string[]
-}
-
-function buildMCPClientTips(endpoint: string): MCPClientTip[] {
-  return [
-    {
-      name: 'Claude Code',
-      summary: 'Add PandoraBox as a remote HTTP MCP server from the Claude Code CLI.',
-      command: `claude mcp add --transport http pandorabox ${endpoint}`,
-      notes: [
-        'Run `claude mcp list` to verify it was added.',
-        'If you want it across projects, add `--scope user`.',
-        'If the server ever requires auth in the future, use `/mcp` inside Claude Code.',
-      ],
-    },
-    {
-      name: 'Gemini CLI',
-      summary: 'Gemini supports remote MCP over HTTP and can add it directly from the terminal.',
-      command: `gemini mcp add --transport http pandorabox ${endpoint}`,
-      notes: [
-        'Use `--scope user` if you want the server in `~/.gemini/settings.json` instead of project scope.',
-        'Run `gemini mcp list` after adding it.',
-        'Restart Gemini in the project after changing MCP config.',
-      ],
-    },
-    {
-      name: 'Codex',
-      summary: 'Codex can add remote MCP servers from the CLI or through `~/.codex/config.toml`.',
-      command: `codex mcp add pandorabox --url ${endpoint}`,
-      configLabel: '~/.codex/config.toml',
-      config: `[mcp_servers.pandorabox]
-url = "${endpoint}"`,
-      notes: [
-        'Run `codex mcp list` to confirm the server is registered.',
-        'CLI and IDE extension share the same Codex MCP configuration.',
-      ],
-    },
-    {
-      name: 'Qwen Code',
-      summary: 'Qwen supports remote streamable HTTP MCP servers from CLI or settings JSON.',
-      command: `qwen mcp add --transport http pandorabox ${endpoint}`,
-      configLabel: '.qwen/settings.json or ~/.qwen/settings.json',
-      config: `{
-  "mcpServers": {
-    "pandorabox": {
-      "httpUrl": "${endpoint}"
-    }
-  }
-}`,
-      notes: [
-        'Use `--scope user` if you want the server available across projects.',
-        'Open `qwen mcp` to manage configured servers.',
-        'Restart Qwen Code after adding the server.',
-      ],
-    },
-  ]
-}
-
 export function SettingsPage() {
   const {
     mode,
@@ -284,7 +220,6 @@ export function SettingsPage() {
       : 'Ready'
   const mcpEndpoint = mcpStatus?.endpoint || `http://localhost:${mcpPort}/mcp`
   const legacySSEEndpoint = mcpStatus?.legacy_sse_endpoint || `http://localhost:${mcpPort}/sse`
-  const mcpClientTips = buildMCPClientTips(mcpEndpoint)
 
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6 overflow-auto h-full">
@@ -318,7 +253,7 @@ export function SettingsPage() {
         />
         <TabButton
           icon={Bot}
-          label="MCP"
+          label="Agent CLI"
           active={activeTab === 'mcp'}
           onClick={() => setActiveTab('mcp')}
         />
@@ -821,22 +756,21 @@ export function SettingsPage() {
         </section>
       )}
 
-      {/* MCP Tab */}
+      {/* Agent CLI Tab */}
       {activeTab === 'mcp' && (
         <section className="bg-card rounded-lg border border-border p-5 space-y-4">
           <div className="flex items-center gap-2">
             <Bot className="w-4 h-4" />
-            <h2 className="text-sm font-medium">MCP Integration</h2>
+            <h2 className="text-sm font-medium">Agent CLI</h2>
           </div>
 
           <div className="space-y-4">
-            {/* Access toggle */}
             <div className="bg-muted/50 rounded-lg p-4 border border-border">
               <div className="flex items-center justify-between gap-4">
                 <div>
-                  <div className="text-sm font-medium">Enable MCP Access</div>
+                  <div className="text-sm font-medium">Legacy MCP Access</div>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    This controls whether MCP clients may use the project tools after they connect.
+                    MCP is no longer the default agent interface. It only runs when the backend starts with <code className="font-mono">--enable-mcp</code>.
                   </p>
                 </div>
                 <button
@@ -860,21 +794,20 @@ export function SettingsPage() {
                       : 'border-border bg-background text-muted-foreground hover:text-foreground'
                   )}
                 >
-                  {mcpTogglePending ? 'Saving...' : !project?.mcp_disabled ? 'MCP Enabled' : 'MCP Disabled'}
+                  {mcpTogglePending ? 'Saving...' : !project?.mcp_disabled ? 'Legacy MCP Allowed' : 'Legacy MCP Blocked'}
                 </button>
               </div>
             </div>
 
-            {/* MCP health */}
             <div className="bg-muted/50 rounded-lg p-4 border border-border space-y-4">
               <div className="flex items-center justify-between gap-4">
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
                     <LayoutDashboard className="w-4 h-4 text-primary" />
-                    <div className="text-sm font-medium">Connection Status</div>
+                    <div className="text-sm font-medium">Legacy MCP Status</div>
                   </div>
                   <p className="text-sm text-muted-foreground">
-                    The server now listens on Streamable HTTP and also keeps the older SSE transport for compatibility.
+                    Use this only for older MCP workflows. New agent workflows should call the local CLI.
                   </p>
                 </div>
                 <div className={cn('rounded-full border px-3 py-1 text-xs font-medium', mcpHealthTone)}>
@@ -908,7 +841,7 @@ export function SettingsPage() {
               )}
 
               <div className="space-y-2">
-                <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Primary MCP Endpoint</div>
+                <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Legacy MCP Endpoint</div>
                 <div className="flex items-center gap-2">
                   <code className="flex-1 overflow-x-auto font-mono text-primary bg-background px-3 py-2 rounded-md text-sm">
                     {mcpEndpoint}
@@ -922,12 +855,12 @@ export function SettingsPage() {
                   </button>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Use this URL for modern MCP clients. The legacy compatibility endpoint remains available at <code className="font-mono">{legacySSEEndpoint}</code>.
+                  Start PandoraBox with <code className="font-mono">pandorabox serve --enable-mcp</code> to expose this endpoint. SSE compatibility remains at <code className="font-mono">{legacySSEEndpoint}</code>.
                 </p>
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">MCP Port</label>
+                <label className="text-xs text-muted-foreground">Legacy MCP Port</label>
                 <input
                   type="number"
                   min={1}
@@ -955,24 +888,22 @@ export function SettingsPage() {
               </div>
             </div>
 
-            {/* Generic client config snippet */}
             <div className="bg-muted/50 rounded-lg p-4 border border-border space-y-2">
-              <div className="text-sm font-medium">MCP Client Config</div>
+              <div className="text-sm font-medium">Compact CLI Commands</div>
               <p className="text-xs text-muted-foreground">
-                Use the Streamable HTTP endpoint in any MCP client that supports remote HTTP servers.
+                Commands print bounded summaries by default. Add <code className="font-mono">--json</code> only when structured output is needed.
               </p>
               <div className="relative">
                 <pre className="bg-background rounded-md border border-border p-3 text-xs font-mono text-foreground overflow-x-auto leading-relaxed">
-{`{
-  "mcpServers": {
-    "pandorabox": {
-      "url": "${mcpEndpoint}"
-    }
-  }
-}`}
+{`pandorabox status
+pandorabox traffic list -n 20
+pandorabox traffic get 47 --headers
+pandorabox traffic get 47 --body response --max-bytes 2000
+pandorabox replay send 47
+pandorabox intercept queue`}
                 </pre>
                 <button
-                  onClick={() => copyText(`{\n  "mcpServers": {\n    "pandorabox": {\n      "url": "${mcpEndpoint}"\n    }\n  }\n}`, 'Copied MCP config')}
+                  onClick={() => copyText('pandorabox status\npandorabox traffic list -n 20\npandorabox traffic get 47 --headers\npandorabox traffic get 47 --body response --max-bytes 2000\npandorabox replay send 47\npandorabox intercept queue', 'Copied CLI commands')}
                   className="absolute top-2 right-2 text-xs text-muted-foreground hover:text-foreground"
                   title="Copy to clipboard"
                 >
@@ -981,75 +912,32 @@ export function SettingsPage() {
               </div>
             </div>
 
-            {/* Assistant-specific setup tips */}
             <div className="bg-muted/50 rounded-lg p-4 border border-border space-y-4">
               <div>
-                <div className="text-sm font-medium">Assistant Setup Tips</div>
+                <div className="text-sm font-medium">Agent Skill</div>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Quick copy-paste commands and config snippets for common MCP clients.
+                  Ship the repository skill with agent runtimes so they prefer the token-light CLI workflow.
                 </p>
               </div>
 
-              <div className="grid gap-3 xl:grid-cols-2">
-                {mcpClientTips.map((tip) => (
-                  <div key={tip.name} className="rounded-xl border border-border bg-background/70 p-4 space-y-3">
-                    <div className="space-y-1">
-                      <div className="text-sm font-medium text-foreground">{tip.name}</div>
-                      <p className="text-xs text-muted-foreground">{tip.summary}</p>
-                    </div>
+              <div className="relative">
+                <pre className="overflow-x-auto rounded-md border border-border bg-card px-3 py-2 text-xs font-mono text-foreground whitespace-pre-wrap">
+{`skills/pandorabox-cli/SKILL.md
 
-                    {tip.command && (
-                      <div className="space-y-1.5">
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">CLI Command</div>
-                          <button
-                            onClick={() => copyText(tip.command!, `Copied ${tip.name} command`)}
-                            className="text-xs text-muted-foreground hover:text-foreground"
-                            title="Copy to clipboard"
-                          >
-                            Copy
-                          </button>
-                        </div>
-                        <pre className="overflow-x-auto rounded-md border border-border bg-card px-3 py-2 text-xs font-mono text-foreground whitespace-pre-wrap break-all">
-{tip.command}
-                        </pre>
-                      </div>
-                    )}
-
-                    {tip.config && (
-                      <div className="space-y-1.5">
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
-                            Config Snippet
-                            {tip.configLabel ? ` · ${tip.configLabel}` : ''}
-                          </div>
-                          <button
-                            onClick={() => copyText(tip.config!, `Copied ${tip.name} config`)}
-                            className="text-xs text-muted-foreground hover:text-foreground"
-                            title="Copy to clipboard"
-                          >
-                            Copy
-                          </button>
-                        </div>
-                        <pre className="overflow-x-auto rounded-md border border-border bg-card px-3 py-2 text-xs font-mono text-foreground whitespace-pre-wrap break-all">
-{tip.config}
-                        </pre>
-                      </div>
-                    )}
-
-                    <div className="space-y-1">
-                      {tip.notes.map((note) => (
-                        <p key={note} className="text-xs text-muted-foreground">
-                          {note}
-                        </p>
-                      ))}
-                    </div>
-                  </div>
-                ))}
+Default prompt:
+Use $pandorabox-cli to inspect captured traffic and replay requests with compact command output.`}
+                </pre>
+                <button
+                  onClick={() => copyText('Use $pandorabox-cli to inspect captured traffic and replay requests with compact command output.', 'Copied agent prompt')}
+                  className="absolute top-2 right-2 text-xs text-muted-foreground hover:text-foreground"
+                  title="Copy to clipboard"
+                >
+                  Copy
+                </button>
               </div>
 
               <div className="rounded-xl border border-border bg-background/50 px-3 py-2 text-xs text-muted-foreground">
-                Prefer the primary HTTP endpoint when the client supports it. The SSE endpoint is shown above only for older compatibility cases.
+                The skill tells agents to list first, fetch only the needed request, and request bodies only with explicit byte limits.
               </div>
             </div>
           </div>

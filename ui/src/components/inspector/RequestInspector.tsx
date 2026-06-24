@@ -300,7 +300,7 @@ export function RequestInspector({ edge = 'left' }: { edge?: 'left' | 'top' | 'n
         </button>
         <button
           onClick={() => copyMcpPrompt(req)}
-          title="Copy MCP prompt"
+          title="Copy CLI prompt"
           className={btnClass}
         >
           <Bot size={14} />
@@ -569,7 +569,7 @@ export function RequestInspector({ edge = 'left' }: { edge?: 'left' | 'top' | 'n
             <Code2 size={14} />Copy as fetch()
           </button>
           <button onClick={() => { copyMcpPrompt(req); closeContextMenu() }} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-muted">
-            <Bot size={14} />Copy MCP Prompt
+            <Bot size={14} />Copy CLI Prompt
           </button>
 
           <div className="my-1 border-t border-border" />
