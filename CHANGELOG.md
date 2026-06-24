@@ -5,6 +5,19 @@ All notable changes to PandoraBox will be documented in this file.
 The format is based on Keep a Changelog, and this project follows semantic
 versioning for public releases.
 
+## [1.2.0] - 2026-06-24
+
+### Added
+
+- Compact, REST-backed agent CLI (`pandorabox status|traffic|replay|intercept|project`) — a low-token alternative to MCP for driving PandoraBox from Codex or any LLM agent. Output is terse text by default; pass `--json` for structured output.
+- Repository skill at `skills/pandorabox-cli/` so Codex-style agents discover and prefer the CLI workflow automatically.
+- `wiki/cli.md` documents the full command reference.
+- Electron windows now set an explicit app identity (dock icon on macOS, taskbar icon + AppUserModelID on Windows).
+
+### Changed
+
+- The legacy MCP server is now opt-in: start it with `pandorabox serve --enable-mcp`. Settings → **Agent CLI** (formerly **MCP**) shows the compact CLI commands first, with legacy MCP endpoint/setup info still available underneath.
+
 ## [1.1.0] - 2026-06-06
 
 ### Added
