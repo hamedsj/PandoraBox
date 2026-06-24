@@ -54,6 +54,8 @@ const status = {
 
 type SettingsTab = 'appearance' | 'shortcuts' | 'certificate' | 'proxy' | 'mcp' | 'team'
 
+const SKILL_INSTALL_PROMPT = 'Clone https://github.com/hamedsj/PandoraBox.git (or just the skills/pandorabox-cli folder) into /tmp, install the PandoraBox CLI skill from skills/pandorabox-cli into your skills directory, then remove the cloned folder from /tmp.'
+
 export function SettingsPage() {
   const {
     mode,
@@ -791,6 +793,103 @@ export function SettingsPage() {
           </div>
 
           <div className="space-y-4">
+            {window.electron && (
+              <div className="bg-muted/50 rounded-lg p-4 border border-border">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <div className="text-sm font-medium">Terminal Command</div>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      The installer only bundles <code className="font-mono">pandorabox</code> inside the app — it
+                      isn't on your shell's PATH until you install it.
+                      {cliStatus?.installed && (
+                        <> Installed at <code className="font-mono">{cliStatus.path}</code>.</>
+                      )}
+                    </p>
+                  </div>
+                  <button
+                    disabled={cliInstalling}
+                    onClick={installCli}
+                    className={cn(
+                      'inline-flex shrink-0 items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium transition-all',
+                      cliInstalling && 'opacity-50 cursor-not-allowed',
+                      cliStatus?.installed
+                        ? 'border-primary/40 bg-primary/12 text-primary'
+                        : 'border-border bg-background text-muted-foreground hover:text-foreground'
+                    )}
+                  >
+                    {cliInstalling ? 'Installing…' : cliStatus?.installed ? 'Reinstall Command' : 'Install Command'}
+                  </button>
+                </div>
+                {cliManualCommand && (
+                  <div className="mt-3 space-y-1.5">
+                    <p className="text-xs text-muted-foreground">Run this manually instead:</p>
+                    <div className="relative">
+                      <pre className="overflow-x-auto rounded-md border border-border bg-background px-3 py-2 text-xs font-mono text-foreground whitespace-pre-wrap break-all">
+                        {cliManualCommand}
+                      </pre>
+                      <button
+                        onClick={() => copyText(cliManualCommand, 'Copied command')}
+                        className="absolute top-2 right-2 text-xs text-muted-foreground hover:text-foreground"
+                        title="Copy to clipboard"
+                      >
+                        Copy
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="bg-muted/50 rounded-lg p-4 border border-border space-y-4">
+              <div>
+                <div className="text-sm font-medium">Agent Skill</div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Paste this into Codex, Claude Code, or another coding agent so it installs the PandoraBox CLI skill for itself.
+                </p>
+              </div>
+
+              <div className="relative">
+                <pre className="overflow-x-auto rounded-md border border-border bg-card px-3 py-2 text-xs font-mono text-foreground whitespace-pre-wrap">
+                  {SKILL_INSTALL_PROMPT}
+                </pre>
+                <button
+                  onClick={() => copyText(SKILL_INSTALL_PROMPT, 'Copied install prompt')}
+                  className="absolute top-2 right-2 text-xs text-muted-foreground hover:text-foreground"
+                  title="Copy to clipboard"
+                >
+                  Copy
+                </button>
+              </div>
+
+              <div className="rounded-xl border border-border bg-background/50 px-3 py-2 text-xs text-muted-foreground">
+                Installs from <code className="font-mono">skills/pandorabox-cli/SKILL.md</code> in the repo. The skill tells agents to list first, fetch only the needed request, and request bodies only with explicit byte limits.
+              </div>
+            </div>
+
+            <div className="bg-muted/50 rounded-lg p-4 border border-border space-y-2">
+              <div className="text-sm font-medium">Compact CLI Commands</div>
+              <p className="text-xs text-muted-foreground">
+                Commands print bounded summaries by default. Add <code className="font-mono">--json</code> only when structured output is needed.
+              </p>
+              <div className="relative">
+                <pre className="bg-background rounded-md border border-border p-3 text-xs font-mono text-foreground overflow-x-auto leading-relaxed">
+{`pandorabox status
+pandorabox traffic list -n 20
+pandorabox traffic get 47 --headers
+pandorabox traffic get 47 --body response --max-bytes 2000
+pandorabox replay send 47
+pandorabox intercept queue`}
+                </pre>
+                <button
+                  onClick={() => copyText('pandorabox status\npandorabox traffic list -n 20\npandorabox traffic get 47 --headers\npandorabox traffic get 47 --body response --max-bytes 2000\npandorabox replay send 47\npandorabox intercept queue', 'Copied CLI commands')}
+                  className="absolute top-2 right-2 text-xs text-muted-foreground hover:text-foreground"
+                  title="Copy to clipboard"
+                >
+                  Copy
+                </button>
+              </div>
+            </div>
+
             <div className="bg-muted/50 rounded-lg p-4 border border-border">
               <div className="flex items-center justify-between gap-4">
                 <div>
@@ -911,106 +1010,6 @@ export function SettingsPage() {
                 >
                   {mcpPortSaving ? 'Saving…' : 'Save'}
                 </button>
-              </div>
-            </div>
-
-            {window.electron && (
-              <div className="bg-muted/50 rounded-lg p-4 border border-border">
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <div className="text-sm font-medium">Terminal Command</div>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      The installer only bundles <code className="font-mono">pandorabox</code> inside the app — it
-                      isn't on your shell's PATH until you install it.
-                      {cliStatus?.installed && (
-                        <> Installed at <code className="font-mono">{cliStatus.path}</code>.</>
-                      )}
-                    </p>
-                  </div>
-                  <button
-                    disabled={cliInstalling}
-                    onClick={installCli}
-                    className={cn(
-                      'inline-flex shrink-0 items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium transition-all',
-                      cliInstalling && 'opacity-50 cursor-not-allowed',
-                      cliStatus?.installed
-                        ? 'border-primary/40 bg-primary/12 text-primary'
-                        : 'border-border bg-background text-muted-foreground hover:text-foreground'
-                    )}
-                  >
-                    {cliInstalling ? 'Installing…' : cliStatus?.installed ? 'Reinstall Command' : 'Install Command'}
-                  </button>
-                </div>
-                {cliManualCommand && (
-                  <div className="mt-3 space-y-1.5">
-                    <p className="text-xs text-muted-foreground">Run this manually instead:</p>
-                    <div className="relative">
-                      <pre className="overflow-x-auto rounded-md border border-border bg-background px-3 py-2 text-xs font-mono text-foreground whitespace-pre-wrap break-all">
-                        {cliManualCommand}
-                      </pre>
-                      <button
-                        onClick={() => copyText(cliManualCommand, 'Copied command')}
-                        className="absolute top-2 right-2 text-xs text-muted-foreground hover:text-foreground"
-                        title="Copy to clipboard"
-                      >
-                        Copy
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div className="bg-muted/50 rounded-lg p-4 border border-border space-y-2">
-              <div className="text-sm font-medium">Compact CLI Commands</div>
-              <p className="text-xs text-muted-foreground">
-                Commands print bounded summaries by default. Add <code className="font-mono">--json</code> only when structured output is needed.
-              </p>
-              <div className="relative">
-                <pre className="bg-background rounded-md border border-border p-3 text-xs font-mono text-foreground overflow-x-auto leading-relaxed">
-{`pandorabox status
-pandorabox traffic list -n 20
-pandorabox traffic get 47 --headers
-pandorabox traffic get 47 --body response --max-bytes 2000
-pandorabox replay send 47
-pandorabox intercept queue`}
-                </pre>
-                <button
-                  onClick={() => copyText('pandorabox status\npandorabox traffic list -n 20\npandorabox traffic get 47 --headers\npandorabox traffic get 47 --body response --max-bytes 2000\npandorabox replay send 47\npandorabox intercept queue', 'Copied CLI commands')}
-                  className="absolute top-2 right-2 text-xs text-muted-foreground hover:text-foreground"
-                  title="Copy to clipboard"
-                >
-                  Copy
-                </button>
-              </div>
-            </div>
-
-            <div className="bg-muted/50 rounded-lg p-4 border border-border space-y-4">
-              <div>
-                <div className="text-sm font-medium">Agent Skill</div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Ship the repository skill with agent runtimes so they prefer the token-light CLI workflow.
-                </p>
-              </div>
-
-              <div className="relative">
-                <pre className="overflow-x-auto rounded-md border border-border bg-card px-3 py-2 text-xs font-mono text-foreground whitespace-pre-wrap">
-{`skills/pandorabox-cli/SKILL.md
-
-Default prompt:
-Use $pandorabox-cli to inspect captured traffic and replay requests with compact command output.`}
-                </pre>
-                <button
-                  onClick={() => copyText('Use $pandorabox-cli to inspect captured traffic and replay requests with compact command output.', 'Copied agent prompt')}
-                  className="absolute top-2 right-2 text-xs text-muted-foreground hover:text-foreground"
-                  title="Copy to clipboard"
-                >
-                  Copy
-                </button>
-              </div>
-
-              <div className="rounded-xl border border-border bg-background/50 px-3 py-2 text-xs text-muted-foreground">
-                The skill tells agents to list first, fetch only the needed request, and request bodies only with explicit byte limits.
               </div>
             </div>
           </div>
