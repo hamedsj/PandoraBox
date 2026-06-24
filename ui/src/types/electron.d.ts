@@ -9,6 +9,14 @@ declare global {
         base64: string,
         encoding: string
       ) => Promise<{ base64?: string; error?: string }>
+      getCliStatus?: () => Promise<{ installed: boolean; path: string }>
+      installCli?: () => Promise<{
+        ok: boolean
+        path?: string
+        error?: string
+        manualCommand?: string
+        restartShell?: boolean
+      }>
     }
   }
 }

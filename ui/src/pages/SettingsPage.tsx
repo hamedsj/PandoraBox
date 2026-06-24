@@ -10,6 +10,7 @@ import { Download, Sun, Moon, Palette, Type, Check, Shield, Server, Globe, Layou
 import { cn } from '@/lib/utils'
 import { copyText } from '@/lib/clipboard'
 import { useState, useEffect } from 'react'
+import { toast } from 'sonner'
 
 const accentColors: { value: AccentColor; label: string }[] = [
   { value: 'teal', label: 'Teal' },
@@ -90,6 +91,31 @@ export function SettingsPage() {
   const [mcpPortSaving, setMcpPortSaving] = useState(false)
   const [mcpPortMsg, setMcpPortMsg] = useState<{ ok?: string; err?: string } | null>(null)
   const [mcpStatus, setMcpStatus] = useState<MCPStatus | null>(project?.mcp_status ?? null)
+  const [cliStatus, setCliStatus] = useState<{ installed: boolean; path: string } | null>(null)
+  const [cliInstalling, setCliInstalling] = useState(false)
+  const [cliManualCommand, setCliManualCommand] = useState<string | null>(null)
+
+  useEffect(() => {
+    window.electron?.getCliStatus?.().then(setCliStatus).catch(() => {})
+  }, [])
+
+  async function installCli() {
+    if (!window.electron?.installCli) return
+    setCliInstalling(true)
+    setCliManualCommand(null)
+    try {
+      const result = await window.electron.installCli()
+      if (result.ok) {
+        setCliStatus({ installed: true, path: result.path ?? '' })
+        toast.success(result.restartShell ? 'Installed — restart your terminal to use it' : 'CLI installed')
+      } else {
+        toast.error(result.error || 'Could not install CLI command')
+        if (result.manualCommand) setCliManualCommand(result.manualCommand)
+      }
+    } finally {
+      setCliInstalling(false)
+    }
+  }
 
   useEffect(() => {
     setUpstreamURL(project?.proxy?.upstream_url ?? '')
@@ -887,6 +913,53 @@ export function SettingsPage() {
                 </button>
               </div>
             </div>
+
+            {window.electron && (
+              <div className="bg-muted/50 rounded-lg p-4 border border-border">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <div className="text-sm font-medium">Terminal Command</div>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      The installer only bundles <code className="font-mono">pandorabox</code> inside the app — it
+                      isn't on your shell's PATH until you install it.
+                      {cliStatus?.installed && (
+                        <> Installed at <code className="font-mono">{cliStatus.path}</code>.</>
+                      )}
+                    </p>
+                  </div>
+                  <button
+                    disabled={cliInstalling}
+                    onClick={installCli}
+                    className={cn(
+                      'inline-flex shrink-0 items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium transition-all',
+                      cliInstalling && 'opacity-50 cursor-not-allowed',
+                      cliStatus?.installed
+                        ? 'border-primary/40 bg-primary/12 text-primary'
+                        : 'border-border bg-background text-muted-foreground hover:text-foreground'
+                    )}
+                  >
+                    {cliInstalling ? 'Installing…' : cliStatus?.installed ? 'Reinstall Command' : 'Install Command'}
+                  </button>
+                </div>
+                {cliManualCommand && (
+                  <div className="mt-3 space-y-1.5">
+                    <p className="text-xs text-muted-foreground">Run this manually instead:</p>
+                    <div className="relative">
+                      <pre className="overflow-x-auto rounded-md border border-border bg-background px-3 py-2 text-xs font-mono text-foreground whitespace-pre-wrap break-all">
+                        {cliManualCommand}
+                      </pre>
+                      <button
+                        onClick={() => copyText(cliManualCommand, 'Copied command')}
+                        className="absolute top-2 right-2 text-xs text-muted-foreground hover:text-foreground"
+                        title="Copy to clipboard"
+                      >
+                        Copy
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="bg-muted/50 rounded-lg p-4 border border-border space-y-2">
               <div className="text-sm font-medium">Compact CLI Commands</div>

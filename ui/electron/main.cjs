@@ -1,10 +1,13 @@
 const { app, BrowserWindow, Tray, Menu, nativeImage, shell, ipcMain, dialog } = require('electron')
-const { spawn } = require('child_process')
+const { spawn, execFile } = require('child_process')
+const { promisify } = require('util')
 const path = require('path')
 const http = require('http')
 const fs = require('fs')
 const os = require('os')
 const zlib = require('zlib')
+
+const execFileAsync = promisify(execFile)
 
 let mainWindow = null
 let launcherWindow = null
@@ -54,6 +57,107 @@ function getBackendPath() {
   }
   // In dev: repo root bin/pandorabox
   return path.join(__dirname, '../../bin/pandorabox')
+}
+
+// Installers only place the binary inside the app bundle, which is never on
+// the user's shell PATH. This symlinks (mac/linux) or PATH-registers
+// (Windows) it so `pandorabox status` etc. work from any terminal.
+const CLI_LINK_PATH = '/usr/local/bin/pandorabox'
+
+function shSingleQuote(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`
+}
+
+function appleScriptEscape(value) {
+  return String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+}
+
+function symlinkUnprivileged(binaryPath) {
+  try {
+    fs.mkdirSync('/usr/local/bin', { recursive: true })
+    try { fs.unlinkSync(CLI_LINK_PATH) } catch {}
+    fs.symlinkSync(binaryPath, CLI_LINK_PATH)
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function symlinkPrivileged(binaryPath) {
+  const innerCmd = `mkdir -p /usr/local/bin && ln -sf ${shSingleQuote(binaryPath)} ${shSingleQuote(CLI_LINK_PATH)}`
+  if (process.platform === 'darwin') {
+    const script = `do shell script "${appleScriptEscape(innerCmd)}" with administrator privileges`
+    await execFileAsync('osascript', ['-e', script])
+    return
+  }
+  // Linux: PolicyKit graphical prompt. Throws (ENOENT) if unavailable.
+  await execFileAsync('pkexec', ['sh', '-c', innerCmd])
+}
+
+async function getWindowsUserPath() {
+  const { stdout } = await execFileAsync('powershell', [
+    '-NoProfile', '-Command', "[Environment]::GetEnvironmentVariable('Path','User')",
+  ])
+  return stdout.trim()
+}
+
+async function getCliStatus() {
+  const binaryPath = getBackendPath()
+  if (process.platform === 'win32') {
+    const resourcesDir = path.dirname(binaryPath)
+    try {
+      const entries = (await getWindowsUserPath()).split(';').map((p) => p.trim()).filter(Boolean)
+      const installed = entries.some((p) => path.resolve(p).toLowerCase() === path.resolve(resourcesDir).toLowerCase())
+      return { installed, path: resourcesDir }
+    } catch {
+      return { installed: false, path: resourcesDir }
+    }
+  }
+  try {
+    const installed = fs.realpathSync(CLI_LINK_PATH) === fs.realpathSync(binaryPath)
+    return { installed, path: CLI_LINK_PATH }
+  } catch {
+    return { installed: false, path: CLI_LINK_PATH }
+  }
+}
+
+async function installCli() {
+  const binaryPath = getBackendPath()
+  if (!fs.existsSync(binaryPath)) {
+    return { ok: false, error: 'CLI binary not found in this install.' }
+  }
+
+  if (process.platform === 'win32') {
+    const resourcesDir = path.dirname(binaryPath)
+    try {
+      const entries = (await getWindowsUserPath()).split(';').map((p) => p.trim()).filter(Boolean)
+      const already = entries.some((p) => path.resolve(p).toLowerCase() === path.resolve(resourcesDir).toLowerCase())
+      if (!already) {
+        const nextPath = entries.concat(resourcesDir).join(';').replace(/'/g, "''")
+        await execFileAsync('powershell', [
+          '-NoProfile', '-Command', `[Environment]::SetEnvironmentVariable('Path', '${nextPath}', 'User')`,
+        ])
+      }
+      return { ok: true, path: resourcesDir, restartShell: true }
+    } catch (err) {
+      return { ok: false, error: err.message || String(err) }
+    }
+  }
+
+  if (symlinkUnprivileged(binaryPath)) {
+    return { ok: true, path: CLI_LINK_PATH }
+  }
+
+  try {
+    await symlinkPrivileged(binaryPath)
+    return { ok: true, path: CLI_LINK_PATH }
+  } catch {
+    return {
+      ok: false,
+      error: 'Could not install automatically.',
+      manualCommand: `sudo mkdir -p /usr/local/bin && sudo ln -sf "${binaryPath}" ${CLI_LINK_PATH}`,
+    }
+  }
 }
 
 function startBackend({ projectPath, proxyPort, mcpPort } = {}) {
@@ -315,6 +419,9 @@ ipcMain.handle('launcher:launch', async (_e, { projectPath, proxyPort, mcpPort }
   createWindow()
   return { ok: true }
 })
+
+ipcMain.handle('cli:status', () => getCliStatus())
+ipcMain.handle('cli:install', () => installCli())
 
 // IPC handlers for native folder dialogs
 ipcMain.handle('dialog:openFolder', async () => {
