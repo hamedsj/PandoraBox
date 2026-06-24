@@ -5,6 +5,17 @@ All notable changes to PandoraBox will be documented in this file.
 The format is based on Keep a Changelog, and this project follows semantic
 versioning for public releases.
 
+## [1.2.2] - 2026-06-24
+
+### Changed
+
+- Settings → **Agent CLI** now leads with **Terminal Command** and **Agent Skill** (the things most agents need first); legacy MCP access/status moved to the bottom of the tab.
+- **Agent Skill** now has a copyable install prompt — paste it into Codex, Claude Code, or another coding agent so it clones the skill from the repo into `/tmp`, installs it, and cleans up after itself.
+
+### Fixed
+
+- The app icon's rounded-square background filled the entire canvas edge-to-edge, making it visibly larger than neighboring app icons in the Dock/taskbar. Rescaled to the standard ~80% live-area margin so it matches other apps' icon size.
+
 ## [1.2.1] - 2026-06-24
 
 ### Added
