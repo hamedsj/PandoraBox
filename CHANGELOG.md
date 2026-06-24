@@ -5,6 +5,16 @@ All notable changes to PandoraBox will be documented in this file.
 The format is based on Keep a Changelog, and this project follows semantic
 versioning for public releases.
 
+## [1.2.1] - 2026-06-24
+
+### Added
+
+- Settings → **Agent CLI** now has an **Install Command** button that symlinks the bundled `pandorabox` binary onto your shell's `PATH` (`/usr/local/bin` on macOS/Linux, a `PATH` entry on Windows). Previously the CLI shipped inside the app bundle but wasn't reachable from a terminal after installing.
+
+### Fixed
+
+- The app icon (dock icon on macOS, taskbar icon on Windows, AppImage/deb icon on Linux) rendered with the logo far too small relative to the rounded-square background. Regenerated `icon.png`/`icon.icns`/`icon.ico` from the trimmed logo so the glyph fills the icon properly.
+
 ## [1.2.0] - 2026-06-24
 
 ### Added
