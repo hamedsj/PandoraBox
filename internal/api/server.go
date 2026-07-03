@@ -134,6 +134,7 @@ func (s *Server) Handler() http.Handler {
 
 		// Traffic history
 		r.Get("/requests", s.listRequests)
+		r.Get("/requests/export", s.exportRequests)
 		r.Get("/requests/{id}", s.getRequest)
 		r.Delete("/requests/{id}", s.deleteRequest)
 		r.Put("/requests/{id}/tags", s.updateRequestTags)

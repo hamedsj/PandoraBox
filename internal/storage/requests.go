@@ -192,6 +192,90 @@ func (db *DB) ListRequests(f RequestFilter) ([]*Request, int, error) {
 	return requests, total, rows.Err()
 }
 
+// ListRequestsForExport returns full request + response data (including bodies)
+// for use by the export endpoint. Unlike ListRequestsWithBodies, requests
+// without responses are included. If ids is non-empty, only those IDs are
+// returned (filter is ignored).
+func (db *DB) ListRequestsForExport(ids []int64, f RequestFilter) ([]*Request, error) {
+	if len(ids) > 0 {
+		result := make([]*Request, 0, len(ids))
+		for _, id := range ids {
+			r, err := db.GetRequest(id)
+			if err != nil {
+				return nil, err
+			}
+			if r != nil {
+				result = append(result, r)
+			}
+		}
+		return result, nil
+	}
+
+	if f.Limit <= 0 {
+		f.Limit = 1000
+	}
+	if f.Limit > 5000 {
+		f.Limit = 5000
+	}
+
+	whereClause, args := buildRequestsWhere(f)
+
+	query := fmt.Sprintf(`
+		SELECT r.id, r.method, r.scheme, r.host, r.path, r.query,
+		       r.headers, r.body, r.timestamp, r.tags, r.user_id,
+		       resp.id, resp.status_code, resp.status_text,
+		       resp.headers, resp.body, resp.duration_ms, resp.size_bytes
+		FROM requests r
+		LEFT JOIN responses resp ON resp.request_id = r.id
+		%s
+		ORDER BY r.timestamp DESC
+		LIMIT ?`, whereClause)
+
+	args = append(args, f.Limit)
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var requests []*Request
+	for rows.Next() {
+		r := &Request{}
+		var respID sql.NullInt64
+		var statusCode sql.NullInt64
+		var statusText sql.NullString
+		var respHeaders sql.NullString
+		var respBody []byte
+		var durationMs sql.NullInt64
+		var sizeBytes sql.NullInt64
+		var ts string
+
+		if err := rows.Scan(
+			&r.ID, &r.Method, &r.Scheme, &r.Host, &r.Path, &r.Query,
+			&r.Headers, &r.Body, &ts, &r.Tags, &r.UserID,
+			&respID, &statusCode, &statusText,
+			&respHeaders, &respBody, &durationMs, &sizeBytes,
+		); err != nil {
+			return nil, err
+		}
+		r.Timestamp = parseDBTime(ts)
+		if respID.Valid {
+			r.Response = &Response{
+				ID:         respID.Int64,
+				RequestID:  r.ID,
+				StatusCode: int(statusCode.Int64),
+				StatusText: statusText.String,
+				Headers:    respHeaders.String,
+				Body:       respBody,
+				DurationMs: durationMs.Int64,
+				SizeBytes:  sizeBytes.Int64,
+			}
+		}
+		requests = append(requests, r)
+	}
+	return requests, rows.Err()
+}
+
 // ListRequestsWithBodies is like ListRequests but also fetches the full response
 // headers and body. Only requests that have a response are returned.
 // This is intended for analysis tools (grep_responses, export_responses).

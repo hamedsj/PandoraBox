@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	fhttp "github.com/bogdanfinn/fhttp"
@@ -144,9 +145,11 @@ func (d *dualTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return d.h1t.RoundTrip(req)
 	}
 	resp := fromFHTTPResponse(fresp, req)
-	// If h2 returns 400 with no Cf-Ray, the Cloudflare edge rejected the h2
-	// framing before creating a Ray ID. Retry over h1.
-	if resp.StatusCode == 400 && resp.Header.Get("Cf-Ray") == "-" {
+	// If h2 returns 400 with markers from a CDN/WAF/LB, retry over h1.
+	// isInfraRejection checks the Server header and proprietary infra response
+	// headers (Cf-Ray, X-Amz-Cf-Id, X-Iinfo, X-Varnish, …) that conclusively
+	// identify infrastructure rejections across all major CDN/WAF vendors.
+	if resp.StatusCode == 400 && isInfraRejection(resp) {
 		resp.Body.Close()
 		resetBody()
 		return d.h1t.RoundTrip(req)
@@ -157,6 +160,108 @@ func (d *dualTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 func (d *dualTransport) CloseIdleConnections() {
 	d.h2t.CloseIdleConnections()
 	d.h1t.CloseIdleConnections()
+}
+
+// infraServerNames is matched case-insensitively as a substring of the Server
+// response header. Every entry is the name of a CDN, WAF, or load balancer
+// product — never an application framework.
+var infraServerNames = []string{
+	"awselb",          // AWS Elastic Load Balancer
+	"cloudflare",      // Cloudflare
+	"cloudfront",      // AWS CloudFront
+	"akamaighost",     // Akamai Ghost
+	"akamai",          // Akamai (generic edge)
+	"fastly",          // Fastly CDN
+	"varnish",         // Varnish Cache
+	"sucuri",          // Sucuri Cloud WAF
+	"incapsula",       // Imperva Incapsula
+	"imperva",         // Imperva WAF (modern branding)
+	"bigip",           // F5 BIG-IP
+	"f5",              // F5 (generic)
+	"stackpath",       // StackPath CDN/WAF
+	"fortiweb",        // Fortinet FortiWeb WAF
+	"fortigate",       // Fortinet FortiGate
+	"barracuda",       // Barracuda WAF
+	"radware",         // Radware AppWall / Alteon
+	"reblaze",         // Reblaze WAF
+	"netscaler",       // Citrix NetScaler / ADC
+	"citrix adc",      // Citrix ADC (display name variant)
+	"edgecast",        // Verizon EdgeCast / Edgio
+	"limelight",       // Limelight Networks / Edgio
+	"cdn77",           // CDN77
+	"keycdn-engine",   // KeyCDN
+	"zscaler",         // Zscaler
+	"google frontend", // Google Cloud HTTP(S) Load Balancer
+	"gfe",             // Google Frontend (GCP)
+	"peplink",         // Peplink Balance
+	"armor",           // Armor WAF
+	"wallarm",         // Wallarm API security
+	"bunnycdn",        // Bunny CDN
+	"perimeterx",      // PerimeterX (px-proxy)
+	"datadome",        // DataDome bot protection
+	"mod_security",    // ModSecurity WAF (Apache/Nginx module)
+	"openresty",       // OpenResty (nginx+Lua — used by many CDN/WAF providers)
+}
+
+// infraResponseHeaders are header names that only CDN/WAF/LB infrastructure
+// emits. Application code never sets these; they are either proprietary vendor
+// headers or caching-layer headers that only appear in proxy responses.
+// Presence of any of these on a 400 conclusively identifies infrastructure.
+var infraResponseHeaders = []string{
+	"CF-Ray",              // Cloudflare — any value means request reached their edge
+	"CF-Cache-Status",     // Cloudflare cache layer decision
+	"X-Amz-Cf-Id",        // AWS CloudFront request ID
+	"X-Amz-Cf-Pop",       // AWS CloudFront PoP identifier
+	"X-Check-Cacheable",   // Akamai
+	"Akamai-Cache-Status", // Akamai cache decision
+	"X-True-Cache-Key",    // Akamai True Cache Key
+	"X-Azure-Ref",         // Azure Front Door / Azure CDN
+	"X-MSEdge-Ref",        // Azure CDN Microsoft Edge
+	"X-Iinfo",             // Imperva Incapsula session info
+	"X-Sucuri-ID",         // Sucuri Cloud WAF block ID
+	"X-Varnish",           // Varnish Cache (XID chain)
+	"X-Squid-Error",       // Squid proxy error detail
+	"X-Fw-Block",          // Fortinet FortiWeb block marker
+	"X-Protected-By",      // Radware / generic WAF shield header
+	"X-Denied-Reason",     // Various WAFs — block reason string
+	"X-Security-Action",   // Various WAFs — action taken
+	"X-Px-Block-Uuid",     // PerimeterX block UUID
+	"X-Px-Uuid",           // PerimeterX session UUID
+	"X-Timer",             // Fastly edge timing (S0.N0,VS0,VE0 format)
+	"X-Served-By",         // Fastly cache node identifier
+	"X-Cache-Hits",        // Fastly / Varnish hit counter
+	"X-Cache",             // Fastly, CloudFront, Varnish — cache HIT/MISS/Error
+	"Fastly-Debug-Digest", // Fastly debug digest header
+	"X-Dd-Version",        // DataDome response version
+	"X-Cdn",               // Generic CDN vendor header (various providers)
+}
+
+// isInfraRejection reports whether a 400 response is a CDN/WAF/LB rejection
+// rather than an application-level bad-request. When true, dualTransport
+// retries over h1 because the 400 is caused by h2 framing or fingerprint
+// rules specific to the infrastructure layer, not the request content.
+//
+// Detection uses two definitive signals — no guessing:
+//  1. Server header substring matches a known CDN/WAF/LB product name.
+//  2. A proprietary infrastructure response header is present.
+//
+// These signals are mutually exclusive with application code: no framework
+// or API implementation sets X-Amz-Cf-Id, X-Iinfo, X-Px-Block-Uuid, etc.
+func isInfraRejection(resp *http.Response) bool {
+	server := strings.ToLower(resp.Header.Get("Server"))
+	if server != "" {
+		for _, name := range infraServerNames {
+			if strings.Contains(server, name) {
+				return true
+			}
+		}
+	}
+	for _, h := range infraResponseHeaders {
+		if resp.Header.Get(h) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // normalizeRequestHost returns a shallow copy of req with the default port

@@ -183,6 +183,7 @@ func newTrafficCommand() *cobra.Command {
 		newTrafficDeleteCommand(opts),
 		newTrafficClearCommand(opts),
 		newTrafficWSCommand(opts),
+		newTrafficExportCommand(opts),
 	)
 	return cmd
 }
@@ -415,6 +416,81 @@ func newTrafficWSCommand(opts *options) *cobra.Command {
 	cmd.Flags().IntVarP(&limit, "limit", "n", 50, "Maximum frames to print")
 	cmd.Flags().StringVar(&direction, "direction", "", "Filter direction: c2s or s2c")
 	addMaxBytesFlag(cmd, opts)
+	return cmd
+}
+
+func newTrafficExportCommand(opts *options) *cobra.Command {
+	var format, output, idStr string
+	var host, method, search string
+	var limit, statusMin, statusMax int
+	cmd := &cobra.Command{
+		Use:   "export",
+		Short: "Bulk-export captured requests as JSON or HAR",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if format != "json" && format != "har" {
+				return fmt.Errorf("--format must be json or har")
+			}
+			if limit <= 0 {
+				limit = 1000
+			}
+			c, err := newClient(opts.API)
+			if err != nil {
+				return err
+			}
+			q := url.Values{}
+			q.Set("format", format)
+			q.Set("limit", strconv.Itoa(limit))
+			setQuery(q, "ids", idStr)
+			setQuery(q, "host", host)
+			setQuery(q, "method", strings.ToUpper(method))
+			setQuery(q, "search", search)
+			if statusMin > 0 {
+				q.Set("status_min", strconv.Itoa(statusMin))
+			}
+			if statusMax > 0 {
+				q.Set("status_max", strconv.Itoa(statusMax))
+			}
+			rawResp, err := c.get(cmd.Context(), "/requests/export", q, nil)
+			if err != nil {
+				return err
+			}
+			if output == "-" {
+				fmt.Print(string(rawResp))
+				return nil
+			}
+			if output == "" {
+				ts := time.Now().UTC().Format("2006-01-02T15-04-05")
+				output = fmt.Sprintf("pandora-export-%s.%s", ts, format)
+			}
+			if err := os.WriteFile(output, rawResp, 0644); err != nil {
+				return fmt.Errorf("write %s: %w", output, err)
+			}
+			if !opts.JSON {
+				var meta struct {
+					Count int `json:"count"`
+					Log   struct {
+						Entries []json.RawMessage `json:"entries"`
+					} `json:"log"`
+				}
+				_ = json.Unmarshal(rawResp, &meta)
+				count := meta.Count
+				if count == 0 {
+					count = len(meta.Log.Entries)
+				}
+				fmt.Printf("exported format=%s requests=%d output=%s\n", format, count, output)
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&format, "format", "json", "Export format: json or har")
+	cmd.Flags().StringVar(&output, "output", "", "Output file path (default: auto-generated; use - for stdout)")
+	cmd.Flags().StringVar(&idStr, "ids", "", "Comma-separated request IDs to export (default: all matching filters)")
+	cmd.Flags().IntVarP(&limit, "limit", "n", 1000, "Maximum requests to export (max 5000)")
+	cmd.Flags().StringVar(&host, "host", "", "Host filter")
+	cmd.Flags().StringVar(&method, "method", "", "HTTP method filter")
+	cmd.Flags().StringVar(&search, "search", "", "Search filter")
+	cmd.Flags().IntVar(&statusMin, "status-min", 0, "Minimum response status")
+	cmd.Flags().IntVar(&statusMax, "status-max", 0, "Maximum response status")
 	return cmd
 }
 
