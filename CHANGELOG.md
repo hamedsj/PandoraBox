@@ -5,6 +5,25 @@ All notable changes to PandoraBox will be documented in this file.
 The format is based on Keep a Changelog, and this project follows semantic
 versioning for public releases.
 
+## [1.4.0] - 2026-07-27
+
+### Added
+
+- **Traffic export from the CLI.** `pandorabox sitemap export` bulk-exports captured requests/responses. Formats: `json`, `har`, and a new `files` mode that writes each response body to its own file (extension inferred from `Content-Type`). Flags: `--decode` (decompress gzip/brotli/zstd/deflate to text), `--skip-request` (responses only), `--no-response-headers`, plus `--host`/`--method`/`--search`/`--status-min`/`--status-max`/`--ids`/`--limit` filters. Backed by a new `GET /api/requests/export` endpoint.
+- **CLI replay now reflects live in the UI.** `pandorabox replay send` results appear in the Repeater in real time, and a new `pandorabox replay queue <id>` adds a request to the UI's Repeater queue without sending it.
+- **Full body syntax highlighting** for known content types — JSON, HTML/XML, JavaScript/TypeScript, CSS/SCSS, YAML, GraphQL, Markdown, and Python — consistent with the raw HTTP request/response view.
+
+### Changed
+
+- **New code editor.** Replaced the Monaco editor with CodeMirror across the app (request/response inspector, Replay, Intercept, middleware, notes). It renders native DOM text, so it inherits the app's font and selection, mounts instantly with no flash, follows the theme live, and no longer loads the editor from a CDN — the editor now works fully offline. The HTTP/response syntax highlighting is carried over unchanged.
+- **Single-scroll inspectors.** Request/response inspection, Replay, Intruder results, and the GraphQL panel no longer nest an editor scrollbar inside the pane scroll — the pane is the single scroll container (the editor still virtualizes large bodies).
+- **Editor typography tuned to the UI.** The editor now honors the dedicated *Editor Font Size* setting (which had no effect after the editor change), with a denser default size, tighter line-height, a more muted line-number gutter, and ligatures — so code sits in tune with the surrounding interface.
+
+### Fixed
+
+- `--decode` export now returns text bodies as decompressed UTF-8 and keeps binary payloads as base64 of the *decompressed* bytes, so `files` export writes correctly decoded content instead of still-compressed data.
+- h2→h1 fallback now covers all major CDNs/WAFs (definitive Server-header and proprietary-header detection), not just Cloudflare, so requests that infra rejects over HTTP/2 are retried over HTTP/1.1.
+
 ## [1.3.0] - 2026-06-24
 
 ### Added

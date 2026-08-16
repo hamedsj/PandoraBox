@@ -28,7 +28,7 @@ interface ThemeStore {
   // Font settings
   fontFamily: FontFamily
   fontSize: number       // app UI font size in pixels (10-20)
-  editorFontSize: number // Monaco editor font size in pixels (10-20)
+  editorFontSize: number // code editor font size in pixels (10-20)
   // Accent color
   accentColor: AccentColor
 

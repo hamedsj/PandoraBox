@@ -41,8 +41,9 @@ pandorabox traffic ws 47 --direction s2c -n 100 --max-bytes 1000
 Replay:
 
 ```bash
-pandorabox replay send 47
+pandorabox replay send 47                                  # send immediately, result visible in UI in real time
 pandorabox replay send --file /tmp/request.raw --scheme https
+pandorabox replay queue 47                                 # add to UI repeater queue without sending
 pandorabox replay list -n 10
 pandorabox replay get 12 --body --max-bytes 2000
 ```

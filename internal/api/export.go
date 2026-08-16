@@ -8,9 +8,17 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
+	"github.com/hamedsj5/pandorabox/internal/bodydecode"
 	"github.com/hamedsj5/pandorabox/internal/storage"
 )
+
+type exportOptions struct {
+	Decode            bool
+	SkipRequest       bool
+	NoResponseHeaders bool
+}
 
 // exportRequests handles GET /api/requests/export
 // Query params: format=json|har, ids=1,2,3, host, method, search, status_min, status_max, limit
@@ -52,6 +60,12 @@ func (s *Server) exportRequests(w http.ResponseWriter, r *http.Request) {
 		Limit:     limit,
 	}
 
+	opts := exportOptions{
+		Decode:            q.Get("decode") == "true",
+		SkipRequest:       q.Get("skip_request") == "true",
+		NoResponseHeaders: q.Get("no_response_headers") == "true",
+	}
+
 	requests, err := s.getDB().ListRequestsForExport(ids, filter)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -60,9 +74,9 @@ func (s *Server) exportRequests(w http.ResponseWriter, r *http.Request) {
 
 	var data interface{}
 	if format == "har" {
-		data = buildHARExport(requests)
+		data = buildHARExport(requests, opts)
 	} else {
-		data = buildJSONExport(requests)
+		data = buildJSONExport(requests, opts)
 	}
 
 	writeJSON(w, http.StatusOK, data)
@@ -73,7 +87,7 @@ func (s *Server) exportRequests(w http.ResponseWriter, r *http.Request) {
 type jsonExportEntry struct {
 	ID        int64           `json:"id"`
 	Timestamp time.Time       `json:"timestamp"`
-	Request   jsonExportReq   `json:"request"`
+	Request   *jsonExportReq  `json:"request,omitempty"`
 	Response  *jsonExportResp `json:"response,omitempty"`
 }
 
@@ -83,44 +97,54 @@ type jsonExportReq struct {
 	Host    string              `json:"host"`
 	Path    string              `json:"path"`
 	Query   string              `json:"query"`
-	Headers map[string][]string `json:"headers"`
-	BodyB64 *string             `json:"body_b64"`
+	Headers map[string][]string `json:"headers,omitempty"`
+	BodyB64 *string             `json:"body_b64,omitempty"`
+	Body    *string             `json:"body,omitempty"`
 }
 
 type jsonExportResp struct {
 	StatusCode int                 `json:"status_code"`
 	StatusText string              `json:"status_text"`
-	Headers    map[string][]string `json:"headers"`
-	BodyB64    *string             `json:"body_b64"`
+	Headers    map[string][]string `json:"headers,omitempty"`
+	BodyB64    *string             `json:"body_b64,omitempty"`
+	Body       *string             `json:"body,omitempty"`
 	DurationMs int64               `json:"duration_ms"`
 	SizeBytes  int64               `json:"size_bytes"`
 }
 
-func buildJSONExport(reqs []*storage.Request) map[string]interface{} {
+func buildJSONExport(reqs []*storage.Request, opts exportOptions) map[string]interface{} {
 	entries := make([]jsonExportEntry, 0, len(reqs))
 	for _, req := range reqs {
 		e := jsonExportEntry{
 			ID:        req.ID,
 			Timestamp: req.Timestamp,
-			Request: jsonExportReq{
-				Method:  req.Method,
-				Scheme:  req.Scheme,
-				Host:    req.Host,
-				Path:    req.Path,
-				Query:   req.Query,
-				Headers: parseHeaderJSON(req.Headers),
-				BodyB64: bytesToB64Ptr(req.Body),
-			},
+		}
+		if !opts.SkipRequest {
+			er := &jsonExportReq{
+				Method: req.Method,
+				Scheme: req.Scheme,
+				Host:   req.Host,
+				Path:   req.Path,
+				Query:  req.Query,
+			}
+			if !opts.NoResponseHeaders {
+				er.Headers = parseHeaderJSON(req.Headers)
+			}
+			setBodyFields(&er.Body, &er.BodyB64, req.Body, req.Headers, opts.Decode)
+			e.Request = er
 		}
 		if req.Response != nil {
-			e.Response = &jsonExportResp{
+			er := &jsonExportResp{
 				StatusCode: req.Response.StatusCode,
 				StatusText: req.Response.StatusText,
-				Headers:    parseHeaderJSON(req.Response.Headers),
-				BodyB64:    bytesToB64Ptr(req.Response.Body),
 				DurationMs: req.Response.DurationMs,
 				SizeBytes:  req.Response.SizeBytes,
 			}
+			if !opts.NoResponseHeaders {
+				er.Headers = parseHeaderJSON(req.Response.Headers)
+			}
+			setBodyFields(&er.Body, &er.BodyB64, req.Response.Body, req.Response.Headers, opts.Decode)
+			e.Response = er
 		}
 		entries = append(entries, e)
 	}
@@ -135,7 +159,7 @@ func buildJSONExport(reqs []*storage.Request) map[string]interface{} {
 
 // ── HAR 1.2 export format ─────────────────────────────────────────────────────
 
-func buildHARExport(reqs []*storage.Request) map[string]interface{} {
+func buildHARExport(reqs []*storage.Request, opts exportOptions) map[string]interface{} {
 	entries := make([]map[string]interface{}, 0, len(reqs))
 	for _, req := range reqs {
 		url := req.Scheme + "://" + req.Host + req.Path
@@ -143,15 +167,21 @@ func buildHARExport(reqs []*storage.Request) map[string]interface{} {
 			url += "?" + req.Query
 		}
 
-		reqHeaders := headersToHAR(req.Headers)
 		reqBody := req.Body
 		bodySize := len(reqBody)
+
+		var harHeaders []map[string]string
+		if !opts.NoResponseHeaders {
+			harHeaders = headersToHAR(req.Headers)
+		} else {
+			harHeaders = []map[string]string{}
+		}
 
 		harReq := map[string]interface{}{
 			"method":      req.Method,
 			"url":         url,
 			"httpVersion": "HTTP/1.1",
-			"headers":     reqHeaders,
+			"headers":     harHeaders,
 			"queryString": parseQueryString(req.Query),
 			"cookies":     []interface{}{},
 			"headersSize": -1,
@@ -162,11 +192,9 @@ func buildHARExport(reqs []*storage.Request) map[string]interface{} {
 			if mimeType == "" {
 				mimeType = "application/octet-stream"
 			}
-			harReq["postData"] = map[string]interface{}{
-				"mimeType": mimeType,
-				"text":     base64.StdEncoding.EncodeToString(reqBody),
-				"encoding": "base64",
-			}
+			postData := map[string]interface{}{"mimeType": mimeType}
+			harBodyText(postData, reqBody, req.Headers, opts.Decode)
+			harReq["postData"] = postData
 		}
 
 		durationMs := 0
@@ -183,14 +211,21 @@ func buildHARExport(reqs []*storage.Request) map[string]interface{} {
 				"mimeType": mimeType,
 			}
 			if len(respBody) > 0 {
-				content["text"] = base64.StdEncoding.EncodeToString(respBody)
-				content["encoding"] = "base64"
+				harBodyText(content, respBody, req.Response.Headers, opts.Decode)
 			}
+
+			var respHeaders []map[string]string
+			if !opts.NoResponseHeaders {
+				respHeaders = headersToHAR(req.Response.Headers)
+			} else {
+				respHeaders = []map[string]string{}
+			}
+
 			harResp = map[string]interface{}{
 				"status":      req.Response.StatusCode,
 				"statusText":  req.Response.StatusText,
 				"httpVersion": "HTTP/1.1",
-				"headers":     headersToHAR(req.Response.Headers),
+				"headers":     respHeaders,
 				"cookies":     []interface{}{},
 				"content":     content,
 				"redirectURL": "",
@@ -269,6 +304,46 @@ func firstHeaderValue(h, name string) string {
 		}
 	}
 	return ""
+}
+
+// setBodyFields decompresses body (when decode=true) and sets either the text
+// body pointer or the base64 body pointer depending on UTF-8 validity.
+// With decode=false, always sets body_b64 with the raw (possibly compressed) bytes.
+// Keeping text vs binary in separate fields lets consumers (CLI files writer,
+// HAR importers) handle each correctly without guessing the encoding.
+func setBodyFields(bodyPtr **string, b64Ptr **string, body []byte, headersJSON string, decode bool) {
+	if len(body) == 0 {
+		return
+	}
+	if !decode {
+		*b64Ptr = bytesToB64Ptr(body)
+		return
+	}
+	out := bodydecode.DecodeFromHeaders(body, []byte(headersJSON))
+	if utf8.Valid(out) {
+		s := string(out)
+		*bodyPtr = &s
+	} else {
+		*b64Ptr = bytesToB64Ptr(out)
+	}
+}
+
+// harBodyText sets "text" (and optionally "encoding":"base64") on a HAR content
+// or postData map. With decode=true it decompresses first; binary results are
+// still base64-encoded per HAR spec.
+func harBodyText(m map[string]interface{}, body []byte, headersJSON string, decode bool) {
+	var out []byte
+	if decode {
+		out = bodydecode.DecodeFromHeaders(body, []byte(headersJSON))
+	} else {
+		out = body
+	}
+	if utf8.Valid(out) {
+		m["text"] = string(out)
+	} else {
+		m["text"] = base64.StdEncoding.EncodeToString(out)
+		m["encoding"] = "base64"
+	}
 }
 
 func parseQueryString(query string) []map[string]string {

@@ -9,7 +9,7 @@ import { useIntruderStore } from '@/store/intruder'
 import { useCollaboratorStore } from '@/store/collaborator'
 import { useReplayQueueStore } from '@/store/replayQueue'
 import { api } from '@/api/client'
-import type { Request, Response, ProxyStatus, WebSocketFrame, TeamMember, OrganizerFolder, OrganizerItem, ServerCollaboratorSession } from '@/api/client'
+import type { Request, Response, Replay, ProxyStatus, WebSocketFrame, TeamMember, OrganizerFolder, OrganizerItem, ServerCollaboratorSession } from '@/api/client'
 import type { Interaction } from '@/lib/interactsh'
 
 interface WSEvent {
@@ -172,6 +172,31 @@ export function useWebSocket() {
         api.organizer.listItems(data.folder_id)
           .then((r) => setItemsForFolder(data.folder_id!, r.items))
           .catch(console.error)
+      }
+
+    // ── Replay events: CLI/agent replays show up in the repeater queue ────────
+    } else if (evt.type === 'replay.queued') {
+      const req = evt.data as Request
+      if (req?.id) useReplayQueueStore.getState().addToReplay(req)
+    } else if (evt.type === 'replay.created') {
+      const replay = evt.data as Replay
+      if (!replay) return
+      const store = useReplayQueueStore.getState()
+      const matches = store.replayQueue.filter(
+        (item) => replay.origin_request_id != null && item.request.id === replay.origin_request_id,
+      )
+      if (matches.length > 0) {
+        matches.forEach((item) => store.recordSend(item.queueId, item.packet, replay))
+      } else {
+        // No queue entry — show a toast so the result isn't silent
+        const req = replay.request
+        const label = req ? `${req.method} ${req.host}${req.path}` : `replay #${replay.id}`
+        const status = replay.response?.status_code
+        if (status) {
+          toast(`Replay: ${label} → ${status}`)
+        } else if (replay.error) {
+          toast.error(`Replay failed: ${label} — ${replay.error}`)
+        }
       }
 
     // ── Intercept events: keep the queue panel live for MCP/REST mutations ──

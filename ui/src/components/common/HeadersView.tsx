@@ -3,7 +3,7 @@
  *
  * Cookie / Set-Cookie values get special treatment: cookie names are
  * highlighted in amber, values in sky-blue, separators muted — matching
- * the Monaco http-request language token colors.
+ * the http-request editor language token colors.
  */
 
 import { Highlight, type HighlightSpec } from '@/components/common/Highlight'

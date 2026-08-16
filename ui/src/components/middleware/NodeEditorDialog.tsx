@@ -1,12 +1,11 @@
 import { useState, useEffect } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
-import Editor from '@monaco-editor/react'
 import { X, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Checkbox } from '@/components/ui/Checkbox'
 import { Select } from '@/components/ui/Select'
 import type { MiddlewareNode } from '@/api/client'
-import { useThemeStore } from '@/store/theme'
+import { CodeViewer } from '@/components/common/CodeViewer'
 
 const TYPE_OPTIONS = [
   { value: 'request',  label: 'Request' },
@@ -57,7 +56,6 @@ export function NodeEditorDialog({ node, open, onClose, onSave, onDelete }: Node
   const [type, setType] = useState<MiddlewareNode['type']>('request')
   const [enabled, setEnabled] = useState(true)
   const [code, setCode] = useState('')
-  const editorFontSize = useThemeStore((s) => s.editorFontSize)
 
   useEffect(() => {
     if (node) {
@@ -172,21 +170,14 @@ export function NodeEditorDialog({ node, open, onClose, onSave, onDelete }: Node
               </div>
             </div>
 
-            {/* Monaco editor */}
-            <div className="flex-1 overflow-hidden">
-              <Editor
-                defaultLanguage="python"
+            {/* Code editor */}
+            <div className="flex-1 overflow-hidden p-2">
+              <CodeViewer
                 value={code}
-                onChange={(v) => setCode(v ?? '')}
-                theme="vs-dark"
-                options={{
-                  minimap: { enabled: false },
-                  fontSize: editorFontSize,
-                  lineNumbers: 'on',
-                  scrollBeyondLastLine: false,
-                  wordWrap: 'on',
-                  tabSize: 4,
-                }}
+                language="python"
+                readOnly={false}
+                onChange={setCode}
+                fill
               />
             </div>
           </div>

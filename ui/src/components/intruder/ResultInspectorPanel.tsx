@@ -181,7 +181,7 @@ export function ResultInspectorPanel({ result, markerCount, onClose }: Props) {
               {reqBody?.text ? (
                 <div className="px-3 pt-1 pb-4">
                   <SectionLabel extra={reqBody.label}>Body</SectionLabel>
-                  <CodeViewer value={reqBody.text} language={reqBody.language} autoHeight maxHeight={400} minHeight={60} />
+                  <CodeViewer value={reqBody.text} language={reqBody.language} flow minHeight={60} />
                 </div>
               ) : (
                 <div className="px-3 pt-1 pb-3">
@@ -214,7 +214,7 @@ export function ResultInspectorPanel({ result, markerCount, onClose }: Props) {
               {resBody?.text ? (
                 <div className="px-3 pt-1 pb-4">
                   <SectionLabel extra={resBody.label}>Body</SectionLabel>
-                  <CodeViewer value={resBody.text} language={resBody.language} autoHeight maxHeight={500} minHeight={80} />
+                  <CodeViewer value={resBody.text} language={resBody.language} flow minHeight={80} />
                 </div>
               ) : (
                 <div className="px-3 pt-1 pb-3">

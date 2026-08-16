@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/hamedsj5/pandorabox/internal/events"
 )
 
 func (s *Server) createReplay(w http.ResponseWriter, r *http.Request) {
@@ -46,7 +47,28 @@ func (s *Server) createReplay(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	s.bus.Publish(events.Event{Type: events.EventReplayCreated, Data: replay})
 	writeJSON(w, http.StatusOK, replay)
+}
+
+// queueReplay handles POST /api/replay/queue — adds a request to every
+// connected browser's repeater queue without sending it. The browser handles
+// dedup (re-adding an existing request just bumps attention).
+func (s *Server) queueReplay(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		RequestID int64 `json:"request_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.RequestID == 0 {
+		writeError(w, http.StatusBadRequest, "request_id required")
+		return
+	}
+	req, err := s.getDB().GetRequest(body.RequestID)
+	if err != nil || req == nil {
+		writeError(w, http.StatusNotFound, "request not found")
+		return
+	}
+	s.bus.Publish(events.Event{Type: events.EventReplayQueued, Data: req})
+	writeJSON(w, http.StatusOK, map[string]interface{}{"queued": true, "request_id": body.RequestID})
 }
 
 func (s *Server) getReplay(w http.ResponseWriter, r *http.Request) {

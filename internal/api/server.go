@@ -155,6 +155,7 @@ func (s *Server) Handler() http.Handler {
 
 		// Replay
 		r.Post("/replay", s.createReplay)
+		r.Post("/replay/queue", s.queueReplay)
 		r.Get("/replay/{id}", s.getReplay)
 		r.Get("/replays", s.listReplays)
 

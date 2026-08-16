@@ -90,6 +90,7 @@ func AddCommands(root *cobra.Command) {
 	root.AddCommand(
 		newStatusCommand(),
 		newTrafficCommand(),
+		newSitemapCommand(),
 		newReplayCommand(),
 		newInterceptCommand(),
 		newProjectCommand(),
@@ -183,7 +184,6 @@ func newTrafficCommand() *cobra.Command {
 		newTrafficDeleteCommand(opts),
 		newTrafficClearCommand(opts),
 		newTrafficWSCommand(opts),
-		newTrafficExportCommand(opts),
 	)
 	return cmd
 }
@@ -419,16 +419,28 @@ func newTrafficWSCommand(opts *options) *cobra.Command {
 	return cmd
 }
 
+func newSitemapCommand() *cobra.Command {
+	opts := newOptions()
+	cmd := &cobra.Command{
+		Use:   "sitemap",
+		Short: "Sitemap: bulk-export captured traffic",
+	}
+	addCommonFlags(cmd, opts)
+	cmd.AddCommand(newTrafficExportCommand(opts))
+	return cmd
+}
+
 func newTrafficExportCommand(opts *options) *cobra.Command {
 	var format, output, idStr string
 	var host, method, search string
 	var limit, statusMin, statusMax int
+	var skipRequest, noRespHeaders, decode bool
 	cmd := &cobra.Command{
 		Use:   "export",
-		Short: "Bulk-export captured requests as JSON or HAR",
+		Short: "Bulk-export captured requests/responses as JSON, HAR, or separate files",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if format != "json" && format != "har" {
-				return fmt.Errorf("--format must be json or har")
+			if format != "json" && format != "har" && format != "files" {
+				return fmt.Errorf("--format must be json, har, or files")
 			}
 			if limit <= 0 {
 				limit = 1000
@@ -437,6 +449,12 @@ func newTrafficExportCommand(opts *options) *cobra.Command {
 			if err != nil {
 				return err
 			}
+
+			// files format fetches JSON internally then writes one file per response.
+			if format == "files" {
+				return runFilesExport(cmd.Context(), c, opts, output, idStr, host, method, search, limit, statusMin, statusMax, skipRequest, noRespHeaders, decode)
+			}
+
 			q := url.Values{}
 			q.Set("format", format)
 			q.Set("limit", strconv.Itoa(limit))
@@ -449,6 +467,15 @@ func newTrafficExportCommand(opts *options) *cobra.Command {
 			}
 			if statusMax > 0 {
 				q.Set("status_max", strconv.Itoa(statusMax))
+			}
+			if decode {
+				q.Set("decode", "true")
+			}
+			if skipRequest {
+				q.Set("skip_request", "true")
+			}
+			if noRespHeaders {
+				q.Set("no_response_headers", "true")
 			}
 			rawResp, err := c.get(cmd.Context(), "/requests/export", q, nil)
 			if err != nil {
@@ -482,8 +509,8 @@ func newTrafficExportCommand(opts *options) *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&format, "format", "json", "Export format: json or har")
-	cmd.Flags().StringVar(&output, "output", "", "Output file path (default: auto-generated; use - for stdout)")
+	cmd.Flags().StringVar(&format, "format", "json", "Export format: json, har, or files (one file per response)")
+	cmd.Flags().StringVar(&output, "output", "", "Output path: file for json/har, directory for files (default: auto-generated; use - for stdout with json/har)")
 	cmd.Flags().StringVar(&idStr, "ids", "", "Comma-separated request IDs to export (default: all matching filters)")
 	cmd.Flags().IntVarP(&limit, "limit", "n", 1000, "Maximum requests to export (max 5000)")
 	cmd.Flags().StringVar(&host, "host", "", "Host filter")
@@ -491,7 +518,165 @@ func newTrafficExportCommand(opts *options) *cobra.Command {
 	cmd.Flags().StringVar(&search, "search", "", "Search filter")
 	cmd.Flags().IntVar(&statusMin, "status-min", 0, "Minimum response status")
 	cmd.Flags().IntVar(&statusMax, "status-max", 0, "Maximum response status")
+	cmd.Flags().BoolVar(&decode, "decode", false, "Decompress response bodies (gzip/brotli/zstd/deflate); return as text when UTF-8 valid")
+	cmd.Flags().BoolVar(&skipRequest, "skip-request", false, "Omit request data; export responses only")
+	cmd.Flags().BoolVar(&noRespHeaders, "no-response-headers", false, "Omit response headers from output")
 	return cmd
+}
+
+func runFilesExport(ctx context.Context, c *client, opts *options, output, idStr, host, method, search string, limit, statusMin, statusMax int, skipRequest, noRespHeaders, decode bool) error {
+	q := url.Values{}
+	q.Set("format", "json")
+	q.Set("limit", strconv.Itoa(limit))
+	q.Set("decode", "true") // always decode for files format
+	setQuery(q, "ids", idStr)
+	setQuery(q, "host", host)
+	setQuery(q, "method", strings.ToUpper(method))
+	setQuery(q, "search", search)
+	if statusMin > 0 {
+		q.Set("status_min", strconv.Itoa(statusMin))
+	}
+	if statusMax > 0 {
+		q.Set("status_max", strconv.Itoa(statusMax))
+	}
+	if skipRequest {
+		q.Set("skip_request", "true")
+	}
+	if noRespHeaders {
+		q.Set("no_response_headers", "true")
+	}
+
+	rawResp, err := c.get(ctx, "/requests/export", q, nil)
+	if err != nil {
+		return err
+	}
+
+	var result struct {
+		Entries []struct {
+			ID      int64 `json:"id"`
+			Request *struct {
+				Method string `json:"method"`
+				Host   string `json:"host"`
+			} `json:"request"`
+			Response *struct {
+				StatusCode int                 `json:"status_code"`
+				Headers    map[string][]string `json:"headers"`
+				Body       *string             `json:"body"`
+				BodyB64    *string             `json:"body_b64"`
+			} `json:"response"`
+		} `json:"entries"`
+	}
+	if err := json.Unmarshal(rawResp, &result); err != nil {
+		return fmt.Errorf("parse server response: %w", err)
+	}
+
+	dir := output
+	if dir == "" {
+		ts := time.Now().UTC().Format("2006-01-02T15-04-05")
+		dir = fmt.Sprintf("pandora-export-%s", ts)
+	}
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("create directory %s: %w", dir, err)
+	}
+
+	written := 0
+	for _, e := range result.Entries {
+		if e.Response == nil {
+			continue
+		}
+		method := "UNK"
+		host := "unknown"
+		if e.Request != nil {
+			method = e.Request.Method
+			host = e.Request.Host
+		}
+
+		ct := ""
+		for k, vs := range e.Response.Headers {
+			if strings.EqualFold(k, "content-type") && len(vs) > 0 {
+				ct = vs[0]
+				break
+			}
+		}
+		ext := contentTypeToExt(ct)
+		safeName := sanitizeFilename(fmt.Sprintf("%d-%s-%s", e.ID, method, host))
+		filename := safeName + ext
+
+		var bodyBytes []byte
+		if e.Response.Body != nil {
+			bodyBytes = []byte(*e.Response.Body)
+		} else if e.Response.BodyB64 != nil {
+			bodyBytes, _ = base64.StdEncoding.DecodeString(*e.Response.BodyB64)
+		}
+
+		path := dir + "/" + filename
+		if err := os.WriteFile(path, bodyBytes, 0644); err != nil {
+			return fmt.Errorf("write %s: %w", path, err)
+		}
+		written++
+	}
+
+	if !opts.JSON {
+		fmt.Printf("exported format=files responses=%d directory=%s\n", written, dir)
+	}
+	return nil
+}
+
+func contentTypeToExt(ct string) string {
+	if idx := strings.Index(ct, ";"); idx >= 0 {
+		ct = ct[:idx]
+	}
+	switch strings.TrimSpace(strings.ToLower(ct)) {
+	case "application/json":
+		return ".json"
+	case "text/html":
+		return ".html"
+	case "text/plain":
+		return ".txt"
+	case "text/css":
+		return ".css"
+	case "text/javascript", "application/javascript", "application/x-javascript":
+		return ".js"
+	case "image/png":
+		return ".png"
+	case "image/jpeg":
+		return ".jpg"
+	case "image/gif":
+		return ".gif"
+	case "image/svg+xml":
+		return ".svg"
+	case "image/webp":
+		return ".webp"
+	case "application/pdf":
+		return ".pdf"
+	case "application/xml", "text/xml":
+		return ".xml"
+	case "application/zip":
+		return ".zip"
+	case "font/woff", "application/font-woff":
+		return ".woff"
+	case "font/woff2":
+		return ".woff2"
+	default:
+		return ".bin"
+	}
+}
+
+func sanitizeFilename(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_', r == '.':
+			b.WriteRune(r)
+		default:
+			b.WriteRune('_')
+		}
+	}
+	name := b.String()
+	if len(name) > 200 {
+		name = name[:200]
+	}
+	return name
 }
 
 func newReplayCommand() *cobra.Command {
@@ -501,7 +686,7 @@ func newReplayCommand() *cobra.Command {
 		Short: "Replay captured or raw HTTP requests",
 	}
 	addCommonFlags(cmd, opts)
-	cmd.AddCommand(newReplaySendCommand(opts), newReplayListCommand(opts), newReplayGetCommand(opts))
+	cmd.AddCommand(newReplaySendCommand(opts), newReplayQueueCommand(opts), newReplayListCommand(opts), newReplayGetCommand(opts))
 	return cmd
 }
 
@@ -564,6 +749,40 @@ func newReplaySendCommand(opts *options) *cobra.Command {
 	cmd.Flags().BoolVar(&fromStdin, "stdin", false, "Read raw HTTP request from stdin")
 	cmd.Flags().StringVar(&scheme, "scheme", "", "Override scheme for raw/captured replay: http or https")
 	addMaxBytesFlag(cmd, opts)
+	return cmd
+}
+
+func newReplayQueueCommand(opts *options) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "queue <request-id>",
+		Short: "Add a request to the UI repeater queue without sending it",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := parseID(args[0])
+			if err != nil {
+				return err
+			}
+			c, err := newClient(opts.API)
+			if err != nil {
+				return err
+			}
+			resp, err := c.post(cmd.Context(), "/replay/queue", map[string]any{"request_id": id}, nil)
+			if err != nil {
+				return err
+			}
+			if !opts.JSON {
+				var r struct {
+					Queued    bool  `json:"queued"`
+					RequestID int64 `json:"request_id"`
+				}
+				_ = json.Unmarshal(resp, &r)
+				fmt.Printf("queued request_id=%d\n", r.RequestID)
+				return nil
+			}
+			fmt.Println(string(resp))
+			return nil
+		},
+	}
 	return cmd
 }
 

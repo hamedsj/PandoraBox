@@ -53,7 +53,7 @@ export function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false
   if (target.closest('[data-shortcut-capture="true"]')) return true
   if (target.closest('input, textarea, select, [contenteditable="true"]')) return true
-  if (target.closest('.monaco-editor')) return true
+  if (target.closest('.cm-editor')) return true
   return false
 }
 

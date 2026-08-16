@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import Editor, { type BeforeMount } from '@monaco-editor/react'
-import { registerHttpLanguage, httpTokenRules } from '@/lib/httpLanguage'
+import { CodeViewer } from '@/components/common/CodeViewer'
 import { detectGraphQLPacket } from '@/lib/graphql'
 import { GraphQLEditorPanel } from '@/components/graphql/GraphQLEditorPanel'
 import { api } from '@/api/client'
@@ -9,7 +8,6 @@ import { decodeBodyForDisplay } from '@/lib/httpBodies'
 import { applyAutomaticContentLength, getRawRequestText } from '@/lib/rawHttp'
 import { useProxyStore } from '@/store/proxy'
 import { useReplayQueueStore } from '@/store/replayQueue'
-import { useThemeStore } from '@/store/theme'
 import { MethodBadge } from '@/components/common/MethodBadge'
 import { InterceptFilterModal } from './InterceptFilterModal'
 import { Shield, ShieldOff, Check, X, Filter, ChevronsRight, Trash2 } from 'lucide-react'
@@ -21,8 +19,6 @@ export function InterceptPanel() {
   const navigate = useNavigate()
   const status = useProxyStore((s) => s.status)
   const addToReplay = useReplayQueueStore((s) => s.addToReplay)
-  const mode = useThemeStore((s) => s.mode)
-  const fontSize = useThemeStore((s) => s.editorFontSize)
 
   // Queue is the source of truth in the store so it stays live with intercept
   // events from MCP/REST. Local writes prime the store too.
@@ -223,23 +219,6 @@ export function InterceptPanel() {
 
   const isFilterActive = !!(interceptFilter.host || interceptFilter.method || interceptFilter.path || interceptFilter.packet !== 'both')
 
-  const defineTheme: BeforeMount = (monaco) => {
-    registerHttpLanguage(monaco)
-    monaco.editor.defineTheme('intercept-dark', {
-      base: 'vs-dark',
-      inherit: true,
-      rules: httpTokenRules('dark'),
-      colors: { 'editor.background': '#0d1117' },
-    })
-    monaco.editor.defineTheme('intercept-light', {
-      base: 'vs',
-      inherit: true,
-      rules: httpTokenRules('light'),
-      colors: {},
-    })
-  }
-
-  const editorTheme = mode === 'dark' ? 'intercept-dark' : 'intercept-light'
   const showingReadOnlyRequest = selected?.kind === 'response' && responseViewTab === 'request'
   const hasGraphQLEditor = selected ? Boolean(detectGraphQLPacket(editContent)) : false
 
@@ -407,34 +386,12 @@ export function InterceptPanel() {
                   </div>
                 ) : (
                   <div className="flex-1 min-h-[320px]">
-                    <Editor
-                      height="100%"
-                      language="http-request"
+                    <CodeViewer
                       value={editContent}
-                      onChange={(v) => setEditContent(v ?? '')}
-                      theme={editorTheme}
-                      beforeMount={defineTheme}
-                      options={{
-                        minimap: { enabled: false },
-                        lineNumbers: 'on',
-                        wordWrap: 'on',
-                        readOnly: showingReadOnlyRequest,
-                        fontSize,
-                        fontFamily: 'var(--font-mono, monospace)',
-                        padding: { top: 12, bottom: 12 },
-                        scrollBeyondLastLine: false,
-                        automaticLayout: true,
-                        renderLineHighlight: 'line',
-                        overviewRulerLanes: 0,
-                        lineDecorationsWidth: 6,
-                        glyphMargin: false,
-                        scrollbar: {
-                          verticalScrollbarSize: 8,
-                          horizontalScrollbarSize: 8,
-                          alwaysConsumeMouseWheel: false,
-                        },
-                        contextmenu: true,
-                      }}
+                      language="http-request"
+                      readOnly={showingReadOnlyRequest}
+                      onChange={setEditContent}
+                      fill
                     />
                   </div>
                 )}

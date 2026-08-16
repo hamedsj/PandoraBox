@@ -18,6 +18,7 @@
   /* Themeable font settings — overridden at runtime by ThemeProvider */
   --font-mono: 'JetBrains Mono', monospace;
   --font-size-base: 14px;
+  --editor-font-size: 13px;
 }
 
 * {

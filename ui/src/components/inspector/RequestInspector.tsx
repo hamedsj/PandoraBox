@@ -401,6 +401,7 @@ export function RequestInspector({ edge = 'left' }: { edge?: 'left' | 'top' | 'n
                   mode={bodyMode}
                   onModeChange={setBodyMode}
                   viewStateKey={`insp-req-${req.id}`}
+                  flow
                 />
               )}
             </div>
@@ -470,6 +471,7 @@ export function RequestInspector({ edge = 'left' }: { edge?: 'left' | 'top' | 'n
                       mode={bodyMode}
                       onModeChange={setBodyMode}
                       viewStateKey={`insp-res-${req.id}`}
+                      flow
                     />
                   )}
                 </>

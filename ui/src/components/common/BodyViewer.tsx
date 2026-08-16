@@ -24,6 +24,9 @@ interface BodyViewerProps {
   onModeChange?: (mode: Mode) => void
   /** Stable key for persisting editor scroll/cursor across remounts. */
   viewStateKey?: string
+  /** Grow the editor to full content height so the parent is the only scroll
+   *  container (no editor-inside-pane nested scrollbar). */
+  flow?: boolean
 }
 
 function formatBytes(n: number): string {
@@ -57,6 +60,7 @@ export function BodyViewer({
   mode: controlledMode,
   onModeChange,
   viewStateKey,
+  flow = false,
 }: BodyViewerProps) {
   const presentation = useMemo(() => presentBody(body), [body])
   const graphQL = presentation.graphQL
@@ -169,13 +173,13 @@ export function BodyViewer({
             </span>
             <span>{graphQL.transport === 'json' ? 'JSON GraphQL request' : 'Raw GraphQL request'}</span>
           </div>
-          <CodeViewer value={graphQL.formattedQuery} language="graphql" maxHeight={560} minHeight={180} highlight={highlight} onRequestFind={onRequestFind} />
+          <CodeViewer value={graphQL.formattedQuery} language="graphql" maxHeight={560} minHeight={180} flow={flow} highlight={highlight} onRequestFind={onRequestFind} />
           {graphQL.variablesText && (
             <div>
               <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                 Variables
               </div>
-              <CodeViewer value={graphQL.variablesText} language="json" maxHeight={320} minHeight={120} highlight={highlight} onRequestFind={onRequestFind} />
+              <CodeViewer value={graphQL.variablesText} language="json" maxHeight={320} minHeight={120} flow={flow} highlight={highlight} onRequestFind={onRequestFind} />
             </div>
           )}
           {graphQL.extensionsText && (
@@ -183,7 +187,7 @@ export function BodyViewer({
               <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                 Extensions
               </div>
-              <CodeViewer value={graphQL.extensionsText} language="json" maxHeight={320} minHeight={120} highlight={highlight} onRequestFind={onRequestFind} />
+              <CodeViewer value={graphQL.extensionsText} language="json" maxHeight={320} minHeight={120} flow={flow} highlight={highlight} onRequestFind={onRequestFind} />
             </div>
           )}
         </div>
@@ -192,6 +196,7 @@ export function BodyViewer({
           value={displayedText}
           language={displayedLanguage}
           maxHeight={maxHeight}
+          flow={flow}
           wordWrap={mode === 'hex' ? 'off' : wrap ? 'on' : 'off'}
           highlight={highlight}
           onRequestFind={onRequestFind}

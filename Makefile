@@ -1,4 +1,4 @@
-.PHONY: build dev dev-backend dev-ui electron electron-mac electron-mac-arm64 electron-win electron-win-x64 electron-linux electron-linux-x64 electron-all electron-all-64 test lint clean \
+.PHONY: build dev dev-backend dev-ui electron electron-mac electron-mac-arm64 electron-win electron-win-x64 electron-linux electron-linux-x64 electron-all electron-all-64 test lint clean install \
         go-build-mac go-build-mac-arm64 go-build-win go-build-win-x64 go-build-linux go-build-linux-x64
 
 # Build the Go binary + embed the React UI (web mode)
@@ -7,6 +7,17 @@ build:
 	rm -rf cmd/pandorabox/dist
 	cp -r ui/dist cmd/pandorabox/dist
 	go build -o bin/pandorabox ./cmd/pandorabox
+
+# Install the built binary into the local PandoraBox.app and re-sign the bundle.
+# Replacing a file inside a sealed app bundle invalidates its code signature,
+# which causes macOS to SIGKILL any binary launched from it. Re-signing with
+# ad-hoc (-) after every install is required.
+INSTALL_PATH := /Applications/PandoraBox.app/Contents/Resources/pandorabox
+install: build
+	cp bin/pandorabox $(INSTALL_PATH)
+	codesign --sign - --force $(INSTALL_PATH)
+	codesign --sign - --force /Applications/PandoraBox.app
+	@echo "installed and re-signed"
 
 # Dev: run Go backend directly (UI served from Go embed)
 dev-backend:

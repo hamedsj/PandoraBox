@@ -13,7 +13,7 @@ function FontImports({ fontFamily }: { fontFamily: string }) {
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const { mode, variant, fontFamily, fontSize, accentColor } = useThemeStore()
+  const { mode, variant, fontFamily, fontSize, editorFontSize, accentColor } = useThemeStore()
 
   useEffect(() => {
     const root = document.documentElement
@@ -39,6 +39,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     root.style.fontSize = `${fontSize}px`
     root.style.setProperty('--font-mono', fontFamilyMap[fontFamily].stack)
     root.style.setProperty('--font-size-base', `${fontSize}px`)
+    // Dedicated code-editor size (CodeMirror reads this), so the editor can be a
+    // touch denser than the UI base and stay in tune with the surrounding text.
+    root.style.setProperty('--editor-font-size', `${editorFontSize}px`)
 
     // Apply dark mode class
     if (mode === 'dark') {
@@ -46,7 +49,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     } else {
       root.classList.remove('dark')
     }
-  }, [mode, variant, fontFamily, fontSize, accentColor])
+  }, [mode, variant, fontFamily, fontSize, editorFontSize, accentColor])
 
   return (
     <>

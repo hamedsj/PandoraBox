@@ -1,10 +1,9 @@
-import { useState, useRef } from 'react'
+import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
-import Editor from '@monaco-editor/react'
 import { Pencil, Eye } from 'lucide-react'
-import { useThemeStore } from '@/store/theme'
+import { CodeViewer } from '@/components/common/CodeViewer'
 
 interface Props {
   value: string
@@ -16,22 +15,21 @@ interface Props {
 
 export function NoteEditor({ value, onChange, onSave, placeholder = 'Click to add a note…', height = 200 }: Props) {
   const [editing, setEditing] = useState(false)
-  const saveRef = useRef(onSave)
-  saveRef.current = onSave
-  const editorFontSize = useThemeStore((s) => s.editorFontSize)
-
-  const handleMount = (_editor: unknown, monaco: unknown) => {
-    // Cmd/Ctrl+S to save
-    // @ts-expect-error monaco types
-    _editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
-      saveRef.current()
-      setEditing(false)
-    })
-  }
 
   if (editing) {
     return (
-      <div className="relative border border-zinc-700 rounded-lg overflow-hidden">
+      <div
+        className="relative"
+        onKeyDown={(e) => {
+          // Cmd/Ctrl+S to save — intercepted on the wrapper since the editor
+          // has no save binding of its own.
+          if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
+            e.preventDefault()
+            onSave()
+            setEditing(false)
+          }
+        }}
+      >
         <div className="absolute top-2 right-2 z-10 flex gap-1">
           <button
             onClick={() => { onSave(); setEditing(false) }}
@@ -41,25 +39,13 @@ export function NoteEditor({ value, onChange, onSave, placeholder = 'Click to ad
             <Eye size={13} />
           </button>
         </div>
-        <Editor
-          height={`${height}px`}
-          defaultLanguage="markdown"
+        <CodeViewer
           value={value}
-          onChange={(v) => onChange(v ?? '')}
-          onMount={handleMount}
-          theme="vs-dark"
-          options={{
-            wordWrap: 'on',
-            lineNumbers: 'off',
-            minimap: { enabled: false },
-            scrollBeyondLastLine: false,
-            fontSize: editorFontSize,
-            padding: { top: 8, bottom: 8 },
-            overviewRulerLanes: 0,
-            renderLineHighlight: 'none',
-            lineDecorationsWidth: 0,
-            lineNumbersMinChars: 0,
-          }}
+          language="markdown"
+          readOnly={false}
+          onChange={onChange}
+          autoHeight={false}
+          maxHeight={height}
         />
       </div>
     )

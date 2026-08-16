@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
-import type { editor as MonacoEditor } from 'monaco-editor'
 import { api } from '@/api/client'
 import type { Replay, Response } from '@/api/client'
 import { useReplayStore } from '@/store/replay'
 import { useReplayQueueStore } from '@/store/replayQueue'
 import { MethodBadge } from '@/components/common/MethodBadge'
 import { StatusBadge } from '@/components/common/StatusBadge'
-import { CodeViewer } from '@/components/common/CodeViewer'
+import { CodeViewer, type EditorHandle } from '@/components/common/CodeViewer'
 import { GraphQLEditorPanel } from '@/components/graphql/GraphQLEditorPanel'
 import { Send, RotateCcw, Trash2, Plus, FileCode2, ChevronLeft, ChevronRight, CopyPlus, Paperclip, X } from 'lucide-react'
 import { subscribeShortcutAction } from '@/lib/shortcuts'
@@ -46,10 +45,10 @@ export function ReplayPanel() {
   const [loading, setLoading] = useState(false)
   const [menuSelection, setMenuSelection] = useState('')
   const [decodedReplayBody, setDecodedReplayBody] = useState<DecodedBody | null>(null)
-  const editorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null)
+  const editorRef = useRef<EditorHandle | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const abortRef = useRef<AbortController | null>(null)
-  const lastMonacoSelectionRef = useRef<{ text: string; at: number } | null>(null)
+  const lastEditorSelectionRef = useRef<{ text: string; at: number } | null>(null)
 
   const selectedEntry = replayQueue.find((entry) => entry.queueId === selectedQueueId) ?? null
   const selectedReq = selectedEntry?.request ?? null
@@ -137,15 +136,9 @@ export function ReplayPanel() {
       setRawRequest(rawRequest + content)
       return
     }
-    const model = target.getModel()
-    const selection = target.getSelection()
-    if (!model || !selection) {
-      setRawRequest(rawRequest + content)
-      return
-    }
-    target.executeEdits('insert-file', [{ range: selection, text: content, forceMoveMarkers: true }])
-    setRawRequest(model.getValue())
-    target.focus()
+    // replaceSelection inserts at the cursor (or over a selection), then the
+    // editor emits onChange, which flows back through setRawRequest.
+    target.replaceSelection(content)
   }
 
   function handleInsertFileClick() {
@@ -183,7 +176,7 @@ export function ReplayPanel() {
       const custom = event as CustomEvent<{ text: string; x: number; y: number } | null>
       const detail = custom.detail
       if (!detail?.text?.trim()) return
-      lastMonacoSelectionRef.current = { text: detail.text, at: Date.now() }
+      lastEditorSelectionRef.current = { text: detail.text, at: Date.now() }
     }
     window.addEventListener('pandora:converter-selection', onCodeViewerSelection as EventListener)
     return () => {
@@ -197,15 +190,11 @@ export function ReplayPanel() {
   }, [selectedReq])
 
   const readRequestSelection = () => {
-    const editor = editorRef.current
-    const model = editor?.getModel()
-    const selection = editor?.getSelection()
-    if (!model || !selection || selection.isEmpty()) return ''
-    return model.getValueInRange(selection)
+    return editorRef.current?.getSelectionText() ?? ''
   }
 
   const readResponseSelection = () => {
-    const latest = lastMonacoSelectionRef.current
+    const latest = lastEditorSelectionRef.current
     if (latest && Date.now() - latest.at < 5000 && latest.text.trim()) return latest.text
     return ''
   }
@@ -416,8 +405,8 @@ export function ReplayPanel() {
                       onChange={(value) => setRawRequest(value)}
                       onEditorMount={(editor) => { editorRef.current = editor }}
                       contextMenu={false}
-                      autoHeight={false}
-                      maxHeight={460}
+                      flow
+                      minHeight={320}
                     />
                   </div>
                 )}
@@ -459,7 +448,7 @@ export function ReplayPanel() {
                         <CodeViewer
                           value={replayPacketText}
                           language="http-request"
-                          maxHeight={900}
+                          flow
                         />
                       </div>
                     </div>

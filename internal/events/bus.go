@@ -19,6 +19,7 @@ const (
 	EventRequestUpdated    EventType = "request.updated"
 	EventRequestsCleared   EventType = "requests.cleared"
 	EventReplayCreated     EventType = "replay.created"
+	EventReplayQueued      EventType = "replay.queued"
 
 	EventWebSocketFrame         EventType = "websocket.frame"
 	EventWebSocketSessionOpened EventType = "websocket.session.opened"

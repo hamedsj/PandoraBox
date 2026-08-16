@@ -142,6 +142,7 @@ export function GraphQLEditorPanel({ rawPacket, onChange, readOnly = false, incl
             language="http-request"
             readOnly={readOnly}
             onChange={onChange}
+            flow
             minHeight={GRAPHQL_EDITOR_MIN_HEIGHT}
             maxHeight={620}
             scrollBeyondLastLine={false}
@@ -158,6 +159,7 @@ export function GraphQLEditorPanel({ rawPacket, onChange, readOnly = false, incl
               setQueryDraft(value)
               patch({ query: value })
             }}
+            flow
             minHeight={GRAPHQL_EDITOR_MIN_HEIGHT}
             maxHeight={520}
             scrollBeyondLastLine={false}
@@ -183,7 +185,8 @@ export function GraphQLEditorPanel({ rawPacket, onChange, readOnly = false, incl
                 setVariablesDraft(value)
                 patch({ variablesText: value })
               }}
-              minHeight={GRAPHQL_EDITOR_MIN_HEIGHT}
+              flow
+            minHeight={GRAPHQL_EDITOR_MIN_HEIGHT}
               maxHeight={420}
               scrollBeyondLastLine={false}
               extraBottomLines={GRAPHQL_EDITOR_SPARE_LINES}
@@ -209,7 +212,8 @@ export function GraphQLEditorPanel({ rawPacket, onChange, readOnly = false, incl
                 setExtensionsDraft(value)
                 patch({ extensionsText: value })
               }}
-              minHeight={GRAPHQL_EDITOR_MIN_HEIGHT}
+              flow
+            minHeight={GRAPHQL_EDITOR_MIN_HEIGHT}
               maxHeight={420}
               scrollBeyondLastLine={false}
               extraBottomLines={GRAPHQL_EDITOR_SPARE_LINES}
@@ -222,6 +226,7 @@ export function GraphQLEditorPanel({ rawPacket, onChange, readOnly = false, incl
             value={gql.bodyText}
             language="json"
             readOnly
+            flow
             minHeight={GRAPHQL_EDITOR_MIN_HEIGHT}
             maxHeight={500}
             scrollBeyondLastLine={false}
