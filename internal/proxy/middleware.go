@@ -69,6 +69,13 @@ func (r *MiddlewareRunner) SetBus(b *events.Bus) {
 	r.mu.Unlock()
 }
 
+// Started reports whether the Python subprocess is running.
+func (r *MiddlewareRunner) Started() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.started
+}
+
 func NewMiddlewareRunner() *MiddlewareRunner {
 	return &MiddlewareRunner{
 		callCh: make(chan middlewareCall, 32),

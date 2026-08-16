@@ -135,6 +135,7 @@ func (s *Server) Handler() http.Handler {
 		// Traffic history
 		r.Get("/requests", s.listRequests)
 		r.Get("/requests/export", s.exportRequests)
+		r.Get("/requests/grep", s.grepRequests)
 		r.Get("/requests/{id}", s.getRequest)
 		r.Delete("/requests/{id}", s.deleteRequest)
 		r.Put("/requests/{id}/tags", s.updateRequestTags)
@@ -176,6 +177,12 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/intruder/{id}/status", s.getIntruderStatus)
 		r.Get("/intruder/{id}/results", s.getIntruderResults)
 		r.Post("/intruder/{id}/cancel", s.cancelIntruderJob)
+
+		// Match & Replace dry-run (evaluate rules against a captured request)
+		r.Get("/matchreplace/test", s.testMatchReplace)
+
+		// Middleware dry-run (run one script against a captured request/response)
+		r.Post("/middleware/test", s.testMiddleware)
 
 		// Converter
 		r.Get("/converter", s.getConverterConfig)

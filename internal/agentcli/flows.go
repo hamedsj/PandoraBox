@@ -169,7 +169,11 @@ func runFlow(ctx context.Context, c *client, flow proj.Flow, seedVars map[string
 			if lastReplay != nil && lastReplay.Response != nil {
 				respPayload["status"] = lastReplay.Response.StatusCode
 				respPayload["headers"] = flattenHeaders(lastReplay.Response.Headers)
-				respPayload["body"] = string(lastReplay.Response.Body)
+				// Decompress before handing the body to the Python process step, so
+				// flow code reads plaintext (gzip/brotli/zstd/deflate handled here)
+				// — same as middleware.
+				body := decodeBodyBytes(ctx, c, lastReplay.Response.Body, lastReplay.Response.Headers)
+				respPayload["body"] = string(body)
 			}
 			var result flowExecResultResp
 			_, err := c.post(ctx, "/flows/exec", map[string]any{

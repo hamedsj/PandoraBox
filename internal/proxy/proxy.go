@@ -100,6 +100,12 @@ func (p *Proxy) getMatchReplace() []proj.MatchReplaceRule {
 	return p.mrRules
 }
 
+// MatchReplaceRules returns the active match & replace rules (exported for the
+// dry-run/test endpoint).
+func (p *Proxy) MatchReplaceRules() []proj.MatchReplaceRule {
+	return p.getMatchReplace()
+}
+
 func (p *Proxy) getDB() *storage.DB {
 	p.dbMu.RLock()
 	defer p.dbMu.RUnlock()

@@ -52,12 +52,13 @@ func (s *Server) exportRequests(w http.ResponseWriter, r *http.Request) {
 	statusMax, _ := strconv.Atoi(q.Get("status_max"))
 
 	filter := storage.RequestFilter{
-		Host:      q.Get("host"),
-		Method:    strings.ToUpper(q.Get("method")),
-		Search:    q.Get("search"),
-		StatusMin: statusMin,
-		StatusMax: statusMax,
-		Limit:     limit,
+		Host:        q.Get("host"),
+		Method:      strings.ToUpper(q.Get("method")),
+		Search:      q.Get("search"),
+		ContentType: q.Get("content_type"),
+		StatusMin:   statusMin,
+		StatusMax:   statusMax,
+		Limit:       limit,
 	}
 
 	opts := exportOptions{

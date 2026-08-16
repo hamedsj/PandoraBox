@@ -1,5 +1,6 @@
 import { api } from '@/api/client'
 import type { Flow } from '@/api/client'
+import { decodeBodyForDisplay } from '@/lib/httpBodies'
 
 export interface StepResult {
   status: 'pending' | 'running' | 'done' | 'error' | 'skipped'
@@ -37,6 +38,18 @@ export async function runProcessStep(
   response: any | null,
   variables: Record<string, string>
 ): Promise<{ variables: Record<string, string>; error?: string }> {
+  // Hand the Python process step the DECOMPRESSED, readable body (gzip/brotli/
+  // zstd/deflate handled here) so flow code never has to decompress manually —
+  // same as middleware.
+  let body = ''
+  if (response?.response?.body != null && response.response.body !== '') {
+    try {
+      const decoded = await decodeBodyForDisplay(response.response.body, response.response.headers)
+      body = decoded.text
+    } catch {
+      body = typeof response.response.body === 'string' ? response.response.body : ''
+    }
+  }
   const result = await api.flows.exec({
     code,
     response: response
@@ -45,10 +58,7 @@ export async function runProcessStep(
           headers: response.response?.headers ? (() => {
             try { return JSON.parse(response.response.headers) } catch { return {} }
           })() : {},
-          body:
-            typeof response.response?.body === 'string'
-              ? response.response.body
-              : '',
+          body,
         }
       : { status: 0, headers: {}, body: '' },
     variables,

@@ -34,8 +34,21 @@ Traffic:
 pandorabox traffic list -n 20
 pandorabox traffic list --host api.example.com --status-min 500
 pandorabox traffic get 47 --headers
-pandorabox traffic get 47 --body request --max-bytes 2000
+pandorabox traffic get 47 --body request --max-bytes 2000    # bodies truncate; a trailing marker shows total size
+pandorabox traffic get 47 --body response --max-bytes 0      # 0 = no limit (print the whole body)
+pandorabox traffic get 47 --body response                    # auto-decompresses gzip/brotli/zstd/deflate to readable text
+pandorabox traffic get 47 --body response --raw-body         # the raw compressed wire bytes instead
+pandorabox traffic get 47 --body response --save-to out.js   # writes the decompressed body to a file
+pandorabox traffic search "googleusercontent.com"           # grep decoded request+response bodies across all traffic
+pandorabox traffic search "eval\\(" --in response --regex --content-type javascript
 pandorabox traffic ws 47 --direction s2c -n 100 --max-bytes 1000
+```
+
+Bulk export (Sitemap): JSON, HAR, or one file per response; filter by host/content-type; `--decode` to decompress.
+
+```bash
+pandorabox sitemap export --host cdn.example.com --content-type javascript --format files --output ./js/ --decode
+pandorabox sitemap export --format har --output traffic.har
 ```
 
 Replay:
@@ -80,13 +93,15 @@ Match & Replace:
 ```bash
 pandorabox matchreplace list
 pandorabox matchreplace add --target req-header --match '^User-Agent.*$' --replace 'User-Agent: custom' --regex
+pandorabox matchreplace test 47   # dry-run all rules against request 47: shows per-rule MATCH/no-match/disabled + why
 ```
 
-Middleware:
+Middleware: scripts receive **already-decompressed** request/response bodies (`packet.body` is plaintext); PandoraBox re-compresses to the original Content-Encoding transparently — no manual gzip/brotli handling. (Match & Replace `res-body` rules likewise run against decompressed content.)
 
 ```bash
 pandorabox middleware list
 pandorabox middleware add --type request --name "Inject Header" --code-file step.py
+pandorabox middleware test --code-file step.py --type response --request-id 47  # dry-run a script; surfaces tracebacks + before/after
 ```
 
 Converter:
@@ -105,7 +120,7 @@ pandorabox organizer folder create --name "Auth Flows"
 pandorabox organizer item add <folder-id> --request-id 47
 ```
 
-Flows (chains of HTTP requests + Python steps, variables threaded through):
+Flows (chains of HTTP requests + Python steps, variables threaded through): a `process` step's `ctx.response.body` is the **decompressed** response body — no manual gzip/brotli handling, same as middleware.
 
 ```bash
 pandorabox flows list

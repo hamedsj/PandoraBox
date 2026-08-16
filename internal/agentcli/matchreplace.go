@@ -2,7 +2,9 @@
 package agentcli
 
 import (
+	"encoding/json"
 	"fmt"
+	"net/url"
 
 	proj "github.com/hamedsj5/pandorabox/internal/project"
 	"github.com/spf13/cobra"
@@ -25,7 +27,76 @@ func newMatchReplaceCommand() *cobra.Command {
 		newMatchReplaceRemoveCommand(opts),
 		newMatchReplaceSetEnabledCommand(opts, "enable", true),
 		newMatchReplaceSetEnabledCommand(opts, "disable", false),
+		newMatchReplaceTestCommand(opts),
 	)
+	return cmd
+}
+
+func newMatchReplaceTestCommand(opts *options) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "test <request-id>",
+		Short: "Dry-run all rules against a captured request and show why each does or doesn't fire",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := parseID(args[0])
+			if err != nil {
+				return err
+			}
+			c, err := newClient(opts.API)
+			if err != nil {
+				return err
+			}
+			q := url.Values{}
+			q.Set("request_id", fmt.Sprintf("%d", id))
+			raw, err := c.get(cmd.Context(), "/matchreplace/test", q, nil)
+			if err != nil {
+				return err
+			}
+			if opts.JSON {
+				fmt.Print(string(raw))
+				return nil
+			}
+			var res struct {
+				RuleCount int `json:"rule_count"`
+				Rules     []struct {
+					ID         int    `json:"id"`
+					Name       string `json:"name"`
+					Target     string `json:"target"`
+					Enabled    bool   `json:"enabled"`
+					Applicable bool   `json:"applicable"`
+					Matched    bool   `json:"matched"`
+					Detail     string `json:"detail"`
+					Before     string `json:"before"`
+					After      string `json:"after"`
+				} `json:"rules"`
+			}
+			if err := json.Unmarshal(raw, &res); err != nil {
+				return err
+			}
+			if res.RuleCount == 0 {
+				fmt.Println("no match & replace rules configured")
+				return nil
+			}
+			for _, r := range res.Rules {
+				verdict := "no-match"
+				if !r.Enabled {
+					verdict = "disabled"
+				} else if r.Matched {
+					verdict = "MATCH"
+				}
+				name := r.Name
+				if name == "" {
+					name = "(unnamed)"
+				}
+				fmt.Printf("rule %d %-10s %-10s %s — %s\n", r.ID, r.Target, verdict, name, r.Detail)
+				if r.Matched {
+					fmt.Printf("    before: %s\n", r.Before)
+					fmt.Printf("    after:  %s\n", r.After)
+				}
+			}
+			return nil
+		},
+	}
 	return cmd
 }
 

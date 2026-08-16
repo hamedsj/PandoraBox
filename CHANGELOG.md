@@ -5,6 +5,24 @@ All notable changes to PandoraBox will be documented in this file.
 The format is based on Keep a Changelog, and this project follows semantic
 versioning for public releases.
 
+## [1.4.1] - 2026-08-17
+
+### Added
+
+- **Body search across traffic** — `pandorabox traffic search <term> [--in request|response|both] [--regex] [--content-type ...]` greps decoded request/response bodies server-side and returns matching requests with a snippet.
+- **Save a body to a file** — `pandorabox traffic get <id> --body response --save-to <file>` writes one body straight to disk. Bodies now auto-decompress by default (`--raw-body` for the raw wire bytes), and truncated output shows a trailing `… [truncated: showing X of Y]` marker (`--max-bytes 0` for no limit).
+- **Export by content type** — `pandorabox sitemap export --content-type javascript …` filters exports (incl. the per-file mode) by response Content-Type.
+- **Match & Replace dry-run** — `pandorabox matchreplace test <id>` evaluates every rule against a captured request and reports per rule whether it fires and why (match / no-match / disabled), with before/after.
+- **Middleware dry-run** — `pandorabox middleware test --code-file <f> --request-id <id>` runs a script against a captured packet and surfaces the Python traceback, console output, and before/after.
+
+### Changed
+
+- **Transparent body decompression for middleware, Match & Replace, and Flows.** Response bodies are now decompressed (gzip/brotli/zstd/deflate) before `res-body` rules, Python middleware, and flow `process` steps see them, then re-compressed to the original `Content-Encoding` on the way out. Scripts read plaintext `packet.body` / `ctx.response.body` with no manual gzip handling. This also fixes `res-body` match & replace rules silently never matching compressed responses.
+
+### Fixed
+
+- **Replay could send a request without its body.** The outgoing replay request's body, `Content-Length`, and rewind source (`GetBody`) are now pinned to the actual bytes right before send, so a POST body is never dropped or mismatched (regression test added).
+
 ## [1.4.0] - 2026-07-27
 
 ### Added

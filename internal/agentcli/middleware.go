@@ -2,8 +2,10 @@
 package agentcli
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/google/uuid"
 	proj "github.com/hamedsj5/pandorabox/internal/project"
@@ -28,7 +30,111 @@ func newMiddlewareCommand() *cobra.Command {
 		newMiddlewareSetEnabledCommand(opts, "enable", true),
 		newMiddlewareSetEnabledCommand(opts, "disable", false),
 		newMiddlewareToggleCommand(opts),
+		newMiddlewareTestCommand(opts),
 	)
+	return cmd
+}
+
+func newMiddlewareTestCommand(opts *options) *cobra.Command {
+	var codeFile, nodeType string
+	var requestID int64
+	cmd := &cobra.Command{
+		Use:   "test",
+		Short: "Dry-run a middleware script against a captured request/response and surface errors",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if codeFile == "" || requestID == 0 {
+				return fmt.Errorf("--code-file and --request-id are required")
+			}
+			if nodeType != "request" && nodeType != "response" {
+				return fmt.Errorf("--type must be request or response")
+			}
+			code, err := os.ReadFile(codeFile)
+			if err != nil {
+				return fmt.Errorf("read %s: %w", codeFile, err)
+			}
+			c, err := newClient(opts.API)
+			if err != nil {
+				return err
+			}
+			raw, err := c.post(cmd.Context(), "/middleware/test", map[string]any{
+				"code": string(code), "type": nodeType, "request_id": requestID,
+			}, nil)
+			if err != nil {
+				return err
+			}
+			if opts.JSON {
+				fmt.Print(string(raw))
+				return nil
+			}
+			var res struct {
+				Started        bool     `json:"started"`
+				OK             bool     `json:"ok"`
+				Error          string   `json:"error"`
+				Console        []string `json:"console"`
+				BodyChanged    bool     `json:"body_changed"`
+				HeadersChanged bool     `json:"headers_changed"`
+				BodyBefore     string   `json:"body_before"`
+				BodyAfter      string   `json:"body_after"`
+				MethodBefore   string   `json:"method_before"`
+				MethodAfter    string   `json:"method_after"`
+				URLBefore      string   `json:"url_before"`
+				URLAfter       string   `json:"url_after"`
+				StatusBefore   int      `json:"status_before"`
+				StatusAfter    int      `json:"status_after"`
+			}
+			if err := json.Unmarshal(raw, &res); err != nil {
+				return err
+			}
+			// The runner fail-opens on a per-node exception (prints the traceback
+			// and passes the packet through unchanged), so a raised script still
+			// reports ok. Detect the traceback so the result flags it clearly.
+			raised := false
+			for _, line := range res.Console {
+				if strings.Contains(line, "Traceback (most recent call last)") || strings.Contains(line, "Error:") {
+					raised = true
+					break
+				}
+			}
+			status := "OK"
+			if !res.Started {
+				status = "NOT STARTED"
+			} else if !res.OK {
+				status = "ERROR"
+			} else if raised {
+				status = "SCRIPT RAISED (packet passed through unchanged — see console)"
+			}
+			fmt.Printf("result=%s body_changed=%t headers_changed=%t\n", status, res.BodyChanged, res.HeadersChanged)
+			if res.Error != "" {
+				fmt.Printf("error: %s\n", res.Error)
+			}
+			if nodeType == "response" {
+				if res.StatusBefore != res.StatusAfter {
+					fmt.Printf("status: %d → %d\n", res.StatusBefore, res.StatusAfter)
+				}
+			} else {
+				if res.MethodBefore != res.MethodAfter {
+					fmt.Printf("method: %s → %s\n", res.MethodBefore, res.MethodAfter)
+				}
+				if res.URLBefore != res.URLAfter {
+					fmt.Printf("url: %s → %s\n", res.URLBefore, res.URLAfter)
+				}
+			}
+			if res.BodyChanged {
+				fmt.Printf("body before: %s\n", res.BodyBefore)
+				fmt.Printf("body after:  %s\n", res.BodyAfter)
+			}
+			if len(res.Console) > 0 {
+				fmt.Println("console:")
+				for _, line := range res.Console {
+					fmt.Printf("  %s\n", line)
+				}
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&codeFile, "code-file", "", "Python middleware script file (defines process(packet))")
+	cmd.Flags().StringVar(&nodeType, "type", "request", "Packet type to run against: request or response")
+	cmd.Flags().Int64Var(&requestID, "request-id", 0, "Captured request ID to feed the script")
 	return cmd
 }
 

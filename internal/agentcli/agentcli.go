@@ -119,7 +119,7 @@ func addCommonFlags(cmd *cobra.Command, opts *options) {
 }
 
 func addMaxBytesFlag(cmd *cobra.Command, opts *options) {
-	cmd.Flags().IntVar(&opts.MaxBytes, "max-bytes", opts.MaxBytes, "Maximum body/raw bytes to print in text mode")
+	cmd.Flags().IntVar(&opts.MaxBytes, "max-bytes", opts.MaxBytes, "Maximum body/raw bytes to print in text mode (0 = no limit)")
 }
 
 func newStatusCommand() *cobra.Command {
@@ -181,6 +181,7 @@ func newTrafficCommand() *cobra.Command {
 	cmd.AddCommand(
 		newTrafficListCommand(opts),
 		newTrafficGetCommand(opts),
+		newTrafficSearchCommand(opts),
 		newTrafficDeleteCommand(opts),
 		newTrafficClearCommand(opts),
 		newTrafficWSCommand(opts),
@@ -245,9 +246,84 @@ func newTrafficListCommand(opts *options) *cobra.Command {
 	return cmd
 }
 
+func newTrafficSearchCommand(opts *options) *cobra.Command {
+	var scope, host, method, contentType string
+	var caseSensitive, useRegex bool
+	var limit int
+	cmd := &cobra.Command{
+		Use:   "search <term>",
+		Short: "Grep decoded request/response bodies across captured traffic",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := newClient(opts.API)
+			if err != nil {
+				return err
+			}
+			q := url.Values{}
+			q.Set("q", args[0])
+			if scope != "" {
+				q.Set("scope", scope)
+			}
+			setQuery(q, "host", host)
+			setQuery(q, "method", strings.ToUpper(method))
+			setQuery(q, "content_type", contentType)
+			if limit > 0 {
+				q.Set("limit", strconv.Itoa(limit))
+			}
+			if caseSensitive {
+				q.Set("case", "true")
+			}
+			if useRegex {
+				q.Set("regex", "true")
+			}
+			raw, err := c.get(cmd.Context(), "/requests/grep", q, nil)
+			if err != nil {
+				return err
+			}
+			if opts.JSON {
+				fmt.Print(string(raw))
+				return nil
+			}
+			var res struct {
+				Count   int `json:"count"`
+				Matches []struct {
+					ID         int64  `json:"id"`
+					Method     string `json:"method"`
+					Host       string `json:"host"`
+					Path       string `json:"path"`
+					StatusCode int    `json:"status_code"`
+					Where      string `json:"where"`
+					Snippet    string `json:"snippet"`
+				} `json:"matches"`
+			}
+			if err := json.Unmarshal(raw, &res); err != nil {
+				return err
+			}
+			for _, m := range res.Matches {
+				status := "-"
+				if m.StatusCode > 0 {
+					status = strconv.Itoa(m.StatusCode)
+				}
+				fmt.Printf("%d %s %s %s%s [%s] %s\n",
+					m.ID, m.Method, status, m.Host, m.Path, m.Where, m.Snippet)
+			}
+			fmt.Printf("matches=%d\n", res.Count)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&scope, "in", "both", "Where to search: request, response, or both")
+	cmd.Flags().StringVar(&host, "host", "", "Host substring filter")
+	cmd.Flags().StringVar(&method, "method", "", "HTTP method filter")
+	cmd.Flags().StringVar(&contentType, "content-type", "", "Response Content-Type substring filter")
+	cmd.Flags().BoolVar(&caseSensitive, "case", false, "Case-sensitive match")
+	cmd.Flags().BoolVar(&useRegex, "regex", false, "Treat the term as a regular expression")
+	cmd.Flags().IntVarP(&limit, "limit", "n", 500, "Maximum matches to return")
+	return cmd
+}
+
 func newTrafficGetCommand(opts *options) *cobra.Command {
-	var showHeaders, showRaw bool
-	var bodyMode string
+	var showHeaders, showRaw, rawBody bool
+	var bodyMode, saveTo string
 	cmd := &cobra.Command{
 		Use:   "get <id>",
 		Short: "Get one captured request with bounded output",
@@ -266,6 +342,36 @@ func newTrafficGetCommand(opts *options) *cobra.Command {
 			if err != nil {
 				return err
 			}
+
+			// Bodies are decompressed by default (gzip/brotli/zstd/deflate) so you
+			// read the human-readable content; --raw-body returns the wire bytes.
+			bodyFor := func(b []byte, headers string) []byte {
+				if rawBody {
+					return b
+				}
+				return decodeBodyBytes(cmd.Context(), c, b, headers)
+			}
+
+			// --save-to writes one body straight to a file (no --max-bytes limit).
+			// Defaults to the response body; --body request saves the request body.
+			if saveTo != "" {
+				var body []byte
+				var headers string
+				if bodyMode == "request" || bodyMode == "req" {
+					body, headers = req.Body, req.Headers
+				} else if req.Response != nil {
+					body, headers = req.Response.Body, req.Response.Headers
+				}
+				body = bodyFor(body, headers)
+				if err := os.WriteFile(saveTo, body, 0644); err != nil {
+					return fmt.Errorf("write %s: %w", saveTo, err)
+				}
+				if !opts.JSON {
+					fmt.Printf("saved id=%d bytes=%d output=%s\n", id, len(body), saveTo)
+				}
+				return nil
+			}
+
 			if opts.JSON {
 				fmt.Print(string(raw))
 				return nil
@@ -286,15 +392,15 @@ func newTrafficGetCommand(opts *options) *cobra.Command {
 			switch bodyMode {
 			case "", "none":
 			case "request", "req":
-				printBytes("request.body", req.Body, opts.MaxBytes)
+				printBytes("request.body", bodyFor(req.Body, req.Headers), opts.MaxBytes)
 			case "response", "res":
 				if req.Response != nil {
-					printBytes("response.body", req.Response.Body, opts.MaxBytes)
+					printBytes("response.body", bodyFor(req.Response.Body, req.Response.Headers), opts.MaxBytes)
 				}
 			case "both", "all":
-				printBytes("request.body", req.Body, opts.MaxBytes)
+				printBytes("request.body", bodyFor(req.Body, req.Headers), opts.MaxBytes)
 				if req.Response != nil {
-					printBytes("response.body", req.Response.Body, opts.MaxBytes)
+					printBytes("response.body", bodyFor(req.Response.Body, req.Response.Headers), opts.MaxBytes)
 				}
 			default:
 				return fmt.Errorf("invalid --body value %q (use none, request, response, both)", bodyMode)
@@ -305,8 +411,50 @@ func newTrafficGetCommand(opts *options) *cobra.Command {
 	cmd.Flags().BoolVar(&showHeaders, "headers", false, "Print request and response headers")
 	cmd.Flags().BoolVar(&showRaw, "raw", false, "Print raw request/response packets")
 	cmd.Flags().StringVar(&bodyMode, "body", "none", "Body output: none, request, response, both")
+	cmd.Flags().StringVar(&saveTo, "save-to", "", "Write the body to this file (defaults to response body; use --body request for the request)")
+	cmd.Flags().BoolVar(&rawBody, "raw-body", false, "Return the raw compressed wire bytes instead of auto-decompressing (gzip/brotli/zstd/deflate)")
 	addMaxBytesFlag(cmd, opts)
 	return cmd
+}
+
+// decodeBodyBytes decompresses body via the server's /decode endpoint using the
+// Content-Encoding found in headersJSON. Returns the body unchanged when it is
+// not encoded or on any error (best-effort).
+func decodeBodyBytes(ctx context.Context, c *client, body []byte, headersJSON string) []byte {
+	if len(body) == 0 {
+		return body
+	}
+	enc := headerValueFromJSON(headersJSON, "Content-Encoding")
+	if enc == "" || strings.EqualFold(enc, "identity") {
+		return body
+	}
+	reqBody := map[string]any{"data": base64.StdEncoding.EncodeToString(body), "encoding": enc}
+	var out struct {
+		Base64 string `json:"base64"`
+	}
+	if _, err := c.post(ctx, "/decode", reqBody, &out); err != nil {
+		return body
+	}
+	decoded, err := base64.StdEncoding.DecodeString(out.Base64)
+	if err != nil {
+		return body
+	}
+	return decoded
+}
+
+// headerValueFromJSON pulls the first value of a header (case-insensitive) from
+// the stored `{"Name":["v"]}` JSON header map.
+func headerValueFromJSON(headersJSON, name string) string {
+	var h map[string][]string
+	if json.Unmarshal([]byte(headersJSON), &h) != nil {
+		return ""
+	}
+	for k, vs := range h {
+		if strings.EqualFold(k, name) && len(vs) > 0 {
+			return vs[0]
+		}
+	}
+	return ""
 }
 
 func newTrafficDeleteCommand(opts *options) *cobra.Command {
@@ -432,7 +580,7 @@ func newSitemapCommand() *cobra.Command {
 
 func newTrafficExportCommand(opts *options) *cobra.Command {
 	var format, output, idStr string
-	var host, method, search string
+	var host, method, search, contentType string
 	var limit, statusMin, statusMax int
 	var skipRequest, noRespHeaders, decode bool
 	cmd := &cobra.Command{
@@ -452,7 +600,7 @@ func newTrafficExportCommand(opts *options) *cobra.Command {
 
 			// files format fetches JSON internally then writes one file per response.
 			if format == "files" {
-				return runFilesExport(cmd.Context(), c, opts, output, idStr, host, method, search, limit, statusMin, statusMax, skipRequest, noRespHeaders, decode)
+				return runFilesExport(cmd.Context(), c, opts, output, idStr, host, method, search, contentType, limit, statusMin, statusMax, skipRequest, noRespHeaders, decode)
 			}
 
 			q := url.Values{}
@@ -462,6 +610,7 @@ func newTrafficExportCommand(opts *options) *cobra.Command {
 			setQuery(q, "host", host)
 			setQuery(q, "method", strings.ToUpper(method))
 			setQuery(q, "search", search)
+			setQuery(q, "content_type", contentType)
 			if statusMin > 0 {
 				q.Set("status_min", strconv.Itoa(statusMin))
 			}
@@ -516,6 +665,7 @@ func newTrafficExportCommand(opts *options) *cobra.Command {
 	cmd.Flags().StringVar(&host, "host", "", "Host filter")
 	cmd.Flags().StringVar(&method, "method", "", "HTTP method filter")
 	cmd.Flags().StringVar(&search, "search", "", "Search filter")
+	cmd.Flags().StringVar(&contentType, "content-type", "", "Response Content-Type substring filter (e.g. javascript, application/json, image/)")
 	cmd.Flags().IntVar(&statusMin, "status-min", 0, "Minimum response status")
 	cmd.Flags().IntVar(&statusMax, "status-max", 0, "Maximum response status")
 	cmd.Flags().BoolVar(&decode, "decode", false, "Decompress response bodies (gzip/brotli/zstd/deflate); return as text when UTF-8 valid")
@@ -524,7 +674,7 @@ func newTrafficExportCommand(opts *options) *cobra.Command {
 	return cmd
 }
 
-func runFilesExport(ctx context.Context, c *client, opts *options, output, idStr, host, method, search string, limit, statusMin, statusMax int, skipRequest, noRespHeaders, decode bool) error {
+func runFilesExport(ctx context.Context, c *client, opts *options, output, idStr, host, method, search, contentType string, limit, statusMin, statusMax int, skipRequest, noRespHeaders, decode bool) error {
 	q := url.Values{}
 	q.Set("format", "json")
 	q.Set("limit", strconv.Itoa(limit))
@@ -533,6 +683,7 @@ func runFilesExport(ctx context.Context, c *client, opts *options, output, idStr
 	setQuery(q, "host", host)
 	setQuery(q, "method", strings.ToUpper(method))
 	setQuery(q, "search", search)
+	setQuery(q, "content_type", contentType)
 	if statusMin > 0 {
 		q.Set("status_min", strconv.Itoa(statusMin))
 	}
@@ -1411,27 +1562,36 @@ func printHeaders(label, headerJSON string) {
 }
 
 func printBytes(label string, b []byte, max int) {
-	fmt.Printf("%s bytes=%d", label, len(b))
-	if max >= 0 && len(b) > max {
-		fmt.Printf(" shown=%d truncated=true", max)
+	total := len(b)
+	// max <= 0 means "no limit" — print the whole body.
+	truncated := max > 0 && total > max
+	if truncated {
+		fmt.Printf("%s bytes=%d shown=%d truncated=true\n", label, total, max)
 		b = b[:max]
+	} else {
+		fmt.Printf("%s bytes=%d\n", label, total)
 	}
-	fmt.Println()
 	if len(b) == 0 {
 		return
 	}
 	if utf8.Valid(b) {
 		fmt.Println(string(b))
-		return
+	} else {
+		fmt.Println(base64.StdEncoding.EncodeToString(b))
 	}
-	fmt.Println(base64.StdEncoding.EncodeToString(b))
+	// Trailing marker at the cut point so cut-off content is never mistaken for
+	// the whole body (issue: silent truncation).
+	if truncated {
+		fmt.Printf("… [truncated: showing %s of %s — pass --max-bytes 0 for all, or --save-to <file>]\n",
+			humanBytes(int64(max)), humanBytes(int64(total)))
+	}
 }
 
 func boundedBytes(b []byte, max int) string {
 	if len(b) == 0 {
 		return ""
 	}
-	if max >= 0 && len(b) > max {
+	if max > 0 && len(b) > max {
 		b = b[:max]
 	}
 	if utf8.Valid(b) {

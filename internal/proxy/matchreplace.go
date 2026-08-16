@@ -49,6 +49,17 @@ func applyToRequest(rules []proj.MatchReplaceRule, req *http.Request, body []byt
 	return body
 }
 
+// anyResBodyRule reports whether any enabled rule targets the response body —
+// used to decide whether the response body must be decompressed before rules run.
+func anyResBodyRule(rules []proj.MatchReplaceRule) bool {
+	for _, r := range rules {
+		if r.Enabled && r.Target == "res-body" {
+			return true
+		}
+	}
+	return false
+}
+
 // applyToResponse applies all response-scoped rules in order.
 // Returns potentially modified bodyBytes; modifies resp headers in-place.
 func applyToResponse(rules []proj.MatchReplaceRule, resp *http.Response, body []byte) []byte {

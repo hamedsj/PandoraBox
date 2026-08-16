@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hamedsj5/pandorabox/internal/bodydecode"
 	"github.com/hamedsj5/pandorabox/internal/events"
 	"github.com/hamedsj5/pandorabox/internal/storage"
 )
@@ -179,6 +180,24 @@ func (p *Proxy) roundTrip(req *http.Request, scheme string) (*http.Response, *st
 	respBodyBytes, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
 
+	// Decompress the response body so match-replace res-body rules and Python
+	// middleware operate on human-readable content, then re-compress to the
+	// wire encoding afterward so the browser still receives what it expects.
+	// Only done when a body stage is actually active, to leave pass-through
+	// traffic byte-for-byte untouched.
+	mwActive := false
+	if mw := p.getMiddlewareRunner(); mw != nil {
+		mwActive = mw.Started()
+	}
+	decoded := false
+	origEncoding := resp.Header.Get("Content-Encoding")
+	if (mwActive || anyResBodyRule(rules)) && origEncoding != "" && !strings.EqualFold(origEncoding, "identity") {
+		if plain, derr := bodydecode.Decode(respBodyBytes, origEncoding); derr == nil {
+			respBodyBytes = plain
+			decoded = true
+		}
+	}
+
 	// Apply match-and-replace rules to response
 	if len(rules) > 0 {
 		respBodyBytes = applyToResponse(rules, resp, respBodyBytes)
@@ -196,6 +215,20 @@ func (p *Proxy) roundTrip(req *http.Request, scheme string) (*http.Response, *st
 			resp.Status = newText
 			resp.Header = newHeaders
 			respBodyBytes = newBody
+		}
+	}
+
+	// Re-compress to the response's current Content-Encoding (a rule/middleware
+	// may have changed or removed it). On failure, strip the header and forward
+	// identity so the browser never sees a body that doesn't match its encoding.
+	if decoded {
+		finalEncoding := resp.Header.Get("Content-Encoding")
+		if finalEncoding != "" && !strings.EqualFold(finalEncoding, "identity") {
+			if enc, eerr := bodydecode.Encode(respBodyBytes, finalEncoding); eerr == nil {
+				respBodyBytes = enc
+			} else {
+				resp.Header.Del("Content-Encoding")
+			}
 		}
 	}
 
@@ -410,6 +443,25 @@ func (p *Proxy) ReplayRequest(reqID int64, modHeaders map[string]string, modBody
 	start := time.Now()
 	removeHopByHop(req.Header)
 	req.RequestURI = ""
+
+	// Authoritative body framing: after match-replace / middleware may have
+	// rebuilt req.Body, pin Body, ContentLength, and GetBody to bodyBytes so the
+	// outgoing request can never drift (e.g. a stale Content-Length or a body
+	// the h2 transport can't rewind, which surfaces as the target rejecting the
+	// request with a "missing request body" / 400). Drop any Content-Length
+	// header so the field is the single source of truth.
+	req.Header.Del("Content-Length")
+	req.ContentLength = int64(len(bodyBytes))
+	if len(bodyBytes) > 0 {
+		req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+		req.GetBody = func() (io.ReadCloser, error) {
+			return io.NopCloser(bytes.NewReader(bodyBytes)), nil
+		}
+	} else {
+		req.Body = http.NoBody
+		req.GetBody = func() (io.ReadCloser, error) { return http.NoBody, nil }
+	}
+
 	transport := p.makeTransport()
 	resp, err := transport.RoundTrip(req)
 	if err != nil {
@@ -422,6 +474,22 @@ func (p *Proxy) ReplayRequest(reqID int64, modHeaders map[string]string, modBody
 
 	duration := time.Since(start).Milliseconds()
 	respBodyBytes, _ := io.ReadAll(resp.Body)
+
+	// Decode → process → re-encode, mirroring the live proxy path so replayed
+	// responses feed match-replace/middleware human-readable content and store a
+	// body consistent with the Content-Encoding header.
+	mwActive := false
+	if mw := p.getMiddlewareRunner(); mw != nil {
+		mwActive = mw.Started()
+	}
+	decoded := false
+	origEncoding := resp.Header.Get("Content-Encoding")
+	if (mwActive || anyResBodyRule(rules)) && origEncoding != "" && !strings.EqualFold(origEncoding, "identity") {
+		if plain, derr := bodydecode.Decode(respBodyBytes, origEncoding); derr == nil {
+			respBodyBytes = plain
+			decoded = true
+		}
+	}
 
 	if len(rules) > 0 {
 		respBodyBytes = applyToResponse(rules, resp, respBodyBytes)
@@ -437,6 +505,17 @@ func (p *Proxy) ReplayRequest(reqID int64, modHeaders map[string]string, modBody
 			resp.Status = newText
 			resp.Header = newHeaders
 			respBodyBytes = newBody
+		}
+	}
+
+	if decoded {
+		finalEncoding := resp.Header.Get("Content-Encoding")
+		if finalEncoding != "" && !strings.EqualFold(finalEncoding, "identity") {
+			if enc, eerr := bodydecode.Encode(respBodyBytes, finalEncoding); eerr == nil {
+				respBodyBytes = enc
+			} else {
+				resp.Header.Del("Content-Encoding")
+			}
 		}
 	}
 
